@@ -1,0 +1,17 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body { background: #F7F8FA; color: #111827; }
+
+.card { @apply bg-white rounded-xl shadow-card border border-brand-border; }
+.kpi-num { @apply text-3xl font-semibold tracking-tight; }
+.badge { @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold; }
+.badge-overdue { @apply bg-red-50 text-signal-red; }
+.badge-due { @apply bg-amber-50 text-amber-600; }
+.badge-track { @apply bg-emerald-50 text-emerald-600; }
+.badge-critical { @apply bg-black text-white; }
+.chip { @apply inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs bg-gray-50 border border-brand-border text-brand-dark; }
+.btn-primary { @apply inline-flex items-center justify-center px-4 py-2 rounded-md bg-signal-red text-white text-sm font-medium hover:opacity-90; }
+.btn-ghost { @apply inline-flex items-center px-3 py-1.5 rounded-md text-sm text-brand-muted hover:bg-gray-100; }
+.table-header { @apply text-[11px] uppercase tracking-wider text-brand-muted font-semibold; }

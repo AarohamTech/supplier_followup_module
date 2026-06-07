@@ -1,0 +1,53 @@
+[
+  {
+    "CRM no.": "2526-012467",
+    "Material Name": "SAMPLE MATERIAL",
+    "Uom": "Nos",
+    "Lead T": "30",
+    "Shipment Date": "31-03-2026",
+    "Signal": "RED",
+    "Stock": "0",
+    "Qty": "100",
+    "PO Status": "Open",
+    "Adv. Status": "Pending",
+    "Supplier Po No": "SUP-PO-001",
+    "Supplier Date": "26-03-2026",
+    "Supplier Name": "ABC Supplier",
+    "Quantity": "100",
+    "Rate": "250.50"
+  },
+  {
+    "CRM no.": "2526-012468",
+    "Material Name": "CARBIDE END MILL DIA 16 X 100",
+    "Uom": "Nos",
+    "Lead T": "20",
+    "Shipment Date": "25-05-2026",
+    "Signal": "YELLOW",
+    "Stock": "4",
+    "Qty": "12",
+    "PO Status": "Open",
+    "Adv. Status": "Pending",
+    "Supplier Po No": "SUP-PO-002",
+    "Supplier Date": "10-05-2026",
+    "Supplier Name": "M/S SUPERB TOOLS",
+    "Quantity": "12",
+    "Rate": "1880"
+  },
+  {
+    "CRM no.": "2526-012469",
+    "Material Name": "HSS DRILL BIT DIA 8.5",
+    "Uom": "Nos",
+    "Lead T": "15",
+    "Shipment Date": "15-05-2026",
+    "Signal": "BLACK",
+    "Stock": "0",
+    "Qty": "150",
+    "PO Status": "Open",
+    "Adv. Status": "Pending",
+    "Supplier Po No": "SUP-PO-003",
+    "Supplier Date": "11-05-2026",
+    "Supplier Name": "M/S SUPERB TOOLS",
+    "Quantity": "150",
+    "Rate": "128"
+  }
+]

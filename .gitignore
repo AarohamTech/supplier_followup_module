@@ -1,0 +1,12 @@
+.env
+deploy/.env
+__pycache__/
+*.pyc
+.venv/
+node_modules/
+.next/
+out/
+*.log
+.DS_Store
+
+sfa.db
