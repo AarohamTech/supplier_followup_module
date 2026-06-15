@@ -27,9 +27,11 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..database import get_db
+from ..models.mail_template import MailTemplate
 from ..scheduler import apply_scheduler_settings
 from ..services import mail_engine_service, settings_service
 
@@ -48,6 +50,40 @@ class SchedulerIntervalsPayload(BaseModel):
 
 class FollowupIntervalsPayload(BaseModel):
     intervals: dict[str, int] = Field(default_factory=dict)
+
+
+class DraftRulePayload(BaseModel):
+    subject_template: str | None = Field(default=None, max_length=500)
+    body_template: str | None = None
+    active: bool | None = None
+    interval_hours: int | None = Field(default=None, ge=1)
+
+
+_DRAFT_STATUS_BY_TEMPLATE: dict[str, str] = {
+    "GREEN_PO_RELEASE": "PENDING_ACK",
+    "YELLOW_REMINDER": "REMINDER_DUE",
+    "RED_DAY1": "URGENT_FOLLOWUP",
+    "RED_DAY2": "STRONG_FOLLOWUP",
+    "BLACK_ESCALATION": "CRITICAL_ESCALATION",
+}
+
+_DRAFT_SIGNAL_ORDER = {"GREEN": 0, "YELLOW": 1, "RED": 2, "BLACK": 3}
+
+
+def _draft_rule_row(template: MailTemplate, intervals: dict[str, int]) -> dict:
+    status = _DRAFT_STATUS_BY_TEMPLATE.get(template.template_name)
+    return {
+        "id": template.id,
+        "template_name": template.template_name,
+        "signal": template.signal,
+        "day_no": template.day_no,
+        "followup_status": status,
+        "interval_hours": intervals.get(status) if status else None,
+        "subject_template": template.subject_template,
+        "body_template": template.body_template,
+        "active": template.active,
+        "updated_at": template.updated_at.isoformat() if template.updated_at else None,
+    }
 
 
 @router.get("/scheduler")
@@ -76,6 +112,52 @@ def update_followup_intervals(
 ) -> dict:
     updated = settings_service.set_followup_intervals(db, payload.intervals)
     return {"followup_intervals_hours": updated}
+
+
+@router.get("/draft-rules")
+def list_draft_rules(db: Session = Depends(get_db)) -> dict:
+    rows = db.scalars(
+        select(MailTemplate).where(
+            MailTemplate.template_name.in_(list(_DRAFT_STATUS_BY_TEMPLATE.keys())),
+        )
+    ).all()
+    intervals = settings_service.get_followup_intervals(db)
+    rules = [_draft_rule_row(row, intervals) for row in rows]
+    rules.sort(
+        key=lambda item: (
+            _DRAFT_SIGNAL_ORDER.get(str(item["signal"]).upper(), 99),
+            item["day_no"],
+            item["template_name"],
+        )
+    )
+    return {"rules": rules, "followup_intervals_hours": intervals}
+
+
+@router.put("/draft-rules/{template_id}")
+def update_draft_rule(
+    template_id: int,
+    payload: DraftRulePayload,
+    db: Session = Depends(get_db),
+) -> dict:
+    template = db.get(MailTemplate, template_id)
+    if template is None or template.template_name not in _DRAFT_STATUS_BY_TEMPLATE:
+        raise HTTPException(404, "Draft template not found")
+
+    if payload.subject_template is not None:
+        template.subject_template = payload.subject_template
+    if payload.body_template is not None:
+        template.body_template = payload.body_template
+    if payload.active is not None:
+        template.active = payload.active
+    db.commit()
+
+    status = _DRAFT_STATUS_BY_TEMPLATE.get(template.template_name)
+    intervals = settings_service.get_followup_intervals(db)
+    if status and payload.interval_hours is not None:
+        intervals = settings_service.set_followup_intervals(db, {status: payload.interval_hours})
+
+    db.refresh(template)
+    return {"rule": _draft_rule_row(template, intervals)}
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -496,6 +496,19 @@ export interface MailEngineSnapshot {
   scheduler_enabled: boolean;
 }
 
+export interface DraftRule {
+  id: number;
+  template_name: string;
+  signal: Signal | string;
+  day_no: number;
+  followup_status: string | null;
+  interval_hours: number | null;
+  subject_template: string;
+  body_template: string;
+  active: boolean;
+  updated_at: string | null;
+}
+
 export interface MailEngineHealth {
   ok: boolean;
   scheduler_running: boolean;

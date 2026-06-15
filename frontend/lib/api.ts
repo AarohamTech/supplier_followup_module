@@ -32,6 +32,7 @@ import type {
   SupplierMaterialCommitment,
   MailEngineSnapshot,
   MailEngineHealth,
+  DraftRule,
   CronJobRow,
   CronJobLog,
   CronJobRunResult,
@@ -290,6 +291,25 @@ export const api = {
     http<{ followup_intervals_hours: Record<string, number> }>(
       `/api/settings/followup`,
       { method: "PUT", body: JSON.stringify({ intervals }) },
+    ),
+
+  listDraftRules: () =>
+    http<{ rules: DraftRule[]; followup_intervals_hours: Record<string, number> }>(
+      `/api/settings/draft-rules`,
+    ),
+
+  updateDraftRule: (
+    id: number,
+    body: {
+      subject_template?: string;
+      body_template?: string;
+      active?: boolean;
+      interval_hours?: number;
+    },
+  ) =>
+    http<{ rule: DraftRule }>(
+      `/api/settings/draft-rules/${id}`,
+      { method: "PUT", body: JSON.stringify(body) },
     ),
 
   // ─── Mail Engine (SMTP/IMAP/Cron/Health) ───────────────────────────────

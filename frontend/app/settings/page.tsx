@@ -5,9 +5,11 @@ import { api } from "@/lib/api";
 import type {
   CronJobLog,
   CronJobRow,
+  DraftRule,
   MailEngineHealth,
   MailEngineSnapshot,
 } from "@/lib/types";
+import { signalClass } from "@/lib/format";
 
 type TestResult = {
   ok?: boolean;
@@ -62,6 +64,7 @@ export default function SettingsPage() {
   const [health, setHealth] = useState<MailEngineHealth | null>(null);
   const [cronJobs, setCronJobs] = useState<CronJobRow[]>([]);
   const [cronLogs, setCronLogs] = useState<CronJobLog[]>([]);
+  const [draftRules, setDraftRules] = useState<DraftRule[]>([]);
   const [scheduler, setScheduler] = useState<Record<string, number>>({});
   const [followup, setFollowup] = useState<Record<string, number>>({});
   const [message, setMessage] = useState<string | null>(null);
@@ -73,12 +76,13 @@ export default function SettingsPage() {
   const refreshAll = useCallback(async () => {
     setLoading(true);
     try {
-      const [snap, jobsResp, sch, logs, healthSnap] = await Promise.all([
+      const [snap, jobsResp, sch, logs, healthSnap, draftResp] = await Promise.all([
         api.getMailEngineSnapshot(),
         api.listCronJobs(),
         api.getSchedulerSettings(),
         api.getCronJobLogs({ limit: 20 }),
         api.getEngineHealth().catch(() => null),
+        api.listDraftRules(),
       ]);
       setSnapshot(snap);
       setCronJobs(jobsResp.jobs || []);
@@ -86,6 +90,7 @@ export default function SettingsPage() {
       setFollowup(sch.followup_intervals_hours || {});
       setCronLogs(logs.logs || []);
       setHealth(healthSnap);
+      setDraftRules(draftResp.rules || []);
     } catch (err) {
       setMessage((err as Error).message);
     } finally {
@@ -151,6 +156,26 @@ export default function SettingsPage() {
       const res = await api.updateFollowupIntervals(values);
       setFollowup(res.followup_intervals_hours);
       setMessage("Follow-up intervals saved.");
+    });
+  }
+
+  async function handleSaveDraftRule(rule: DraftRule) {
+    await runWithBusy(`save-draft-${rule.id}`, async () => {
+      const interval = Number(rule.interval_hours);
+      const result = await api.updateDraftRule(rule.id, {
+        subject_template: rule.subject_template,
+        body_template: rule.body_template,
+        active: rule.active,
+        interval_hours: Number.isFinite(interval) && interval >= 1 ? interval : undefined,
+      });
+      setDraftRules((rows) => rows.map((row) => (row.id === rule.id ? result.rule : row)));
+      if (result.rule.followup_status && result.rule.interval_hours) {
+        setFollowup((values) => ({
+          ...values,
+          [result.rule.followup_status as string]: result.rule.interval_hours as number,
+        }));
+      }
+      setMessage(`${rule.template_name} draft saved.`);
     });
   }
 
@@ -443,6 +468,123 @@ export default function SettingsPage() {
               )}
             </tbody>
           </table>
+        </div>
+      </div>
+
+      {/* Draft templates + signal intervals */}
+      <div className="card p-5 space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <div className="font-semibold text-sm">Signal Draft Settings</div>
+            <p className="text-xs text-brand-muted">
+              Edit the draft subject/body used for each signal and the time interval before the next follow-up.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={refreshAll}
+            disabled={loading}
+            className="text-xs px-2 py-1 rounded border border-brand-border bg-white"
+          >
+            Refresh
+          </button>
+        </div>
+        <div className="space-y-4">
+          {draftRules.map((rule) => {
+            const signal = String(rule.signal || "GREEN").toUpperCase();
+            const intervalLabel = rule.followup_status || "No interval rule";
+            return (
+              <div key={rule.id} className="rounded border border-brand-border p-4 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className={`px-2 py-0.5 rounded-full text-xs ring-1 ${signalClass[signal] || "bg-gray-100 text-brand-dark ring-gray-200"}`}>
+                      {signal}
+                    </span>
+                    <span className="text-sm font-medium">{rule.template_name}</span>
+                    {rule.day_no ? (
+                      <span className="text-xs text-brand-muted">Day {rule.day_no}</span>
+                    ) : null}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <label className="inline-flex items-center gap-2 text-xs text-brand-muted">
+                      <input
+                        type="checkbox"
+                        checked={rule.active}
+                        onChange={(e) =>
+                          setDraftRules((rows) =>
+                            rows.map((row) =>
+                              row.id === rule.id ? { ...row, active: e.target.checked } : row,
+                            ),
+                          )
+                        }
+                      />
+                      Active
+                    </label>
+                    <label className="flex items-center gap-2 text-xs text-brand-muted">
+                      <span>{intervalLabel}</span>
+                      <input
+                        type="number"
+                        min={1}
+                        value={rule.interval_hours ?? ""}
+                        onChange={(e) =>
+                          setDraftRules((rows) =>
+                            rows.map((row) =>
+                              row.id === rule.id
+                                ? { ...row, interval_hours: Number(e.target.value) }
+                                : row,
+                            ),
+                          )
+                        }
+                        className="border border-brand-border rounded px-2 py-1 w-20 text-xs"
+                      />
+                      <span>hours</span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => handleSaveDraftRule(rule)}
+                      disabled={busyKey === `save-draft-${rule.id}`}
+                      className="text-xs px-3 py-1.5 rounded bg-brand-fg text-white disabled:opacity-50"
+                    >
+                      {busyKey === `save-draft-${rule.id}` ? "Saving..." : "Save Draft"}
+                    </button>
+                  </div>
+                </div>
+                <label className="block text-xs text-brand-muted space-y-1">
+                  <span>Subject</span>
+                  <input
+                    type="text"
+                    value={rule.subject_template}
+                    onChange={(e) =>
+                      setDraftRules((rows) =>
+                        rows.map((row) =>
+                          row.id === rule.id ? { ...row, subject_template: e.target.value } : row,
+                        ),
+                      )
+                    }
+                    className="w-full border border-brand-border rounded px-2 py-1.5 text-sm text-brand-dark"
+                  />
+                </label>
+                <label className="block text-xs text-brand-muted space-y-1">
+                  <span>Draft Body</span>
+                  <textarea
+                    value={rule.body_template}
+                    onChange={(e) =>
+                      setDraftRules((rows) =>
+                        rows.map((row) =>
+                          row.id === rule.id ? { ...row, body_template: e.target.value } : row,
+                        ),
+                      )
+                    }
+                    rows={6}
+                    className="w-full border border-brand-border rounded px-2 py-1.5 text-sm text-brand-dark font-mono"
+                  />
+                </label>
+              </div>
+            );
+          })}
+          {draftRules.length === 0 && (
+            <div className="text-xs text-brand-muted">No signal draft templates found.</div>
+          )}
         </div>
       </div>
 
