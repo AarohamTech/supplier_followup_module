@@ -41,10 +41,28 @@
 - Verified: 35/35 tests pass; runtime check of Day 1/2/3 + BLACK auto-schedule + RED→GREEN clear;
   frontend `tsc` clean.
 
+**Session 2026-06-16 — round 4 (clear P2/P3 basics):**
+- ✅ #19 wrong-PO linkage — reply→PO match now requires a standalone token (longest PO wins).
+- ✅ #25 schema-evolve now works on **Postgres too** (auto-adds missing columns on startup;
+  no more manual ALTERs) and the NOT-NULL clause bug is fixed. Verified live on Supabase.
+- ✅ #39 customer-mail list N+1 removed (one grouped count query).
+- ✅ #43 `DB_SCHEMA` is validated (simple identifier only).
+- ✅ #45 demo procurement rows only seed when `DEBUG` is on (never auto-injected to prod).
+- ✅ #30 store: supplier-load error no longer clobbers the main data error.
+- ✅ #32 customer workspace: selection re-points when the selected mail leaves the list.
+- ✅ #33 customer workspace: creating a task refreshes the list (tab counts update).
+- Verified: 35/35 tests; Postgres schema-evolve clean; frontend `tsc` clean.
+
 **⏳ Still open — the bigger feature:** #14 customer reply (let a person actually email a customer
 back from the app, incl. approving the auto-reply drafts from #5). Worth planning as its own step.
 
-**Not started yet:** the remaining P2/P3 items below (#16–#39, #42–#45).
+**Not started yet (remaining backlog):** #11 (IMAP PEEK — needs a live mailbox to test),
+#16 timezone consistency, #17 intake identity*, #18 PO dedup per-type, #20 health metric*,
+#21 unread reconcile, #22 retry backoff, #23 customer-mail status stuck, #24 classifier*,
+#26 last-admin race, #27 password-72-byte, #28 CORS creds, #29 dashboard page-only insights,
+#31 reply-table errors swallowed, #34 POP3 high-water, #35 (dead code — non-issue), #36 unknown
+signal→GREEN*, #37 date format, #38 status_change no-op, #42 receivedQty*, #44 JWT aud/iss.
+_(* = needs a quick product decision.)_
 
 ---
 
@@ -74,21 +92,21 @@ back from the app, incl. approving the auto-reply drafts from #5). Worth plannin
 - [ ] **16. Timezone inconsistency (`date.today()`/local vs `utcnow()`).** `followup_engine.is_overdue`, the procurement dashboard "overdue/due today", and the dedup windows (`po_followup_service.py:345`, `po_followup_mail_service.py:174`) use local `date.today()` while everything else uses `utcnow()` → off-by-a-day flags and duplicate/missed mails near midnight. _Fix: standardize on UTC dates._
 - [ ] **17. Intake identity vs grouping mismatch.** Unique key is `(crm_no, supplier_po_no, material_name)` (no supplier_name) but grouping/mailing buckets on `(supplier_name, supplier_po_no)`; `supplier_name` is updatable in place, so a re-import silently moves a material between groups with no history. _Fix: make intake and grouping agree on identity._
 - [ ] **18. PO dedup is per-`mail_type` → escalation re-mails same day.** When a group's signal flips GREEN→RED the `mail_type` changes, so the "already mailed today" guard misses and a 2nd mail goes out. _Fix: dedup on supplier+PO+window only (drop mail_type), or document the intent._
-- [ ] **19. Substring PO matching links replies to the wrong PO.** `communication_message_service.find_procurement_record` matches `po in subject+body`; a short/prefix PO matches inside a longer one. _Fix: word-boundary/anchored match._
+- [x] **19. Substring PO matching links replies to the wrong PO.** ✅ FIXED (token match) `communication_message_service.find_procurement_record` matches `po in subject+body`; a short/prefix PO matches inside a longer one. _Fix: word-boundary/anchored match._
 - [ ] **20. Supplier "health %" is fake; "last subject" is wrong.** `communication_hub._build_supplier_entry` maps signal→one of 4 hardcoded numbers, and `last_subject` takes the newest `MailHistory` (usually our own draft) ignoring inbound `communication_messages`. _Fix: compute real aggregates; derive last activity from newest of mail history + inbound messages._
 - [ ] **21. Unread badge totals don't reconcile.** Dashboard counts all unread INCOMING globally; per-PO badges only count those linked to a record/PO. Orphan unread replies inflate the global badge and can't be cleared. _Fix: always link inbound on ingest and/or add an "unmatched" bucket._
 - [ ] **22. Send retries have no backoff.** `mail_send_worker.py:228-251` leaves the row `READY`; the next ~5-min tick retries immediately, burning all 3 retries in ~15 min then `FAILED` forever. _Fix: add `next_retry_at` backoff._
 - [ ] **23. Customer-mail status/links get stuck.** `customer_mail_service.create_task_from_mail` overwrites `linked_task_id` with the latest task and only bumps OPEN→IN_PROGRESS; `resolve_mail` ignores still-open tasks. _Fix: rely on the `customer_mail_id` reverse link; gate resolve on `open_task_count`._
 - [ ] **24. Classifier strands supplier-ish mail in the customer inbox.** `mail_fetch_worker._classify_customer_mail` can stamp `SUPPLIER` (on "supplier"/"vendor"/" po ") for mail that reached the customer inbox precisely because no supplier matched. _Fix: drop those keywords here, or auto-link instead of labeling._
-- [ ] **25. `schema_evolve` strips NOT NULL unconditionally + auto-DDL on every startup.** `core/schema_evolve.py:72` ternary is a no-op (always `""`), so evolved columns are always nullable; `main.py` runs `create_all`+`ALTER` every boot with errors swallowed, and Postgres `create_all` won't add new columns at all (silent drift). _Fix: move to Alembic migrations; fix the NOT NULL clause._
+- [x] **25. `schema_evolve` strips NOT NULL unconditionally + auto-DDL on every startup.** ✅ FIXED (Postgres-aware + NOT NULL clause; Alembic still optional) `core/schema_evolve.py:72` ternary is a no-op (always `""`), so evolved columns are always nullable; `main.py` runs `create_all`+`ALTER` every boot with errors swallowed, and Postgres `create_all` won't add new columns at all (silent drift). _Fix: move to Alembic migrations; fix the NOT NULL clause._
 - [ ] **26. Last-admin guard race + self-demote/deactivate allowed.** `user_service.update_user` last-admin check is TOCTOU (no row lock) and `PATCH /users/{id}` lets an admin demote/deactivate themselves (only self-*delete* is blocked) → lockout. _Fix: `SELECT … FOR UPDATE`; block self-demotion/deactivation._
 - [ ] **27. Password silently truncated to 72 bytes (mid-codepoint).** `core/security.py:20` slices UTF-8 bytes; two long/Unicode passwords sharing a 72-byte prefix authenticate interchangeably. _Fix: SHA-256 pre-hash then bcrypt the digest._
 - [ ] **28. CORS `allow_credentials=True` is needless and risky with bearer tokens.** `main.py:69`; dangerous if `CORS_ORIGINS` is ever set to `*`. _Fix: `allow_credentials=False`; reject `*`._
 - [ ] **29. Dashboard insights analyze only the current 25-row page.** `dashboard/AIInsights.tsx` + `PoTable.tsx` compute "top supplier"/grouped POs from `list.items` (one page) while showing full-set totals → wrong insights, PO materials split across pages. _Fix: drive from a backend aggregate endpoint._
-- [ ] **30. StoreBootstrap shared-error race + mid-load 401 bounce.** `store.ts` `refresh`/`loadSuppliers` overwrite one `error` field concurrently; a token expiring between `me()` and these calls triggers the global redirect. _Fix: separate error state; guard fetches on a confirmed session._
+- [x] **30. StoreBootstrap shared-error race + mid-load 401 bounce.** ✅ FIXED (separate supplierError; 401 bounce is inherent to auth) `store.ts` `refresh`/`loadSuppliers` overwrite one `error` field concurrently; a token expiring between `me()` and these calls triggers the global redirect. _Fix: separate error state; guard fetches on a confirmed session._
 - [ ] **31. Inbound reply-table failures are swallowed; remark-only replies aren't audited.** `mail_fetch_worker.py:220` bare-excepts `apply_material_reply_table`; `status_change_service.apply_parsed_reply` returns `None` for remark-only changes (no `StatusChangeLog`). _Fix: record a parse-error flag; log remark-only updates._
-- [ ] **32. Selected customer mail can vanish but effects keep fetching.** `CustomerWorkspace.tsx:107` only auto-selects when `selectedId` is null; if the selected mail leaves the filtered list, `selected` becomes null while task/context effects keep firing for a hidden id. _Fix: reset `selectedId` when it's no longer in `items`._
-- [ ] **33. Task create doesn't refresh the mail list → stale tab counts.** `CustomerWorkspace` bumps `taskReloadKey` but not `reloadKey`, so `open_task_count`-based buckets/counts go stale. _Fix: also refresh the list._
+- [x] **32. Selected customer mail can vanish but effects keep fetching.** ✅ FIXED `CustomerWorkspace.tsx:107` only auto-selects when `selectedId` is null; if the selected mail leaves the filtered list, `selected` becomes null while task/context effects keep firing for a hidden id. _Fix: reset `selectedId` when it's no longer in `items`._
+- [x] **33. Task create doesn't refresh the mail list → stale tab counts.** ✅ FIXED `CustomerWorkspace` bumps `taskReloadKey` but not `reloadKey`, so `open_task_count`-based buckets/counts go stale. _Fix: also refresh the list._
 
 ## P3 — Low
 
@@ -97,13 +115,13 @@ back from the app, incl. approving the auto-reply drafts from #5). Worth plannin
 - [ ] **36. `highest_signal` coerces unknown signals to GREEN** — bad ERP data makes an at-risk PO look healthy. `po_followup_service.py:41`.
 - [ ] **37. Date-format inconsistency** — PO-group mails render ISO dates while single-record mails use `dd-mm-yyyy`. `mail_template_service.py:221`.
 - [ ] **38. `status_change_runner` is a no-op dead query.** `scheduler/jobs.py:42`.
-- [ ] **39. N+1 in customer-mail list** — 2 count queries per mail × up to 500. `customer_mails.py:47`.
+- [x] **39. N+1 in customer-mail list** ✅ FIXED — 2 count queries per mail × up to 500. `customer_mails.py:47`.
 - [x] **40. `LocalReply` key uses `Date.now()`** — duplicate React keys on rapid sends. `CustomerWorkspace.tsx:221`. ✅ FIXED
 - [x] **41. Auth UX nits** — `/login` flashes for authed users; the 401 handler throws a noisy toast during redirect. `AppShell.tsx`, `api.ts:64`. ✅ FIXED (login flash + 401 toast; full-reload redirect left as-is)
 - [ ] **42. `receivedQty` hardcoded `null`** — the "Received Qty" card always shows "—". `CustomerWorkspace.tsx:155`.
-- [ ] **43. `DB_SCHEMA` search_path is unquoted/unvalidated.** `database.py:16`. _Fix: validate `^[a-z_][a-z0-9_]*$`._
+- [x] **43. `DB_SCHEMA` search_path is unquoted/unvalidated.** ✅ FIXED (validated at config load)
 - [ ] **44. JWT has no `aud`/`iss` and 8h non-revocable tokens.** `core/security.py`. _Fix: add claims; consider refresh/jti deny-list._
-- [ ] **45. `seed_procurement` re-injects sample POs on every startup.** `seed.py:212`. _Fix: gate behind `DEBUG`/`SEED_SAMPLE_DATA`._
+- [x] **45. `seed_procurement` re-injects sample POs on every startup.** ✅ FIXED (gated behind DEBUG)
 
 ---
 

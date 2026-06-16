@@ -65,6 +65,19 @@ class Settings(BaseSettings):
     AUTO_REPLY_INTERVAL_MINUTES: int = Field(...)
     MAIL_SEND_INTERVAL_MINUTES: int = Field(...)
 
+    @field_validator("DB_SCHEMA", mode="before")
+    @classmethod
+    def validate_db_schema(cls, value: Any) -> Any:
+        if value is None:
+            return None
+        text = str(value).strip()
+        if not text:
+            return None
+        import re
+        if not re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", text):
+            raise ValueError("DB_SCHEMA must be a simple identifier (letters, digits, underscore)")
+        return text
+
     @field_validator("MAIL_FETCH_PROTOCOL", mode="before")
     @classmethod
     def parse_mail_fetch_protocol(cls, value: Any) -> Any:

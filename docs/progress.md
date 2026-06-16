@@ -165,8 +165,11 @@ npm run dev
 - Round 3 fixes committed (engine decisions): #6 RED day counts from when it went late
   (`red_since` column + Supabase ALTER); #7 critical/AI orders auto-chased (no more freeze);
   #9 follow-up count once per email; #15 "Save & Notify" removed.
-- **Next:** only #14 (customer reply feature) remains from the decision list — plan it as its own
-  step. Then the P2/P3 backlog (#16–#39, #42–#45) in REVIEW_FINDINGS.md.
+- Round 4 fixes committed (clear P2/P3 basics): #19 wrong-PO match, #25 schema-evolve now
+  Postgres-aware (auto-adds columns), #39 N+1, #43 DB_SCHEMA validation, #45 demo data gated to
+  DEBUG, #30 store error split, #32/#33 customer-workspace selection/refresh.
+- **Next:** plan #14 (customer reply feature). Remaining P2/P3 backlog tracked in REVIEW_FINDINGS.md
+  (several need a quick product decision — marked with *).
 
 ### Follow-ups / not in this phase
 - Tighten per-endpoint RBAC to the full matrix (currently: auth everywhere + admin on user

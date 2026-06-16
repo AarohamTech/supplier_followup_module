@@ -1,14 +1,14 @@
-"""Lightweight online schema evolution for SQLite.
+"""Lightweight online schema evolution for SQLite and PostgreSQL.
 
 `Base.metadata.create_all()` only creates *missing* tables — it never adds
 columns to existing ones. This module bridges the gap by inspecting the
 live schema and issuing safe `ALTER TABLE ... ADD COLUMN` statements for
-columns that are declared on the SQLAlchemy model but missing from disk.
+columns that are declared on the SQLAlchemy model but missing from the DB.
 
 This is intentionally narrow:
   - never drops or renames columns
   - never changes column types
-  - only used for SQLite (no-op for other dialects)
+  - only ever ADDs missing columns (no-op for other dialects)
 """
 from __future__ import annotations
 
@@ -21,9 +21,9 @@ from sqlalchemy.engine import Engine
 log = logging.getLogger(__name__)
 
 
-def _column_ddl_type(column: Column) -> str:
+def _column_ddl_type(column: Column, engine: Engine) -> str:
     try:
-        return column.type.compile()
+        return column.type.compile(dialect=engine.dialect)
     except Exception:  # noqa: BLE001
         return "TEXT"
 
@@ -47,7 +47,8 @@ def ensure_columns(engine: Engine, tables: Iterable | None = None) -> list[str]:
     Returns a list of human-readable change descriptions for logging.
     Only operates on SQLite — silently no-ops elsewhere.
     """
-    if not engine.url.get_backend_name().startswith("sqlite"):
+    backend = engine.url.get_backend_name()
+    if not (backend.startswith("sqlite") or backend.startswith("postgresql")):
         return []
 
     from ..database import Base
@@ -65,14 +66,14 @@ def ensure_columns(engine: Engine, tables: Iterable | None = None) -> list[str]:
             for col in table.columns:
                 if col.name in existing_cols:
                     continue
-                ddl_type = _column_ddl_type(col)
+                ddl_type = _column_ddl_type(col, engine)
                 default = _default_clause(col)
-                # SQLite ALTER TABLE ADD COLUMN cannot add NOT NULL without a default
-                # so we relax the constraint here when no default is available.
-                nullable = "" if col.nullable or default else ""
+                # ADD COLUMN can only be NOT NULL when a default exists to backfill
+                # existing rows; otherwise add it nullable.
+                not_null = " NOT NULL" if (not col.nullable and default) else ""
                 stmt = (
                     f"ALTER TABLE {table.name} ADD COLUMN {col.name} {ddl_type}"
-                    f"{default}{nullable}"
+                    f"{default}{not_null}"
                 )
                 try:
                     conn.execute(text(stmt))

@@ -229,12 +229,18 @@ def run() -> dict:
     init_schema()
     db = SessionLocal()
     try:
-        return {
+        result = {
             "admin_seeded": seed_admin(db),
             "templates_added": seed_templates(db),
-            "procurement_sync": seed_procurement(db),
             "supplier_emails_added": seed_supplier_emails(db),
         }
+        # Demo procurement rows are only seeded in DEBUG/dev — never auto-injected
+        # into a production database.
+        if settings.DEBUG:
+            result["procurement_sync"] = seed_procurement(db)
+        else:
+            result["procurement_sync"] = "skipped (DEBUG off)"
+        return result
     finally:
         db.close()
 

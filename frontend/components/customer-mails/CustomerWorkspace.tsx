@@ -105,9 +105,12 @@ export default function CustomerWorkspace() {
 
   const items = useMemo(() => data?.items ?? [], [data]);
 
-  // Auto-select first mail without needing selectedId in deps (no loop).
+  // Auto-select the first mail; also re-point if the current selection has
+  // dropped out of the list (e.g. after a filter/search or a status change).
   useEffect(() => {
-    setSelectedId((prev) => prev ?? items[0]?.id ?? null);
+    setSelectedId((prev) =>
+      prev != null && items.some((m) => m.id === prev) ? prev : items[0]?.id ?? null,
+    );
   }, [items]);
 
   const selected = useMemo(
@@ -259,6 +262,7 @@ export default function CustomerWorkspace() {
         .then(() => {
           setTaskModalOpen(false);
           setTaskReloadKey((k) => k + 1);
+          setReloadKey((k) => k + 1); // refresh list so tab counts/buckets update
           setToast("Task created.");
         })
         .catch((err) => setToast((err as Error).message))
@@ -280,6 +284,7 @@ export default function CustomerWorkspace() {
         .createTaskForCustomerMail(selectedId, { title: titles[kind], priority: "P2" })
         .then(() => {
           setTaskReloadKey((k) => k + 1);
+          setReloadKey((k) => k + 1); // refresh list so tab counts/buckets update
           setToast(`${titles[kind]} created.`);
         })
         .catch((err) => setToast((err as Error).message))

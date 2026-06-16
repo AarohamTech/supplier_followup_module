@@ -6,6 +6,7 @@ business invariants (linkage, status vocab, dedupe) stay in one place.
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime
 from typing import Any, Optional
 
@@ -73,8 +74,12 @@ def find_procurement_record(
         select(ProcurementRecord.supplier_po_no).distinct()
     ).all()
     haystack_upper = haystack.upper()
-    for po in candidates:
-        if po and po.upper() in haystack_upper:
+    # Longest PO first so a longer PO wins over a shorter one it contains, and
+    # require a standalone-token match (not embedded inside a longer string) to
+    # avoid linking a reply to the wrong PO (e.g. "PO-12" inside "PO-1234").
+    for po in sorted((p for p in candidates if p), key=len, reverse=True):
+        pattern = r"(?<![A-Za-z0-9])" + re.escape(po.upper()) + r"(?![A-Za-z0-9])"
+        if re.search(pattern, haystack_upper):
             return db.scalar(
                 select(ProcurementRecord)
                 .where(ProcurementRecord.supplier_po_no == po)

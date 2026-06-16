@@ -14,6 +14,7 @@ interface State {
   filters: ProcurementFilters;
   loading: boolean;
   error?: string;
+  supplierError?: string;
   selectedRecordId?: number;
   selectedPoKey?: { supplier_name: string; supplier_po_no: string };
 
@@ -63,7 +64,9 @@ export const useStore = create<State>((set, get) => ({
       ]);
       set({ supplierMasters, suppliers });
     } catch (e: any) {
-      set({ error: e.message });
+      // Keep this separate from `error` so a supplier-load failure doesn't
+      // overwrite a procurement-data error (they run concurrently).
+      set({ supplierError: e.message });
     }
   },
 }));

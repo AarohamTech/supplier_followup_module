@@ -52,6 +52,24 @@ def _serialize_mail(db: Session, row: CustomerMail) -> CustomerMailOut:
     return base
 
 
+def _task_counts_bulk(db: Session, mail_ids: list[int]) -> dict[int, tuple[int, int]]:
+    """One grouped query for (total, open) task counts across many mails."""
+    from sqlalchemy import case, func, select  # local import to keep top clean
+
+    if not mail_ids:
+        return {}
+    rows = db.execute(
+        select(
+            CommunicationTask.customer_mail_id,
+            func.count(CommunicationTask.id),
+            func.sum(case((CommunicationTask.status != "DONE", 1), else_=0)),
+        )
+        .where(CommunicationTask.customer_mail_id.in_(mail_ids))
+        .group_by(CommunicationTask.customer_mail_id)
+    ).all()
+    return {cid: (int(total or 0), int(open_ or 0)) for cid, total, open_ in rows}
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Schemas
 # ─────────────────────────────────────────────────────────────────────────────
@@ -130,9 +148,15 @@ def list_customer_mails(
         limit=limit,
         offset=offset,
     )
+    counts = _task_counts_bulk(db, [row.id for row in rows])
+    items: list[CustomerMailOut] = []
+    for row in rows:
+        base = CustomerMailOut.model_validate(row)
+        base.task_count, base.open_task_count = counts.get(row.id, (0, 0))
+        items.append(base)
     return CustomerMailListResponse(
         total=total,
-        items=[_serialize_mail(db, row) for row in rows],
+        items=items,
         stats=customer_mail_service.stats(db),
         allowed_types=list(CUSTOMER_MAIL_TYPES),
         allowed_statuses=list(CUSTOMER_MAIL_STATUSES),
