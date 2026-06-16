@@ -66,6 +66,8 @@ async function http<T>(path: string, init?: RequestInit): Promise<T> {
     setToken(null);
     if (typeof window !== "undefined" && window.location.pathname !== LOGIN_PATH) {
       window.location.href = LOGIN_PATH;
+      // Suppress the error toast while the redirect navigation is in flight.
+      return new Promise<T>(() => {});
     }
   }
   if (!res.ok) {

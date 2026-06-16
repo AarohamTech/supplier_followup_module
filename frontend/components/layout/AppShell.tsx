@@ -40,7 +40,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   if (loading) return <FullScreen>Loading…</FullScreen>;
 
   // Login (and any future public pages) render without the app chrome.
-  if (isPublic) return <>{children}</>;
+  // If already authenticated, don't flash the login form while redirecting home.
+  if (isPublic) {
+    if (user) return <FullScreen>Redirecting…</FullScreen>;
+    return <>{children}</>;
+  }
 
   // Not authenticated on a protected route → show nothing while redirecting.
   if (!user) return <FullScreen>Redirecting to sign in…</FullScreen>;

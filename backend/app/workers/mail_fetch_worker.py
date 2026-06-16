@@ -170,6 +170,9 @@ def _process_one(
                 customer_name=parseaddr(from_header)[0] or sender_email,
                 status="OPEN",
                 priority="P2",
+                # Link to the related order when a PO/CRM number was parsed, so the
+                # customer mail shows its order context instead of being orphaned.
+                linked_supplier_po_no=parsed.get("supplier_po_no"),
                 message_uid=message_id,
                 raw_payload={"headers": dict(parsed_msg.items())},
             )

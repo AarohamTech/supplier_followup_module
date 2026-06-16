@@ -153,6 +153,16 @@ Permission matrix (target):
 npm run dev
 ```
 
+### Phase 3 — Logic-gap review + fixes _(in progress, 2026-06-16)_
+- Ran a full review → **45 findings** in [REVIEW_FINDINGS.md](REVIEW_FINDINGS.md) (the live backlog/checklist).
+- Round 1 fixes committed (clear-cut, no decisions): #1 escape import (PO mail was fully
+  broken — restored), #8 duplicate-send guard, #10 reuse-of-failed-drafts, #12 escalation KPI,
+  #13 customer-mail→PO link, #40 reply key, #41 login flash/401 toast.
+- Verified: 35/35 backend tests pass; frontend `tsc` clean.
+- **Next:** decisions pending on #2 RBAC, #3 webhook auth, #4 default secrets, #5 auto-reply
+  approval, #6 RED day anchor, #7 BLACK/AI re-follow-up, #9 followup_count, #14 customer reply,
+  #15 Save&Notify. See REVIEW_FINDINGS "Status / Work Log".
+
 ### Follow-ups / not in this phase
 - Tighten per-endpoint RBAC to the full matrix (currently: auth everywhere + admin on user
   mgmt + manager+ on send/escalate & settings writes; other mutations are auth-only).

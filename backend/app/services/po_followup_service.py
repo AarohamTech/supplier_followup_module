@@ -349,6 +349,9 @@ def find_today_draft(
         .where(
             MailHistory.supplier_po_no == supplier_po_no.strip(),
             MailHistory.mail_type == mail_type,
+            # Only reuse a live draft/sent mail — never a FAILED/CANCELLED one,
+            # so regenerating after a failure produces a fresh mail.
+            MailHistory.sent_status.in_(["READY", "SENT"]),
             MailHistory.created_at >= midnight,
             MailHistory.created_at < tomorrow,
         )

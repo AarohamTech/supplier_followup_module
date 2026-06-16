@@ -4,6 +4,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { X } from "lucide-react";
@@ -80,6 +81,7 @@ export default function CustomerWorkspace() {
   const [taskModalOpen, setTaskModalOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const replyIdRef = useRef(0); // monotonic local-reply id (avoids Date.now() key collisions)
 
   // ── Fetch list (debounced search only; tabs group client-side) ───────────
   useEffect(() => {
@@ -218,7 +220,7 @@ export default function CustomerWorkspace() {
     (text: string) => {
       if (selectedId == null) return;
       setSending(true);
-      const reply: LocalReply = { id: Date.now(), text, at: new Date().toISOString() };
+      const reply: LocalReply = { id: (replyIdRef.current += 1), text, at: new Date().toISOString() };
       setLocalReplies((prev) => ({
         ...prev,
         [selectedId]: [...(prev[selectedId] ?? []), reply],

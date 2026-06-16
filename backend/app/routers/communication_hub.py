@@ -1020,6 +1020,7 @@ def escalate(
         linked_mail_id=history.id,
         title=f"Escalation: PO #{rec.supplier_po_no} — {rec.material_name}",
         description="Auto-escalation triggered from Communication Hub.",
+        task_source="ESCALATION",
         priority="P0",
         status="TODO",
         signal="BLACK",
@@ -1057,18 +1058,13 @@ def send_mail_now(
     if history is None:
         raise HTTPException(404, "MailHistory not found")
 
-    # Ensure a READY OUTGOING message exists for this mail history.
-    existing = db.scalar(
-        select(CommunicationMessage).where(
-            CommunicationMessage.direction == "OUTGOING",
-            CommunicationMessage.status.in_(["READY", "SENT"]),
-        )
-    )
+    # Ensure an OUTGOING message exists for this mail history. Match across both
+    # READY and SENT so a mail that already went out is never re-queued/re-sent.
     matched_existing = None
     for row in db.scalars(
         select(CommunicationMessage).where(
             CommunicationMessage.direction == "OUTGOING",
-            CommunicationMessage.status == "READY",
+            CommunicationMessage.status.in_(["READY", "SENT"]),
         )
     ).all():
         payload = row.raw_payload if isinstance(row.raw_payload, dict) else {}
