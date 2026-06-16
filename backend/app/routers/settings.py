@@ -30,12 +30,17 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from ..core.deps import require_manager
 from ..database import get_db
 from ..models.mail_template import MailTemplate
 from ..scheduler import apply_scheduler_settings
 from ..services import mail_engine_service, settings_service
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
+
+# Reads are available to any authenticated user; every write/control action
+# below is gated to manager+ via this dependency list.
+_MGR = [Depends(require_manager)]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -94,7 +99,7 @@ def get_scheduler_settings(db: Session = Depends(get_db)) -> dict:
     }
 
 
-@router.put("/scheduler")
+@router.put("/scheduler", dependencies=_MGR)
 def update_scheduler_intervals(
     payload: SchedulerIntervalsPayload,
     db: Session = Depends(get_db),
@@ -105,7 +110,7 @@ def update_scheduler_intervals(
     return {"scheduler_intervals_minutes": updated}
 
 
-@router.put("/followup")
+@router.put("/followup", dependencies=_MGR)
 def update_followup_intervals(
     payload: FollowupIntervalsPayload,
     db: Session = Depends(get_db),
@@ -133,7 +138,7 @@ def list_draft_rules(db: Session = Depends(get_db)) -> dict:
     return {"rules": rules, "followup_intervals_hours": intervals}
 
 
-@router.put("/draft-rules/{template_id}")
+@router.put("/draft-rules/{template_id}", dependencies=_MGR)
 def update_draft_rule(
     template_id: int,
     payload: DraftRulePayload,
@@ -191,7 +196,7 @@ def list_cron_jobs(db: Session = Depends(get_db)) -> dict:
     return {"jobs": mail_engine_service.list_cron_jobs(db)}
 
 
-@router.put("/cron-jobs/{job_name}")
+@router.put("/cron-jobs/{job_name}", dependencies=_MGR)
 def update_cron_job(
     job_name: str,
     payload: CronJobPayload,
@@ -210,7 +215,7 @@ def update_cron_job(
     return updated
 
 
-@router.post("/cron-jobs/{job_name}/run")
+@router.post("/cron-jobs/{job_name}/run", dependencies=_MGR)
 def run_cron_job_now(job_name: str) -> dict:
     result = mail_engine_service.run_cron_job_now(job_name)
     if result.get("status") == "ERROR" and "Unknown job" in (result.get("message") or ""):
@@ -218,7 +223,7 @@ def run_cron_job_now(job_name: str) -> dict:
     return result
 
 
-@router.post("/cron-jobs/run-all")
+@router.post("/cron-jobs/run-all", dependencies=_MGR)
 def run_all_cron_jobs(db: Session = Depends(get_db)) -> dict:
     return mail_engine_service.run_all_jobs(db)
 
@@ -235,17 +240,17 @@ def cron_job_logs(
 # ─────────────────────────────────────────────────────────────────────────────
 # Engine lifecycle + consolidated health
 # ─────────────────────────────────────────────────────────────────────────────
-@router.post("/engine/start")
+@router.post("/engine/start", dependencies=_MGR)
 def engine_start() -> dict:
     return mail_engine_service.start_engine()
 
 
-@router.post("/engine/stop")
+@router.post("/engine/stop", dependencies=_MGR)
 def engine_stop() -> dict:
     return mail_engine_service.stop_engine()
 
 
-@router.post("/engine/restart")
+@router.post("/engine/restart", dependencies=_MGR)
 def engine_restart() -> dict:
     return mail_engine_service.restart_engine()
 

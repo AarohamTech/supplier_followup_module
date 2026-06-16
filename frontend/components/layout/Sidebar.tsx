@@ -11,10 +11,20 @@ import {
   Settings,
   Inbox,
   ListChecks,
+  ShieldCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/lib/auth";
+import type { Role } from "@/lib/types";
 
-const items = [
+type NavItem = {
+  href: string;
+  label: string;
+  icon: typeof LayoutDashboard;
+  minRole?: Role; // omitted = visible to any authenticated user (viewer+)
+};
+
+const items: NavItem[] = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/po-followups", label: "PO Follow-ups", icon: FileSpreadsheet },
   { href: "/suppliers", label: "Supplier Master", icon: Users },
@@ -23,15 +33,19 @@ const items = [
   { href: "/customer-mails", label: "Customer Mails", icon: Inbox },
   { href: "/tasks", label: "Tasks", icon: ListChecks },
   { href: "/reports", label: "Reports", icon: BarChart3 },
-  { href: "/settings", label: "Settings", icon: Settings },
+  { href: "/settings", label: "Settings", icon: Settings, minRole: "manager" },
+  { href: "/admin/users", label: "Users", icon: ShieldCheck, minRole: "admin" },
 ];
 
 export default function Sidebar() {
   const path = usePathname();
+  const { hasRole } = useAuth();
+  const visible = items.filter((it) => !it.minRole || hasRole(it.minRole));
+
   return (
     <aside className="hidden md:block w-56 border-r border-brand-border bg-white">
       <nav className="p-3 space-y-1 sticky top-[64px]">
-        {items.map((it) => {
+        {visible.map((it) => {
           const active = path === it.href;
           const Icon = it.icon;
           return (

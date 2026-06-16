@@ -17,6 +17,7 @@ export interface ProcurementRecord {
   supplier_name?: string | null;
   quantity?: number | null;
   rate?: number | null;
+  po_no?: string | null; // deprecated source column, still referenced by some views
 
   followup_status: string;
   mail_status: string;
@@ -645,4 +646,38 @@ export interface CustomerMailMetaOptions {
   types: string[];
   statuses: string[];
   priorities: string[];
+}
+
+// ─── Auth / Users ───────────────────────────────────────────────────────────
+export type Role = "admin" | "manager" | "user" | "viewer";
+
+export interface AuthUser {
+  id: number;
+  email: string;
+  full_name: string | null;
+  role: Role;
+  is_active: boolean;
+  last_login_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface LoginResponse {
+  access_token: string;
+  token_type: string;
+  expires_in: number;
+  user: AuthUser;
+}
+
+export interface UserCreatePayload {
+  email: string;
+  password: string;
+  full_name?: string | null;
+  role?: Role;
+}
+
+export interface UserUpdatePayload {
+  full_name?: string | null;
+  role?: Role;
+  is_active?: boolean;
 }

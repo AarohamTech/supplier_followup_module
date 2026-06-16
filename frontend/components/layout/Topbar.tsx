@@ -1,12 +1,21 @@
 "use client";
 
-import { Bell, Menu } from "lucide-react";
+import { Bell, LogOut, Menu } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import { api } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
+
+const ROLE_LABEL: Record<string, string> = {
+  admin: "Administrator",
+  manager: "Manager",
+  user: "User",
+  viewer: "Viewer",
+};
 
 export default function Topbar() {
+  const { user, logout } = useAuth();
   const [unread, setUnread] = useState<number>(0);
 
   useEffect(() => {
@@ -28,6 +37,8 @@ export default function Topbar() {
   }, []);
 
   const display = unread > 99 ? "99+" : String(unread);
+  const name = user?.full_name || user?.email || "User";
+  const initial = name.charAt(0).toUpperCase();
 
   return (
     <header className="sticky top-0 z-20 bg-white border-b border-brand-border">
@@ -52,10 +63,21 @@ export default function Topbar() {
         </Link>
         <div className="flex items-center gap-3">
           <div className="text-right">
-            <div className="text-sm font-medium">Rajesh Kumar</div>
-            <div className="text-[10px] uppercase text-brand-muted tracking-wider">Senior Procurement Mgr</div>
+            <div className="text-sm font-medium">{name}</div>
+            <div className="text-[10px] uppercase text-brand-muted tracking-wider">
+              {ROLE_LABEL[user?.role ?? ""] ?? user?.role}
+            </div>
           </div>
-          <div className="h-9 w-9 rounded-full bg-gray-200" />
+          <div className="h-9 w-9 rounded-full bg-red-50 text-signal-red flex items-center justify-center text-sm font-semibold">
+            {initial}
+          </div>
+          <button
+            onClick={logout}
+            title="Sign out"
+            className="p-2 rounded hover:bg-gray-100 text-brand-muted hover:text-signal-red"
+          >
+            <LogOut size={18} />
+          </button>
         </div>
       </div>
     </header>

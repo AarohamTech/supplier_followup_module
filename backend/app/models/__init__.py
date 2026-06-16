@@ -12,6 +12,7 @@ from .supplier import SupplierMaster
 from .supplier_email import SupplierEmail
 from .supplier_material_commitment import SupplierMaterialCommitment
 from .task_collaboration import TaskActivityLog, TaskComment
+from .user import User
 
 __all__ = [
     "AppSetting",
@@ -30,4 +31,5 @@ __all__ = [
     "SupplierMaterialCommitment",
     "TaskActivityLog",
     "TaskComment",
+    "User",
 ]

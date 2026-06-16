@@ -16,11 +16,20 @@ class Settings(BaseSettings):
     DEBUG: bool = Field(...)
 
     DATABASE_URL: str = Field(...)
+    # Optional dedicated Postgres schema to isolate this app's tables from
+    # anything else living in the same database (e.g. a shared Supabase project).
+    # Leave empty for SQLite or to use the default `public` schema.
+    DB_SCHEMA: str | None = Field(default=None)
     CORS_ORIGINS: list[str] = Field(...)
 
     JWT_SECRET: str = Field(...)
     JWT_ALGORITHM: str = Field(...)
     ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(...)
+
+    # Default admin bootstrapped on first startup (idempotent).
+    SEED_ADMIN_EMAIL: str = Field(default="admin@example.com")
+    SEED_ADMIN_PASSWORD: str = Field(default="ChangeMe!123")
+    SEED_ADMIN_NAME: str = Field(default="System Admin")
 
     RED_AI_AFTER_DAYS: int = Field(...)
 

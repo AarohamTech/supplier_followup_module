@@ -2,13 +2,16 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .database import Base, SessionLocal, engine
+from .core.config import settings
+from .database import Base, SessionLocal, engine, ensure_schema
 from .models.mail_history import MailHistory  # noqa: F401
 from .models.mail_template import MailTemplate  # noqa: F401
 from .models.procurement import ProcurementRecord  # noqa: F401
 from .models.supplier import SupplierMaster  # noqa: F401
 from .models.supplier_email import SupplierEmail  # noqa: F401
+from .models.user import User  # noqa: F401
 from .schemas.procurement import ProcurementCreate
+from .services import user_service
 from .services.procurement_sync_service import sync_records
 
 
@@ -163,6 +166,7 @@ SAMPLE_PROCUREMENT: list[dict] = [
 
 
 def init_schema() -> None:
+    ensure_schema()
     Base.metadata.create_all(bind=engine)
 
 
@@ -211,11 +215,22 @@ def seed_procurement(db: Session) -> dict:
     return result.model_dump()
 
 
+def seed_admin(db: Session) -> bool:
+    """Bootstrap the first admin user from env (only when no users exist)."""
+    return user_service.ensure_seed_admin(
+        db,
+        email=settings.SEED_ADMIN_EMAIL,
+        password=settings.SEED_ADMIN_PASSWORD,
+        full_name=settings.SEED_ADMIN_NAME,
+    )
+
+
 def run() -> dict:
     init_schema()
     db = SessionLocal()
     try:
         return {
+            "admin_seeded": seed_admin(db),
             "templates_added": seed_templates(db),
             "procurement_sync": seed_procurement(db),
             "supplier_emails_added": seed_supplier_emails(db),

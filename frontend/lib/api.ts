@@ -41,21 +41,37 @@ import type {
   CustomerMailAssignPayload,
   CustomerMailTaskPayload,
   CustomerMailMetaOptions,
+  AuthUser,
+  LoginResponse,
+  UserCreatePayload,
+  UserUpdatePayload,
 } from "./types";
+import { getToken, setToken, LOGIN_PATH } from "./auth-token";
 
 const API = ""; // same-origin, rewritten by next.config.mjs
 
 async function http<T>(path: string, init?: RequestInit): Promise<T> {
   const isFormData = init?.body instanceof FormData;
-  const res = await fetch(`${API}${path}`, {
-    ...init,
-    headers: isFormData ? init?.headers : { "Content-Type": "application/json", ...(init?.headers || {}) },
-    cache: "no-store",
-  });
+  const token = getToken();
+  const headers: Record<string, string> = {
+    ...(isFormData ? {} : { "Content-Type": "application/json" }),
+    ...((init?.headers as Record<string, string>) || {}),
+  };
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+
+  const res = await fetch(`${API}${path}`, { ...init, headers, cache: "no-store" });
+
+  if (res.status === 401) {
+    // Session expired or missing → drop token and bounce to login.
+    setToken(null);
+    if (typeof window !== "undefined" && window.location.pathname !== LOGIN_PATH) {
+      window.location.href = LOGIN_PATH;
+    }
+  }
   if (!res.ok) {
     let detail = "";
     try { detail = (await res.json()).detail || ""; } catch { /* ignore */ }
-    throw new Error(`${res.status} ${res.statusText} ${detail}`);
+    throw new Error(`${res.status} ${res.statusText} ${detail}`.trim());
   }
   if (res.status === 204) return undefined as unknown as T;
   return (await res.json()) as T;
@@ -452,6 +468,48 @@ export const api = {
 
   listTaskActivity: (taskId: number) =>
     http<TaskActivity[]>(`/api/tasks/${taskId}/activity`),
+
+  // ─── Auth ─────────────────────────────────────────────────────────────
+  login: (email: string, password: string) =>
+    http<LoginResponse>("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ email, password }),
+    }),
+
+  me: () => http<AuthUser>("/api/auth/me"),
+
+  changePassword: (current_password: string, new_password: string) =>
+    http<{ ok: boolean }>("/api/auth/change-password", {
+      method: "POST",
+      body: JSON.stringify({ current_password, new_password }),
+    }),
+
+  // ─── User management (admin) ──────────────────────────────────────────
+  listUsers: (params: { role?: string; is_active?: boolean; search?: string } = {}) => {
+    const q = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== "") q.append(k, String(v));
+    });
+    const qs = q.toString();
+    return http<AuthUser[]>(`/api/users${qs ? `?${qs}` : ""}`);
+  },
+
+  createUser: (body: UserCreatePayload) =>
+    http<AuthUser>("/api/users", { method: "POST", body: JSON.stringify(body) }),
+
+  updateUser: (id: number, body: UserUpdatePayload) =>
+    http<AuthUser>(`/api/users/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+
+  resetUserPassword: (id: number, new_password: string) =>
+    http<{ ok: boolean; user_id: number }>(`/api/users/${id}/reset-password`, {
+      method: "POST",
+      body: JSON.stringify({ new_password }),
+    }),
+
+  deleteUser: (id: number) =>
+    http<{ ok: boolean; deleted_id: number }>(`/api/users/${id}`, { method: "DELETE" }),
+
+  listRoles: () => http<{ roles: string[] }>("/api/users/meta/roles"),
 };
 
 export default api;

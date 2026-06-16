@@ -3,11 +3,15 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from fastapi import Depends
+
 from .core.config import settings
+from .core.deps import get_current_user
 from .core.logging import setup_logging
 from .core.schema_evolve import ensure_columns
-from .database import Base, engine
+from .database import Base, engine, ensure_schema
 from .routers import (
+    auth,
     customer_mails,
     procurement,
     suppliers,
@@ -16,6 +20,7 @@ from .routers import (
     mail_history,
     communication,
     communication_hub,
+    users,
     webhooks,
     po_followups,
     settings as settings_router,
@@ -29,6 +34,10 @@ log = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     setup_logging("DEBUG" if settings.DEBUG else "INFO")
+    try:
+        ensure_schema()
+    except Exception:  # noqa: BLE001
+        log.exception("Schema bootstrap failed (continuing)")
     Base.metadata.create_all(bind=engine)
     try:
         changes = ensure_columns(engine)
@@ -65,18 +74,28 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(procurement.router)
-app.include_router(suppliers.router)
-app.include_router(supplier_emails.router)
-app.include_router(mail_drafts.router)
-app.include_router(mail_history.router)
-app.include_router(communication.router)
-app.include_router(communication.tasks_router)
-app.include_router(communication_hub.router)
-app.include_router(customer_mails.router)
+# Open routers (no auth): login + machine-to-machine webhooks.
+app.include_router(auth.router)
 app.include_router(webhooks.router)
-app.include_router(po_followups.router)
-app.include_router(settings_router.router)
+
+# Admin-only user management (guards itself at the router level).
+app.include_router(users.router)
+
+# All business routers require a logged-in user. Fine-grained role checks are
+# applied inside the routers that expose sensitive actions (send/escalate,
+# settings writes). See docs/progress.md for the permission matrix.
+_auth = [Depends(get_current_user)]
+app.include_router(procurement.router, dependencies=_auth)
+app.include_router(suppliers.router, dependencies=_auth)
+app.include_router(supplier_emails.router, dependencies=_auth)
+app.include_router(mail_drafts.router, dependencies=_auth)
+app.include_router(mail_history.router, dependencies=_auth)
+app.include_router(communication.router, dependencies=_auth)
+app.include_router(communication.tasks_router, dependencies=_auth)
+app.include_router(communication_hub.router, dependencies=_auth)
+app.include_router(customer_mails.router, dependencies=_auth)
+app.include_router(po_followups.router, dependencies=_auth)
+app.include_router(settings_router.router, dependencies=_auth)
 
 
 @app.get("/")

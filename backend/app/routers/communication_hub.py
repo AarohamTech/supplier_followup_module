@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
+from ..core.deps import require_manager
 from ..database import get_db
 from ..models.communication_task import (
     TASK_PRIORITIES,
@@ -940,7 +941,7 @@ def ai_reply(
 # ─────────────────────────────────────────────────────────────────────────────
 # 9. Escalation (triggers existing mail draft pipeline + creates escalation task)
 # ─────────────────────────────────────────────────────────────────────────────
-@router.post("/escalate")
+@router.post("/escalate", dependencies=[Depends(require_manager)])
 def escalate(
     procurement_record_id: int = Query(...),
     db: Session = Depends(get_db),
@@ -1042,7 +1043,7 @@ def escalate(
 # ─────────────────────────────────────────────────────────────────────────────
 # 10. Direct Send Mail (queues a draft + triggers SMTP worker immediately)
 # ─────────────────────────────────────────────────────────────────────────────
-@router.post("/send-mail")
+@router.post("/send-mail", dependencies=[Depends(require_manager)])
 def send_mail_now(
     mail_history_id: int = Query(..., description="MailHistory row to send"),
     db: Session = Depends(get_db),
