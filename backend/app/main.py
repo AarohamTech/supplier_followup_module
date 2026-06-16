@@ -35,26 +35,31 @@ log = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     setup_logging("DEBUG" if settings.DEBUG else "INFO")
-    try:
-        ensure_schema()
-    except Exception:  # noqa: BLE001
-        log.exception("Schema bootstrap failed (continuing)")
-    Base.metadata.create_all(bind=engine)
-    try:
-        changes = ensure_columns(engine)
-        if changes:
-            log.info("Schema evolve added columns: %s", ", ".join(changes))
-    except Exception:  # noqa: BLE001
-        log.exception("Schema evolve failed (continuing)")
+    # Heavy DB bootstrap (schema + seed). Skip on serverless (RUN_STARTUP_INIT=false)
+    # where it would run on every cold start — run it once out-of-band instead.
+    if settings.RUN_STARTUP_INIT:
+        try:
+            ensure_schema()
+        except Exception:  # noqa: BLE001
+            log.exception("Schema bootstrap failed (continuing)")
+        Base.metadata.create_all(bind=engine)
+        try:
+            changes = ensure_columns(engine)
+            if changes:
+                log.info("Schema evolve added columns: %s", ", ".join(changes))
+        except Exception:  # noqa: BLE001
+            log.exception("Schema evolve failed (continuing)")
+        try:
+            result = seed_module.run()
+            log.info("Seed result: %s", result)
+        except Exception:  # noqa: BLE001
+            log.exception("Seed failed (continuing)")
+    else:
+        log.info("RUN_STARTUP_INIT=false — skipping schema/seed bootstrap")
     try:
         register_all_specs()
     except Exception:  # noqa: BLE001
         log.exception("Engine job registration failed (continuing)")
-    try:
-        result = seed_module.run()
-        log.info("Seed result: %s", result)
-    except Exception:  # noqa: BLE001
-        log.exception("Seed failed (continuing)")
     try:
         start_scheduler()
     except Exception:  # noqa: BLE001

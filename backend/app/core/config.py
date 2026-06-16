@@ -20,6 +20,12 @@ class Settings(BaseSettings):
     # anything else living in the same database (e.g. a shared Supabase project).
     # Leave empty for SQLite or to use the default `public` schema.
     DB_SCHEMA: str | None = Field(default=None)
+    # Serverless (Vercel/Lambda): use NullPool so each invocation doesn't hold a
+    # connection — pair with the Supabase pooler (:6543). Off for container/VM.
+    DB_USE_NULLPOOL: bool = Field(default=False)
+    # Run create_all / schema-evolve / seed on startup. Disable on serverless
+    # (run it once out-of-band) so cold starts stay fast and don't hammer the DB.
+    RUN_STARTUP_INIT: bool = Field(default=True)
     CORS_ORIGINS: list[str] = Field(...)
 
     JWT_SECRET: str = Field(...)

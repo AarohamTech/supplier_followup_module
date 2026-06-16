@@ -1,5 +1,6 @@
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, DeclarativeBase, Session
+from sqlalchemy.pool import NullPool
 from .core.config import settings
 
 _is_sqlite = settings.DATABASE_URL.startswith("sqlite")
@@ -15,12 +16,12 @@ if _is_sqlite:
 elif _schema:
     connect_args = {"options": f"-csearch_path={_schema}"}
 
-engine = create_engine(
-    settings.DATABASE_URL,
-    pool_pre_ping=True,
-    future=True,
-    connect_args=connect_args,
-)
+_engine_kwargs: dict = dict(pool_pre_ping=True, future=True, connect_args=connect_args)
+if settings.DB_USE_NULLPOOL and not _is_sqlite:
+    # Serverless: don't keep a client-side pool; let the Supabase pooler manage it.
+    _engine_kwargs["poolclass"] = NullPool
+
+engine = create_engine(settings.DATABASE_URL, **_engine_kwargs)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
 
 
