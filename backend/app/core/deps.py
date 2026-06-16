@@ -13,7 +13,7 @@ Usage:
 """
 from __future__ import annotations
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
@@ -84,3 +84,22 @@ def require_role(minimum: str):
 require_admin = require_role(Role.ADMIN)
 require_manager = require_role(Role.MANAGER)   # manager + admin
 require_writer = require_role(Role.USER)       # user + manager + admin (excludes viewer)
+
+
+def require_writer_for_writes(
+    request: Request, user: User = Depends(get_current_user)
+) -> User:
+    """Method-aware guard: reads (GET/HEAD/OPTIONS) are open to any logged-in
+    user (viewer included); any state-changing method requires `user` or higher.
+
+    Applied at the router level so a `viewer` is effectively read-only across the
+    whole app, while send/approve-style endpoints add their own `require_manager`.
+    """
+    if request.method in {"GET", "HEAD", "OPTIONS"}:
+        return user
+    if not roles_mod.role_at_least(user.role, Role.USER):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Read-only role — changes require 'user' or higher",
+        )
+    return user

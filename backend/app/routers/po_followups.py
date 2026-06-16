@@ -10,6 +10,7 @@ from typing import Any, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
+from ..core.deps import require_manager
 from ..database import get_db
 from ..services import po_followup_mail_service, po_followup_service
 
@@ -69,7 +70,7 @@ def test_auto_queue(
     return po_followup_mail_service.queue_due_po_followups(db, limit=limit, dry_run=True)
 
 
-@router.post("/auto-queue")
+@router.post("/auto-queue", dependencies=[Depends(require_manager)])
 def auto_queue(
     limit: int = Query(50, ge=1, le=200),
     db: Session = Depends(get_db),

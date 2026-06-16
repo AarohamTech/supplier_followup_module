@@ -1,20 +1,42 @@
 """Webhook router for invoking mail workers from external systems.
 
-These endpoints are deliberately unauthenticated for parity with the rest of
-the project; gate them behind a reverse-proxy secret in production.
+Machine-to-machine: every call must present the shared secret in the
+`X-Webhook-Secret` header, matched against `settings.WEBHOOK_SECRET`. If no
+secret is configured the endpoints fail closed (reject all calls).
 """
 from __future__ import annotations
 
+import hmac
 import logging
 from typing import Any
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 
+from ..core.config import settings
 from ..workers import mail_fetch_worker, mail_send_worker
 
 log = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/webhooks", tags=["webhooks"])
+
+def require_webhook_secret(x_webhook_secret: str | None = Header(default=None)) -> None:
+    expected = settings.WEBHOOK_SECRET
+    if not expected:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Webhook secret not configured (set WEBHOOK_SECRET).",
+        )
+    if not x_webhook_secret or not hmac.compare_digest(x_webhook_secret, expected):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or missing webhook secret.",
+        )
+
+
+router = APIRouter(
+    prefix="/api/webhooks",
+    tags=["webhooks"],
+    dependencies=[Depends(require_webhook_secret)],
+)
 
 
 def _summarize_fetch_result(result: dict[str, Any]) -> dict[str, Any]:

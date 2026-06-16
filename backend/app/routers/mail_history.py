@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from ..core.deps import require_manager
 from ..database import get_db
 from ..models.mail_history import MailHistory
 from ..models.procurement import ProcurementRecord
@@ -89,7 +90,7 @@ def get_history(history_id: int, db: Session = Depends(get_db)):
     return row
 
 
-@router.put("/{history_id}/status", response_model=MailHistoryOut)
+@router.put("/{history_id}/status", response_model=MailHistoryOut, dependencies=[Depends(require_manager)])
 def update_history_status(
     history_id: int,
     payload: MailHistoryStatusUpdate,

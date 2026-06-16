@@ -8,31 +8,40 @@
 
 ## 📌 Status / Work Log (so we can resume after a session reset)
 
-**Session 2026-06-16 — round 1 (clear-cut fixes, no decisions):** committed.
+**Session 2026-06-16 — round 1 (clear-cut fixes):** committed `5088ec3`.
 - ✅ #1 escape import (PO mail generation restored — verified at runtime)
 - ✅ #8 send-mail duplicate-send guard
 - ✅ #10 find_today_draft no longer reuses FAILED/CANCELLED drafts
 - ✅ #12 escalation tasks now set `task_source="ESCALATION"`
 - ✅ #13 customer mails now populate `linked_supplier_po_no`
-- ✅ #40 reply key uses a counter (no Date.now collisions)
-- ✅ #41 login flash + noisy 401 toast suppressed
-- Verified: 35/35 backend tests pass; frontend `tsc` clean.
+- ✅ #40 reply key uses a counter; ✅ #41 login flash + noisy 401 toast
 
-**⏳ Waiting on your decision (discuss before coding):** #2 RBAC tiers · #5 auto-reply approval ·
-#3 webhook auth · #4 default secrets · #6 RED day anchor · #7 BLACK/AI re-follow-up ·
+**Session 2026-06-16 — round 2 (decisions made → implemented):**
+- ✅ #2 **RBAC enforced.** Method-aware guard (`require_writer_for_writes`): viewer = read-only;
+  user+ for writes; manager+ on send/approve (generate, generate-po, auto-queue, mail-history
+  status, comm-hub send/escalate, settings writes); admin for user mgmt. Live-tested all tiers.
+- ✅ #5 **Auto-reply now creates a DRAFT** (was auto-sent). Needs human approval before send.
+  _Follow-up: there's no UI yet to approve/send a DRAFT `CommunicationMessage` — add an
+  "approve & send" action (small endpoint flipping DRAFT→READY)._
+- ✅ #3 **Webhooks require `X-Webhook-Secret`** (matched to `WEBHOOK_SECRET`; fail-closed if unset).
+- ⏭️ #4 **Default-secret guard — decided NOT to add** (leave as-is). Still recommended to set real
+  `JWT_SECRET`/`SEED_ADMIN_PASSWORD`/Supabase password before any real deployment.
+- Verified: 35/35 tests pass; live RBAC + webhook checks all correct.
+
+**⏳ Still need your decision:** #6 RED day anchor · #7 BLACK/AI re-follow-up ·
 #9 followup_count meaning · #14 customer reply feature · #15 "Save & Notify".
 
-**Not started yet:** all other P2/P3 items below.
+**Not started yet:** the remaining P2/P3 items below (#16–#39, #42–#45).
 
 ---
 
 ## P0 — Broken core features & security holes
 
 - [x] **1. PO follow-up mail generation crashes (`escape` not imported).** ✅ FIXED `services/po_followup_mail_service.py:105` uses `escape(...)` but `html.escape` is never imported → **runtime-verified `NameError`**. The error is swallowed by `po_followup_mail_runner` (`scheduler/jobs.py:137`) and the manual `generate-po` path, so **no PO follow-up mail is ever produced**. _Fix: `from html import escape`._
-- [ ] **2. The `viewer`/`user` RBAC tier is unenforced — read-only users can mutate everything.** `main.py:87-98` mounts all business routers with only `Depends(get_current_user)`. `require_writer` exists (`core/deps.py:86`) but is used nowhere. A viewer can edit procurement, generate drafts, edit suppliers/escalation emails, create/delete tasks, **mark mail dispatched** (`mail_history.py:92`), and **bulk auto-queue follow-ups** (`po_followups.py:72`). _Fix: apply `require_writer` to mutations and `require_manager` to send/approve/dispatch/auto-queue._
-- [ ] **3. Unauthenticated webhooks can trigger real outbound mail.** `routers/webhooks.py` is mounted bare; `POST /api/webhooks/mail-send` runs the SMTP worker. Anyone who can reach the host can flush mail to suppliers. _Fix: require a shared-secret header (or manager JWT)._
-- [ ] **4. Known default admin + JWT secret.** `config.py` defaults `SEED_ADMIN_PASSWORD="ChangeMe!123"`; `.env.example` ships `JWT_SECRET=change-me`. A deploy that forgets to override boots with public admin creds and a public signing key (full takeover + forgeable tokens). _Fix: refuse to start when secrets equal defaults outside DEBUG._
-- [ ] **5. Auto-reply acks are auto-SENT without approval.** `scheduler/jobs.py:88` creates acks with `status="READY"`; the send worker (`mail_send_worker.py:211`) sends every `OUTGOING/READY` with no `mail_type` filter. Any parser false-positive emails the supplier unsolicited. _Fix: create acks as `DRAFT`/`PENDING_APPROVAL`, or exclude `AUTO_ACK` from the sender until approved._
+- [x] **2. The `viewer`/`user` RBAC tier is unenforced — read-only users can mutate everything.** ✅ FIXED (enforced + live-tested) `main.py:87-98` mounts all business routers with only `Depends(get_current_user)`. `require_writer` exists (`core/deps.py:86`) but is used nowhere. A viewer can edit procurement, generate drafts, edit suppliers/escalation emails, create/delete tasks, **mark mail dispatched** (`mail_history.py:92`), and **bulk auto-queue follow-ups** (`po_followups.py:72`). _Fix: apply `require_writer` to mutations and `require_manager` to send/approve/dispatch/auto-queue._
+- [x] **3. Unauthenticated webhooks can trigger real outbound mail.** ✅ FIXED (X-Webhook-Secret) `routers/webhooks.py` is mounted bare; `POST /api/webhooks/mail-send` runs the SMTP worker. Anyone who can reach the host can flush mail to suppliers. _Fix: require a shared-secret header (or manager JWT)._
+- [~] **4. Known default admin + JWT secret.** ⏭️ DECIDED: leave as-is (no startup guard). Set real secrets before deploy. `config.py` defaults `SEED_ADMIN_PASSWORD="ChangeMe!123"`; `.env.example` ships `JWT_SECRET=change-me`. A deploy that forgets to override boots with public admin creds and a public signing key (full takeover + forgeable tokens). _Fix: refuse to start when secrets equal defaults outside DEBUG._
+- [x] **5. Auto-reply acks are auto-SENT without approval.** ✅ FIXED (now created as DRAFT; approve-UI is a follow-up) `scheduler/jobs.py:88` creates acks with `status="READY"`; the send worker (`mail_send_worker.py:211`) sends every `OUTGOING/READY` with no `mail_type` filter. Any parser false-positive emails the supplier unsolicited. _Fix: create acks as `DRAFT`/`PENDING_APPROVAL`, or exclude `AUTO_ACK` from the sender until approved._
 
 ## P1 — Follow-up engine correctness (the app's core purpose)
 

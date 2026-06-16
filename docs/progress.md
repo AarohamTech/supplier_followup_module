@@ -48,11 +48,11 @@ Permission matrix (target):
 | Edit settings, cron, automation toggles | — | — | ✅ | ✅ |
 | Manage users & roles | — | — | — | ✅ |
 
-> Implementation note: **authentication is enforced on all business API routers**
-> from day one. Fine-grained role checks are applied to the clearly sensitive
-> actions (user mgmt = admin; send/escalate + settings writes = manager+).
-> Remaining endpoints currently require *a* logged-in user; tightening each to
-> the exact matrix row above is tracked as a follow-up.
+> Implementation note: **the matrix is now enforced** (Phase 3, round 2). A
+> method-aware router guard (`require_writer_for_writes`) makes `viewer` read-only
+> and requires `user`+ for any write; `require_manager` gates send/approve actions
+> (generate, generate-po, auto-queue, mail-history status, comm-hub send/escalate,
+> settings writes); `admin` gates user management. Verified live across all tiers.
 
 ---
 
@@ -159,9 +159,11 @@ npm run dev
   broken — restored), #8 duplicate-send guard, #10 reuse-of-failed-drafts, #12 escalation KPI,
   #13 customer-mail→PO link, #40 reply key, #41 login flash/401 toast.
 - Verified: 35/35 backend tests pass; frontend `tsc` clean.
-- **Next:** decisions pending on #2 RBAC, #3 webhook auth, #4 default secrets, #5 auto-reply
-  approval, #6 RED day anchor, #7 BLACK/AI re-follow-up, #9 followup_count, #14 customer reply,
-  #15 Save&Notify. See REVIEW_FINDINGS "Status / Work Log".
+- Round 2 fixes committed (decisions made): #2 RBAC enforced (viewer read-only, user writes,
+  manager send/approve, admin user-mgmt — live-tested); #5 auto-reply now a DRAFT (needs approval);
+  #3 webhooks require `X-Webhook-Secret`; #4 left as-is by choice.
+- **Next:** decisions still pending on #6 RED day anchor, #7 BLACK/AI re-follow-up, #9 followup_count
+  meaning, #14 customer reply feature, #15 Save&Notify. See REVIEW_FINDINGS "Status / Work Log".
 
 ### Follow-ups / not in this phase
 - Tighten per-endpoint RBAC to the full matrix (currently: auth everywhere + admin on user

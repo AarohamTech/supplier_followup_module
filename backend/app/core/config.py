@@ -31,6 +31,10 @@ class Settings(BaseSettings):
     SEED_ADMIN_PASSWORD: str = Field(default="ChangeMe!123")
     SEED_ADMIN_NAME: str = Field(default="System Admin")
 
+    # Shared secret required to call the /api/webhooks/* endpoints (machine-to-
+    # machine). When empty, the webhook endpoints reject all calls (fail closed).
+    WEBHOOK_SECRET: str | None = Field(default=None)
+
     RED_AI_AFTER_DAYS: int = Field(...)
 
     # ── Mail automation toggles (safe defaults: everything OFF) ───────────

@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from ..core.deps import require_manager
 from ..database import get_db
 from ..models.mail_history import MailHistory
 from ..models.procurement import ProcurementRecord
@@ -83,7 +84,7 @@ def _queue_history_for_auto_send(db: Session, history: MailHistory) -> None:
     )
 
 
-@router.post("/generate", response_model=MailDraftOut)
+@router.post("/generate", response_model=MailDraftOut, dependencies=[Depends(require_manager)])
 def generate_draft(payload: MailDraftRequest, db: Session = Depends(get_db)):
     rec = db.get(ProcurementRecord, payload.procurement_record_id)
     if not rec:
@@ -252,7 +253,7 @@ Write-Output 'OUTLOOK_DRAFT_OPENED'
         raise HTTPException(500, detail)
 
 
-@router.post("/generate-po", response_model=MailDraftPoOut)
+@router.post("/generate-po", response_model=MailDraftPoOut, dependencies=[Depends(require_manager)])
 def generate_po_draft(payload: MailDraftPoRequest, db: Session = Depends(get_db)):
     result = po_followup_mail_service.create_po_followup_mail(
         db,

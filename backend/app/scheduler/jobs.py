@@ -87,7 +87,9 @@ def auto_reply_runner() -> dict[str, Any]:
             )
             ack = CommunicationMessage(
                 direction="OUTGOING",
-                status="READY",
+                # DRAFT, not READY: auto-acknowledgements must be reviewed and
+                # approved by a human before the send worker picks them up.
+                status="DRAFT",
                 channel="EMAIL",
                 supplier_id=src.supplier_id,
                 supplier_name=src.supplier_name,
