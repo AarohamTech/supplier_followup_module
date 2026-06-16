@@ -1,0 +1,19 @@
+# systemd unit for the FastAPI backend on EC2.
+# Copy to /etc/systemd/system/sfa-backend.service, adjust User/paths, then:
+#   sudo systemctl daemon-reload && sudo systemctl enable --now sfa-backend
+[Unit]
+Description=Supplier Follow-up FastAPI backend
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=ubuntu
+WorkingDirectory=/home/ubuntu/supplier_followup_module/backend
+# .env is read by app/core/config.py from the backend dir.
+ExecStart=/home/ubuntu/supplier_followup_module/backend/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1
+Restart=always
+RestartSec=3
+# Single worker keeps the in-process scheduler from running on every worker.
+
+[Install]
+WantedBy=multi-user.target
