@@ -39,11 +39,12 @@ class Settings(BaseSettings):
     LLM_ENABLED: bool = Field(default=False)
     LLM_BASE_URL: str = Field(default="https://integrate.api.nvidia.com/v1")
     LLM_API_KEY: str | None = Field(default=None)
-    LLM_MODEL: str = Field(default="openai/gpt-oss-120b")
+    LLM_MODEL: str = Field(default="meta/llama-3.3-70b-instruct")
     LLM_MAX_TOKENS: int = Field(default=1024)
     LLM_TEMPERATURE: float = Field(default=0.7)
-    # gpt-oss reasoning effort: low keeps interactive responses fast. "" disables.
-    LLM_REASONING_EFFORT: str = Field(default="low")
+    # gpt-oss-only reasoning effort (low/medium/high). Leave EMPTY for llama/other
+    # models — passing it to them can be rejected.
+    LLM_REASONING_EFFORT: str = Field(default="")
     # Hard request timeout (seconds) so a slow/hung LLM can't block the UI.
     # Fail fast and fall back to the deterministic template on timeout.
     LLM_TIMEOUT_SECONDS: float = Field(default=30.0)
