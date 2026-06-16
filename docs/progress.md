@@ -168,8 +168,10 @@ npm run dev
 - Round 4 fixes committed (clear P2/P3 basics): #19 wrong-PO match, #25 schema-evolve now
   Postgres-aware (auto-adds columns), #39 N+1, #43 DB_SCHEMA validation, #45 demo data gated to
   DEBUG, #30 store error split, #32/#33 customer-workspace selection/refresh.
-- **Next:** plan #14 (customer reply feature). Remaining P2/P3 backlog tracked in REVIEW_FINDINGS.md
-  (several need a quick product decision — marked with *).
+- Round 5: built the **#14 customer reply feature** (Phase 1+2+approvals) — reply/send, persisted
+  conversation, server smart-draft from order data, and a manager `/approvals` page for auto-reply
+  drafts. Plugged in real POP3/SMTP creds (tested OK). Scheduler ON; auto PO-blast OFF.
+- **Next:** remaining P2/P3 backlog in REVIEW_FINDINGS.md (several need a quick product decision — *).
 
 ### Follow-ups / not in this phase
 - Tighten per-endpoint RBAC to the full matrix (currently: auth everywhere + admin on user

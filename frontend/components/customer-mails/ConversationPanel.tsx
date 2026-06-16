@@ -11,6 +11,15 @@ export interface LocalReply {
   id: number;
   text: string;
   at: string;
+  status?: string;
+}
+
+function replyStatusLabel(status?: string): string | null {
+  if (!status) return null;
+  if (status === "SENT") return "Sent";
+  if (status === "READY") return "Queued";
+  if (status === "FAILED") return "Failed";
+  return status;
 }
 
 interface ConversationPanelProps {
@@ -118,7 +127,14 @@ function ConversationPanelBase({
             className="ml-8 rounded-xl border border-red-200 bg-red-50/60 p-4"
           >
             <div className="mb-1.5 flex items-center justify-between">
-              <span className="text-sm font-semibold text-signal-red">You replied</span>
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-semibold text-signal-red">You replied</span>
+                {replyStatusLabel(reply.status) && (
+                  <span className="rounded-full border border-brand-border bg-white px-1.5 py-0.5 text-[10px] font-medium text-brand-muted">
+                    {replyStatusLabel(reply.status)}
+                  </span>
+                )}
+              </div>
               <span className="text-[11px] text-brand-muted">
                 {formatDateTime(reply.at)}
               </span>

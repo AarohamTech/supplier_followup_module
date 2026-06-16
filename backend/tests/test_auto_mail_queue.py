@@ -33,6 +33,7 @@ class AutoMailQueueTests(unittest.TestCase):
             supplier_name="Acme",
             procurement_record_id=11,
             supplier_po_no="PO-42",
+            customer_mail_id=None,
             subject="Follow-up",
             body="Body",
             body_html=None,

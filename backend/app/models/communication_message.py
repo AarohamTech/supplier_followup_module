@@ -42,6 +42,10 @@ class CommunicationMessage(Base):
         ForeignKey("procurement_records.id"), index=True
     )
     supplier_po_no: Mapped[str | None] = mapped_column(String(64), index=True)
+    # Set when this is an outbound reply to a customer-inbox mail.
+    customer_mail_id: Mapped[int | None] = mapped_column(
+        ForeignKey("customer_mails.id"), index=True
+    )
 
     # Origin metadata
     direction: Mapped[str] = mapped_column(String(16), index=True, nullable=False)

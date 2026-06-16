@@ -41,6 +41,9 @@ import type {
   CustomerMailAssignPayload,
   CustomerMailTaskPayload,
   CustomerMailMetaOptions,
+  CustomerReply,
+  CustomerDraftReply,
+  OutboxDraft,
   AuthUser,
   LoginResponse,
   UserCreatePayload,
@@ -423,6 +426,30 @@ export const api = {
     ),
   getCustomerMailMeta: () =>
     http<CustomerMailMetaOptions>(`/api/customer-mails/meta/options`),
+
+  // Customer reply (Phase 1) + smart draft (Phase 2)
+  replyToCustomerMail: (id: number, body: string, subject?: string) =>
+    http<{ ok: boolean; message_id: number; status: string; mail_status: string; queued: boolean }>(
+      `/api/customer-mails/${id}/reply`,
+      { method: "POST", body: JSON.stringify({ body, subject }) },
+    ),
+  getCustomerMailReplies: (id: number) =>
+    http<CustomerReply[]>(`/api/customer-mails/${id}/replies`),
+  draftCustomerReply: (id: number) =>
+    http<CustomerDraftReply>(`/api/customer-mails/${id}/draft-reply`, { method: "POST" }),
+
+  // Outbound draft approvals (e.g. auto-reply acknowledgements)
+  listOutboxDrafts: () => http<OutboxDraft[]>(`/api/communication-hub/drafts`),
+  approveMessage: (id: number) =>
+    http<{ ok: boolean; message_id: number; status: string }>(
+      `/api/communication-hub/messages/${id}/approve`,
+      { method: "POST" },
+    ),
+  discardMessage: (id: number) =>
+    http<{ ok: boolean; discarded_id: number }>(
+      `/api/communication-hub/messages/${id}/discard`,
+      { method: "POST" },
+    ),
 
   // ─── Unified Tasks ────────────────────────────────────────────────────
   getTasksDashboard: () =>

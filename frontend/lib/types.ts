@@ -681,3 +681,39 @@ export interface UserUpdatePayload {
   role?: Role;
   is_active?: boolean;
 }
+
+// ─── Customer replies / outbox approvals ─────────────────────────────────────
+export interface CustomerReply {
+  id: number;
+  direction: string;
+  subject: string | null;
+  body: string | null;
+  status: string;
+  mail_type: string | null;
+  to_emails: string[];
+  sent_at: string | null;
+  created_at: string;
+  error_message: string | null;
+}
+
+export interface CustomerDraftReply {
+  subject: string;
+  body: string;
+  source: "order-data" | "generic";
+  supplier_po_no: string | null;
+}
+
+export interface OutboxDraft {
+  id: number;
+  subject: string | null;
+  body: string | null;
+  mail_type: string | null;
+  status: string;
+  supplier_name: string | null;
+  supplier_po_no: string | null;
+  customer_mail_id: number | null;
+  to_emails: string[];
+  receiver_email: string | null;
+  in_reply_to: string | null;
+  created_at: string;
+}

@@ -126,6 +126,26 @@ class CustomerMailTaskPayload(BaseModel):
     due_date: datetime | None = None
 
 
+class CustomerReplyPayload(BaseModel):
+    body: str = Field(min_length=1)
+    subject: str | None = Field(default=None, max_length=500)
+
+
+class CustomerReplyOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    direction: str
+    subject: str | None
+    body: str | None
+    status: str
+    mail_type: str | None
+    to_emails: list[str]
+    sent_at: datetime | None
+    created_at: datetime
+    error_message: str | None
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Endpoints
 # ─────────────────────────────────────────────────────────────────────────────
@@ -233,6 +253,46 @@ def create_task_for_mail(
         "customer_mail_id": mail.id,
         "linked_task_id": mail.linked_task_id,
     }
+
+
+@router.post("/{mail_id}/reply")
+def reply_to_customer_mail(
+    mail_id: int,
+    payload: CustomerReplyPayload,
+    db: Session = Depends(get_db),
+):
+    """Queue an outbound reply to the customer (sent by the SMTP worker)."""
+    try:
+        mail, msg = customer_mail_service.reply_to_mail(
+            db, mail_id, body=payload.body, subject=payload.subject
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc))
+    if mail is None or msg is None:
+        raise HTTPException(404, "Customer mail not found")
+    return {
+        "ok": True,
+        "message_id": msg.id,
+        "status": msg.status,
+        "mail_status": mail.status,
+        "queued": msg.status == "READY",
+    }
+
+
+@router.get("/{mail_id}/replies", response_model=list[CustomerReplyOut])
+def list_customer_mail_replies(mail_id: int, db: Session = Depends(get_db)):
+    if customer_mail_service.get_mail(db, mail_id) is None:
+        raise HTTPException(404, "Customer mail not found")
+    return customer_mail_service.list_replies(db, mail_id)
+
+
+@router.post("/{mail_id}/draft-reply")
+def draft_customer_reply(mail_id: int, db: Session = Depends(get_db)) -> dict:
+    """Phase 2: a suggested reply built deterministically from order data."""
+    draft = customer_mail_service.build_draft_reply(db, mail_id)
+    if draft is None:
+        raise HTTPException(404, "Customer mail not found")
+    return draft
 
 
 @router.get("/meta/options")

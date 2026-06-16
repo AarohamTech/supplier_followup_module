@@ -53,8 +53,18 @@
 - ✅ #33 customer workspace: creating a task refreshes the list (tab counts update).
 - Verified: 35/35 tests; Postgres schema-evolve clean; frontend `tsc` clean.
 
-**⏳ Still open — the bigger feature:** #14 customer reply (let a person actually email a customer
-back from the app, incl. approving the auto-reply drafts from #5). Worth planning as its own step.
+**Session 2026-06-16 — round 5 (#14 customer reply feature, full build):**
+- ✅ #14 **Customers can now be replied to from the app.** New `customer_mail_id` link on messages;
+  `POST /api/customer-mails/{id}/reply` (queues via SMTP worker), `GET …/replies` (persisted
+  conversation), and `POST …/draft-reply` — a **Phase-2 deterministic smart draft** built from live
+  PO + commitment data ("committed dispatch date is 20 Apr 2026 (status: APPROVED)"). RBAC: user+.
+- ✅ **Approve auto-reply drafts** (the #5 follow-up): `GET /communication-hub/drafts` +
+  approve/discard (manager); a new **/approvals** page (manager-gated nav).
+- Frontend: conversation shows real saved replies with Queued/Sent status; composer prefilled with
+  the server smart draft.
+- ✅ **Mail credentials plugged in** (POP3 pop.qlc.co.in:110 + SMTP smtp.qlc.co.in:587) — both
+  connections tested OK (inbox has 30 messages). Scheduler ON; auto PO-blast stays OFF.
+- Verified: 35/35 tests; live reply+draft+approve flow; frontend tsc + build (15 routes) clean.
 
 **Not started yet (remaining backlog):** #11 (IMAP PEEK — needs a live mailbox to test),
 #16 timezone consistency, #17 intake identity*, #18 PO dedup per-type, #20 health metric*,

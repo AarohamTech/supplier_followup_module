@@ -4,7 +4,6 @@ import {
   useCallback,
   useEffect,
   useMemo,
-  useRef,
   useState,
 } from "react";
 import { X } from "lucide-react";
@@ -14,6 +13,7 @@ import type {
   CommunicationTaskCreate,
   CustomerMail,
   CustomerMailListResponse,
+  CustomerReply,
 } from "@/lib/types";
 import { MailQueue } from "./MailQueue";
 import { ConversationPanel, type LocalReply } from "./ConversationPanel";
@@ -74,14 +74,15 @@ export default function CustomerWorkspace() {
   const [taskReloadKey, setTaskReloadKey] = useState(0);
 
   // ── UI state ─────────────────────────────────────────────────────────────
-  const [localReplies, setLocalReplies] = useState<Record<number, LocalReply[]>>({});
+  const [replies, setReplies] = useState<CustomerReply[]>([]);
+  const [replyReloadKey, setReplyReloadKey] = useState(0);
+  const [serverDraft, setServerDraft] = useState<{ subject: string; body: string } | null>(null);
   const [seed, setSeed] = useState<{ text: string; nonce: number } | undefined>();
   const [sending, setSending] = useState(false);
   const [creating, setCreating] = useState(false);
   const [taskModalOpen, setTaskModalOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
-  const replyIdRef = useRef(0); // monotonic local-reply id (avoids Date.now() key collisions)
 
   // ── Fetch list (debounced search only; tabs group client-side) ───────────
   useEffect(() => {
@@ -181,6 +182,46 @@ export default function CustomerWorkspace() {
     };
   }, [linkedPo]);
 
+  // ── Fetch the persisted replies (conversation) for the selected mail ─────
+  useEffect(() => {
+    if (selectedId == null) {
+      setReplies([]);
+      return;
+    }
+    let cancelled = false;
+    api
+      .getCustomerMailReplies(selectedId)
+      .then((res) => {
+        if (!cancelled) setReplies(res);
+      })
+      .catch(() => {
+        if (!cancelled) setReplies([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedId, replyReloadKey]);
+
+  // ── Fetch the server-side smart draft (Phase 2, from live order data) ────
+  useEffect(() => {
+    if (selectedId == null) {
+      setServerDraft(null);
+      return;
+    }
+    let cancelled = false;
+    api
+      .draftCustomerReply(selectedId)
+      .then((d) => {
+        if (!cancelled) setServerDraft({ subject: d.subject, body: d.body });
+      })
+      .catch(() => {
+        if (!cancelled) setServerDraft(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedId]);
+
   // ── Fetch tasks for selected mail (lazy, ignores stale) ──────────────────
   useEffect(() => {
     if (selectedId == null) {
@@ -205,10 +246,12 @@ export default function CustomerWorkspace() {
     };
   }, [selectedId, taskReloadKey]);
 
-  const aiSuggestion = useMemo(
+  const clientSuggestion = useMemo(
     () => buildSuggestion(selected, context),
     [selected, context],
   );
+  // Prefer the server's data-driven draft (Phase 2); fall back to the client one.
+  const aiSuggestion = serverDraft?.body || clientSuggestion;
 
   // ── Stable handlers ──────────────────────────────────────────────────────
   const handleSelect = useCallback((id: number) => {
@@ -222,26 +265,23 @@ export default function CustomerWorkspace() {
   const handleSend = useCallback(
     (text: string) => {
       if (selectedId == null) return;
+      const id = selectedId;
       setSending(true);
-      const reply: LocalReply = { id: (replyIdRef.current += 1), text, at: new Date().toISOString() };
-      setLocalReplies((prev) => ({
-        ...prev,
-        [selectedId]: [...(prev[selectedId] ?? []), reply],
-      }));
       api
-        .assignCustomerMail(selectedId, { status: "IN_PROGRESS" })
-        .then(() => {
+        .replyToCustomerMail(id, text)
+        .then((res) => {
+          setReplyReloadKey((k) => k + 1); // reload the real persisted reply
           setData((prev) =>
             prev
               ? {
                   ...prev,
                   items: prev.items.map((m) =>
-                    m.id === selectedId ? { ...m, status: "IN_PROGRESS" } : m,
+                    m.id === id ? { ...m, status: res.mail_status } : m,
                   ),
                 }
               : prev,
           );
-          setToast("Reply recorded.");
+          setToast(res.queued ? "Reply queued for send." : "Reply sent.");
         })
         .catch((err) => setToast((err as Error).message))
         .finally(() => setSending(false));
@@ -308,7 +348,16 @@ export default function CustomerWorkspace() {
     return () => clearTimeout(id);
   }, [toast]);
 
-  const selectedReplies = selectedId != null ? localReplies[selectedId] ?? [] : [];
+  const selectedReplies: LocalReply[] = useMemo(
+    () =>
+      replies.map((r) => ({
+        id: r.id,
+        text: r.body ?? "",
+        at: r.sent_at ?? r.created_at,
+        status: r.status,
+      })),
+    [replies],
+  );
 
   const rightPanel = (
     <div className="flex h-full flex-col overflow-y-auto">

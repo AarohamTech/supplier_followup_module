@@ -57,28 +57,30 @@ def ensure_columns(engine: Engine, tables: Iterable | None = None) -> list[str]:
     changes: list[str] = []
     target_tables = list(tables) if tables else list(Base.metadata.sorted_tables)
 
-    with engine.begin() as conn:
-        existing_tables = set(inspector.get_table_names())
-        for table in target_tables:
-            if table.name not in existing_tables:
+    existing_tables = set(inspector.get_table_names())
+    for table in target_tables:
+        if table.name not in existing_tables:
+            continue
+        existing_cols = {c["name"] for c in inspector.get_columns(table.name)}
+        for col in table.columns:
+            if col.name in existing_cols:
                 continue
-            existing_cols = {c["name"] for c in inspector.get_columns(table.name)}
-            for col in table.columns:
-                if col.name in existing_cols:
-                    continue
-                ddl_type = _column_ddl_type(col, engine)
-                default = _default_clause(col)
-                # ADD COLUMN can only be NOT NULL when a default exists to backfill
-                # existing rows; otherwise add it nullable.
-                not_null = " NOT NULL" if (not col.nullable and default) else ""
-                stmt = (
-                    f"ALTER TABLE {table.name} ADD COLUMN {col.name} {ddl_type}"
-                    f"{default}{not_null}"
-                )
-                try:
+            ddl_type = _column_ddl_type(col, engine)
+            default = _default_clause(col)
+            # ADD COLUMN can only be NOT NULL when a default exists to backfill
+            # existing rows; otherwise add it nullable.
+            not_null = " NOT NULL" if (not col.nullable and default) else ""
+            stmt = (
+                f"ALTER TABLE {table.name} ADD COLUMN {col.name} {ddl_type}"
+                f"{default}{not_null}"
+            )
+            # Each ALTER runs in its own transaction so one failure (e.g. a column
+            # Postgres rejects) can't abort the others.
+            try:
+                with engine.begin() as conn:
                     conn.execute(text(stmt))
-                    changes.append(f"{table.name}.{col.name}")
-                    log.info("Schema evolve: added %s.%s", table.name, col.name)
-                except Exception:  # noqa: BLE001
-                    log.exception("Schema evolve failed for %s.%s", table.name, col.name)
+                changes.append(f"{table.name}.{col.name}")
+                log.info("Schema evolve: added %s.%s", table.name, col.name)
+            except Exception:  # noqa: BLE001
+                log.exception("Schema evolve failed for %s.%s", table.name, col.name)
     return changes

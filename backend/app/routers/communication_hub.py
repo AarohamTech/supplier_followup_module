@@ -1099,3 +1099,63 @@ def send_mail_now(
         "mail_history_id": mail_history_id,
         "send_result": result,
     }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 11. Outbound draft approvals (e.g. auto-reply acknowledgements awaiting review)
+# ─────────────────────────────────────────────────────────────────────────────
+def _draft_dict(m: CommunicationMessage) -> dict[str, Any]:
+    return {
+        "id": m.id,
+        "subject": m.subject,
+        "body": m.body,
+        "mail_type": m.mail_type,
+        "status": m.status,
+        "supplier_name": m.supplier_name,
+        "supplier_po_no": m.supplier_po_no,
+        "customer_mail_id": m.customer_mail_id,
+        "to_emails": m.to_emails or ([m.receiver_email] if m.receiver_email else []),
+        "receiver_email": m.receiver_email,
+        "in_reply_to": m.in_reply_to,
+        "created_at": m.created_at.isoformat(),
+    }
+
+
+@router.get("/drafts")
+def list_outbox_drafts(db: Session = Depends(get_db)) -> list[dict[str, Any]]:
+    """Outbound messages awaiting human approval (DRAFT, not yet queued to send)."""
+    rows = db.scalars(
+        select(CommunicationMessage)
+        .where(
+            CommunicationMessage.direction == "OUTGOING",
+            CommunicationMessage.status == "DRAFT",
+        )
+        .order_by(CommunicationMessage.created_at.desc())
+    ).all()
+    return [_draft_dict(m) for m in rows]
+
+
+@router.post("/messages/{message_id}/approve", dependencies=[Depends(require_manager)])
+def approve_message(message_id: int, db: Session = Depends(get_db)) -> dict[str, Any]:
+    """Approve a DRAFT outbound message → READY, so the SMTP worker sends it."""
+    msg = db.get(CommunicationMessage, message_id)
+    if msg is None:
+        raise HTTPException(404, "Message not found")
+    if msg.direction != "OUTGOING" or msg.status != "DRAFT":
+        raise HTTPException(409, "Only OUTGOING DRAFT messages can be approved")
+    msg.status = "READY"
+    db.commit()
+    return {"ok": True, "message_id": msg.id, "status": msg.status}
+
+
+@router.post("/messages/{message_id}/discard", dependencies=[Depends(require_manager)])
+def discard_message(message_id: int, db: Session = Depends(get_db)) -> dict[str, Any]:
+    """Discard a DRAFT outbound message (it will never be sent)."""
+    msg = db.get(CommunicationMessage, message_id)
+    if msg is None:
+        raise HTTPException(404, "Message not found")
+    if msg.direction != "OUTGOING" or msg.status != "DRAFT":
+        raise HTTPException(409, "Only OUTGOING DRAFT messages can be discarded")
+    db.delete(msg)
+    db.commit()
+    return {"ok": True, "discarded_id": message_id}

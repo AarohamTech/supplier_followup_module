@@ -7,6 +7,7 @@ from typing import Any
 from sqlalchemy import or_, select, func
 from sqlalchemy.orm import Session
 
+from ..models.communication_message import CommunicationMessage
 from ..models.communication_task import CommunicationTask
 from ..models.customer_mail import (
     CUSTOMER_MAIL_PRIORITIES,
@@ -14,6 +15,9 @@ from ..models.customer_mail import (
     CUSTOMER_MAIL_TYPES,
     CustomerMail,
 )
+from ..models.procurement import ProcurementRecord
+from . import communication_message_service as msg_service
+from . import po_followup_service
 
 
 def list_mails(
@@ -152,6 +156,121 @@ def resolve_mail(
     db.commit()
     db.refresh(row)
     return row
+
+
+def _reply_subject(subject: str | None) -> str:
+    s = (subject or "Your enquiry").strip()
+    return s if s.lower().startswith("re:") else f"Re: {s}"
+
+
+def _humanize_date(value: Any) -> str | None:
+    """Render an ISO date/datetime string as a clean customer-facing date."""
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(str(value)).strftime("%d %b %Y")
+    except ValueError:
+        return str(value)
+
+
+def reply_to_mail(
+    db: Session,
+    mail_id: int,
+    *,
+    body: str,
+    subject: str | None = None,
+) -> tuple[CustomerMail | None, CommunicationMessage | None]:
+    """Queue an outbound reply to a customer mail (sent by the SMTP worker)."""
+    mail = get_mail(db, mail_id)
+    if mail is None:
+        return None, None
+    if not mail.from_email:
+        raise ValueError("This mail has no sender address to reply to")
+
+    msg = msg_service.queue_outgoing_message(
+        db,
+        subject=subject or _reply_subject(mail.subject),
+        body=body,
+        to_emails=[mail.from_email],
+        receiver_email=mail.from_email,
+        mail_type="CUSTOMER_REPLY",
+        customer_mail_id=mail.id,
+        in_reply_to=mail.message_uid,
+        commit=False,
+    )
+    if mail.status == "OPEN":
+        mail.status = "IN_PROGRESS"
+    db.commit()
+    db.refresh(mail)
+    db.refresh(msg)
+    return mail, msg
+
+
+def list_replies(db: Session, mail_id: int) -> list[CommunicationMessage]:
+    return list(
+        db.scalars(
+            select(CommunicationMessage)
+            .where(CommunicationMessage.customer_mail_id == mail_id)
+            .order_by(CommunicationMessage.created_at.asc())
+        ).all()
+    )
+
+
+def build_draft_reply(db: Session, mail_id: int) -> dict[str, Any] | None:
+    """Phase 2: compose a suggested reply from live order + commitment data.
+
+    Deterministic — no LLM. Returns subject/body and the data source used.
+    """
+    mail = get_mail(db, mail_id)
+    if mail is None:
+        return None
+
+    name = mail.from_name or mail.customer_name or "there"
+    subject = _reply_subject(mail.subject)
+    po = (mail.linked_supplier_po_no or "").strip()
+
+    if po:
+        rec = db.scalar(
+            select(ProcurementRecord)
+            .where(ProcurementRecord.supplier_po_no == po)
+            .order_by(ProcurementRecord.created_at.desc())
+        )
+        commitments = po_followup_service.list_commitments(db, supplier_po_no=po)
+        commitment = commitments[0] if commitments else None
+
+        material = rec.material_name if rec else None
+        status = (
+            (commitment.get("supplier_status") if commitment else None)
+            or (rec.po_status if rec else None)
+            or "in progress"
+        )
+        date = None
+        if commitment and commitment.get("commitment_date"):
+            date = commitment["commitment_date"]
+        elif rec and rec.commitment_date:
+            date = rec.commitment_date.isoformat()
+        elif rec and rec.shipment_date:
+            date = rec.shipment_date.isoformat()
+
+        date = _humanize_date(date)
+        if date:
+            body = (
+                f"Hi {name},\n\n"
+                f"Thank you for reaching out regarding {po}"
+                f"{f' ({material})' if material else ''}. "
+                f"The current committed dispatch date is {date} (status: {status}). "
+                "We will share tracking details as soon as it ships.\n\n"
+                "Best regards,\nProcureDirect Team"
+            )
+            return {"subject": subject, "body": body, "source": "order-data", "supplier_po_no": po}
+
+    body = (
+        f"Hi {name},\n\n"
+        "Thank you for your message. We are checking the latest status with our "
+        "team and will get back to you shortly.\n\n"
+        "Best regards,\nProcureDirect Team"
+    )
+    return {"subject": subject, "body": body, "source": "generic", "supplier_po_no": po or None}
 
 
 def stats(db: Session) -> dict[str, int]:

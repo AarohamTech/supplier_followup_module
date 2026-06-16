@@ -11,6 +11,7 @@ import {
   Settings,
   Inbox,
   ListChecks,
+  MailCheck,
   ShieldCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -31,6 +32,7 @@ const items: NavItem[] = [
   { href: "/emails", label: "Email Master", icon: Mail },
   { href: "/mail-history", label: "Comm Hub", icon: MessagesSquare },
   { href: "/customer-mails", label: "Customer Mails", icon: Inbox },
+  { href: "/approvals", label: "Approvals", icon: MailCheck, minRole: "manager" },
   { href: "/tasks", label: "Tasks", icon: ListChecks },
   { href: "/reports", label: "Reports", icon: BarChart3 },
   { href: "/settings", label: "Settings", icon: Settings, minRole: "manager" },
