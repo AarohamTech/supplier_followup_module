@@ -395,7 +395,10 @@ def _record_due_for_auto_mail(rec: ProcurementRecord, now: datetime) -> bool:
     if (rec.mail_status or "").upper() == "READY":
         return False
     if (rec.mail_status or "").upper() == "SENT":
-        return rec.next_followup_date is not None and rec.next_followup_date <= now
+        # No next date scheduled -> treat as due so critical POs don't freeze.
+        if rec.next_followup_date is None:
+            return True
+        return rec.next_followup_date <= now
     if rec.next_followup_date is not None and rec.next_followup_date > now:
         return False
     return True

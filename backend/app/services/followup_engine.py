@@ -26,7 +26,11 @@ def _days_since(d: datetime | date | None) -> int:
 
 
 def red_day_index(rec: ProcurementRecord) -> int:
-    return max(_days_since(rec.shipment_date), 1)
+    """RED escalation day, counted from when the record became RED — Day 1 = first
+    day late, Day 2 = second day, etc. Falls back to Day 1 if not yet stamped."""
+    if rec.red_since is None:
+        return 1
+    return _days_since(rec.red_since) + 1
 
 
 def get_followup_rule(rec: ProcurementRecord) -> FollowupRule:
@@ -95,6 +99,14 @@ def get_followup_rule(rec: ProcurementRecord) -> FollowupRule:
 
 
 def apply_followup_logic(rec: ProcurementRecord, db=None) -> ProcurementRecord:
+    # Stamp when the record first became RED (so the escalation day is counted
+    # from "when it went late"); clear it once it's no longer RED.
+    if (rec.signal or "").upper() == "RED":
+        if rec.red_since is None:
+            rec.red_since = datetime.utcnow()
+    else:
+        rec.red_since = None
+
     rule = get_followup_rule(rec)
     rec.ai_required = rule.ai_required
     rec.escalation_level = rule.escalation_level
@@ -111,11 +123,11 @@ def apply_followup_logic(rec: ProcurementRecord, db=None) -> ProcurementRecord:
             hours = None
 
     if hours is None:
-        hours = 24 if rule.escalation_level in {"NONE", "LEVEL_1"} else None
+        # Always schedule a next follow-up — including AI/critical — so the
+        # highest-risk POs keep getting chased instead of going silent.
+        hours = 24
 
-    rec.next_followup_date = (
-        datetime.utcnow() + timedelta(hours=hours) if hours else None
-    )
+    rec.next_followup_date = datetime.utcnow() + timedelta(hours=hours)
     return rec
 
 

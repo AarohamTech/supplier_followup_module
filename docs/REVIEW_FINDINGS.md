@@ -28,8 +28,21 @@
   `JWT_SECRET`/`SEED_ADMIN_PASSWORD`/Supabase password before any real deployment.
 - Verified: 35/35 tests pass; live RBAC + webhook checks all correct.
 
-**⏳ Still need your decision:** #6 RED day anchor · #7 BLACK/AI re-follow-up ·
-#9 followup_count meaning · #14 customer reply feature · #15 "Save & Notify".
+**Session 2026-06-16 — round 3 (engine decisions implemented):**
+- ✅ #6 **RED day counts from when it went late.** New `red_since` column (stamped on
+  first RED, cleared when no longer RED); `red_day_index` = days since `red_since` + 1.
+  Day 1→urgent, Day 2→strong, Day 3→AI. ALTERed the live Supabase table to add the column.
+- ✅ #7 **Critical/AI orders are auto-chased.** `apply_followup_logic` now always schedules a
+  next follow-up (24h default), and `_record_due_for_auto_mail` treats SENT-with-no-next as due,
+  so BLACK/AI no longer freeze after one mail.
+- ✅ #9 **Follow-up count = once per email.** Both the send worker and manual "mark sent" only
+  increment when the record wasn't already in a sent state (no double-count).
+- ✅ #15 **"Save & Notify" button removed** (no real notification existed).
+- Verified: 35/35 tests pass; runtime check of Day 1/2/3 + BLACK auto-schedule + RED→GREEN clear;
+  frontend `tsc` clean.
+
+**⏳ Still open — the bigger feature:** #14 customer reply (let a person actually email a customer
+back from the app, incl. approving the auto-reply drafts from #5). Worth planning as its own step.
 
 **Not started yet:** the remaining P2/P3 items below (#16–#39, #42–#45).
 
@@ -45,16 +58,16 @@
 
 ## P1 — Follow-up engine correctness (the app's core purpose)
 
-- [ ] **6. RED "day index" is anchored to `shipment_date`, not RED onset.** `services/followup_engine.py:28` `red_day_index = days_since(shipment_date)`. A PO that just turned RED but shipped 10 days ago jumps straight to AI/escalation, skipping Day-1/Day-2; one with a near ship date is stuck at Day-1 forever. _Fix: base on `followup_count` or a `red_since` timestamp._
-- [ ] **7. BLACK/AI records never get a `next_followup_date`, so the highest-risk POs stall.** `followup_engine.py:113-118`: with `db is None` (the sync, procurement-update, and mail-draft callers) `hours=None` for LEVEL_2/CRITICAL → `next_followup_date=None`. Combined with `po_followup_mail_service.py:397` treating SENT-with-null-next-date as **not due**, BLACK/AI POs get at most one auto-mail then freeze. _Fix: always pass `db`, and treat null-next SENT as due._
+- [x] **6. RED "day index" is anchored to `shipment_date`, not RED onset.** ✅ FIXED (red_since column) `services/followup_engine.py:28` `red_day_index = days_since(shipment_date)`. A PO that just turned RED but shipped 10 days ago jumps straight to AI/escalation, skipping Day-1/Day-2; one with a near ship date is stuck at Day-1 forever. _Fix: base on `followup_count` or a `red_since` timestamp._
+- [x] **7. BLACK/AI records never get a `next_followup_date`, so the highest-risk POs stall.** ✅ FIXED (auto-chase) `followup_engine.py:113-118`: with `db is None` (the sync, procurement-update, and mail-draft callers) `hours=None` for LEVEL_2/CRITICAL → `next_followup_date=None`. Combined with `po_followup_mail_service.py:397` treating SENT-with-null-next-date as **not due**, BLACK/AI POs get at most one auto-mail then freeze. _Fix: always pass `db`, and treat null-next SENT as due._
 - [x] **8. `send-mail` "idempotent" guard is broken → duplicate escalation sends.** ✅ FIXED `communication_hub.py:1060` has a dead `existing` query and the real dedup loop only inspects `status=="READY"`, so an already-`SENT` mail re-queues a fresh READY row and re-sends. _Fix: drop the dead query; match `mail_history_id` across READY **and** SENT._
-- [ ] **9. `followup_count` over-counts.** `mail_send_worker.py:166-172` increments per matched procurement record; for a PO-group mail `_target_procurement_rows` returns **all** rows on the PO, so one email bumps N records, and resends bump again. Escalation logic keyed on the count misfires. _Fix: increment once per mail._
+- [x] **9. `followup_count` over-counts.** ✅ FIXED (count once per email; no double-count) `mail_send_worker.py:166-172` increments per matched procurement record; for a PO-group mail `_target_procurement_rows` returns **all** rows on the PO, so one email bumps N records, and resends bump again. Escalation logic keyed on the count misfires. _Fix: increment once per mail._
 - [x] **10. `find_today_draft` ignores `sent_status`.** ✅ FIXED `po_followup_service.py:335` reuses any same-day mail incl. `FAILED`/`CANCELLED`, so regenerating after a failure returns the dead draft and blocks a fresh send. _Fix: filter `sent_status IN ACTIVE_AUTO_STATUSES`._
 - [ ] **11. IMAP fetch marks mail `\Seen` before processing → replies lost on transient error.** `mail_fetch_worker.py:259` fetches `(RFC822)` (sets `\Seen`); if `_process_one` throws (swallowed at :267) the reply is gone with no DB row. _Fix: use `BODY.PEEK[]`, set `\Seen` only after a successful commit._
 - [x] **12. Escalation tasks never set `task_source="ESCALATION"`.** ✅ FIXED `communication_hub.py:1014` leaves the model default `"SUPPLIER"`, so the `escalation_tasks` KPI (`communication.py:175`) is permanently 0 and escalations are mis-bucketed. _Fix: pass `task_source="ESCALATION"`._
 - [x] **13. `linked_supplier_po_no` is never populated.** ✅ FIXED `mail_fetch_worker.py:160-175` builds a `CustomerMail` but drops the already-parsed PO. The column/serializer (`models/customer_mail.py:51`) is always null → customer mails never link to orders. _Fix: set `linked_supplier_po_no=parsed.get("supplier_po_no")`._
 - [ ] **14. Customer "Send Response" sends nothing.** `CustomerWorkspace.tsx:217` only appends local state + flips status; there is no reply endpoint/API call. The reply isn't persisted and is lost on refresh; the optimistic bubble is never rolled back on failure. _Fix: add `POST /api/customer-mails/{id}/reply` (backend) + real API call, update UI only on success. (Pairs with the consultation doc's Phase 1.)_
-- [ ] **15. "Save & Notify" behaves identically to "Save".** `CustomerTaskModal.tsx` calls `onSave(payload, notify)` but `handleSaveTask` (`CustomerWorkspace.tsx:252`) ignores the flag. _Fix: honor `notify` or remove the button._
+- [x] **15. "Save & Notify" behaves identically to "Save".** ✅ FIXED (button removed) `CustomerTaskModal.tsx` calls `onSave(payload, notify)` but `handleSaveTask` (`CustomerWorkspace.tsx:252`) ignores the flag. _Fix: honor `notify` or remove the button._
 
 ## P2 — Medium
 

@@ -55,6 +55,9 @@ class ProcurementRecord(Base):
     escalation_level: Mapped[str] = mapped_column(String(32), default="NONE")
     ai_required: Mapped[bool] = mapped_column(Boolean, default=False)
     next_followup_date: Mapped[datetime | None] = mapped_column(DateTime)
+    # When the record first became RED — anchors the RED escalation day count
+    # ("day 1" = first day late) instead of counting from the ship date.
+    red_since: Mapped[datetime | None] = mapped_column(DateTime)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)

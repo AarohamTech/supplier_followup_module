@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Bell, Loader2, UserPlus, X } from "lucide-react";
+import { Loader2, UserPlus, X } from "lucide-react";
 import type {
   CommunicationTaskCreate,
   CustomerMail,
@@ -17,7 +17,7 @@ interface CustomerTaskModalProps {
   context: ProcurementContext | null;
   saving: boolean;
   onCancel: () => void;
-  onSave: (payload: CommunicationTaskCreate, notify: boolean) => void;
+  onSave: (payload: CommunicationTaskCreate) => void;
 }
 
 function Field({
@@ -104,9 +104,9 @@ export default function CustomerTaskModal({
     };
   }
 
-  function submit(notify: boolean) {
+  function submit() {
     if (!title.trim() || saving) return;
-    onSave(buildPayload(), notify);
+    onSave(buildPayload());
   }
 
   return (
@@ -296,23 +296,12 @@ export default function CustomerTaskModal({
             Cancel
           </button>
           <button
-            className="rounded-md border border-brand-border px-3 py-1.5 text-sm text-brand-dark hover:bg-gray-50 disabled:opacity-50"
-            onClick={() => submit(false)}
-            disabled={saving || !title.trim()}
-          >
-            Save Task
-          </button>
-          <button
             className="inline-flex items-center gap-1.5 rounded-md bg-signal-red px-3.5 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
-            onClick={() => submit(true)}
+            onClick={() => submit()}
             disabled={saving || !title.trim()}
           >
-            {saving ? (
-              <Loader2 size={14} className="animate-spin" />
-            ) : (
-              <Bell size={14} />
-            )}
-            Save &amp; Notify
+            {saving && <Loader2 size={14} className="animate-spin" />}
+            Save Task
           </button>
         </div>
       </div>

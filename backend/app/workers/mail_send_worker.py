@@ -164,11 +164,13 @@ def _sync_delivery_state(
             history.remarks = error
 
     for rec in _target_procurement_rows(db, msg, history):
-        old_status = rec.mail_status
+        old_status = (rec.mail_status or "").upper()
         rec.mail_status = status
         if status == "SENT":
             rec.last_followup_date = msg.sent_at or datetime.utcnow()
-            if old_status != "SENT":
+            # One follow-up per record per mail — skip if already in a sent state
+            # (prevents double-count with a later manual "mark sent").
+            if old_status not in {"SENT", "SENT_MANUALLY"}:
                 rec.followup_count = (rec.followup_count or 0) + 1
 
 

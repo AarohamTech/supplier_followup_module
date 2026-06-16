@@ -117,7 +117,8 @@ def update_history_status(
         rec.mail_status = status
         if status == "SENT_MANUALLY":
             rec.last_followup_date = row.sent_at
-            if old_status != "SENT_MANUALLY":
+            # Don't double-count if the worker already marked this mail SENT.
+            if (old_status or "").upper() not in {"SENT", "SENT_MANUALLY"}:
                 rec.followup_count = (rec.followup_count or 0) + 1
 
     db.commit()

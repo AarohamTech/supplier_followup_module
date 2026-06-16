@@ -162,8 +162,11 @@ npm run dev
 - Round 2 fixes committed (decisions made): #2 RBAC enforced (viewer read-only, user writes,
   manager send/approve, admin user-mgmt — live-tested); #5 auto-reply now a DRAFT (needs approval);
   #3 webhooks require `X-Webhook-Secret`; #4 left as-is by choice.
-- **Next:** decisions still pending on #6 RED day anchor, #7 BLACK/AI re-follow-up, #9 followup_count
-  meaning, #14 customer reply feature, #15 Save&Notify. See REVIEW_FINDINGS "Status / Work Log".
+- Round 3 fixes committed (engine decisions): #6 RED day counts from when it went late
+  (`red_since` column + Supabase ALTER); #7 critical/AI orders auto-chased (no more freeze);
+  #9 follow-up count once per email; #15 "Save & Notify" removed.
+- **Next:** only #14 (customer reply feature) remains from the decision list — plan it as its own
+  step. Then the P2/P3 backlog (#16–#39, #42–#45) in REVIEW_FINDINGS.md.
 
 ### Follow-ups / not in this phase
 - Tighten per-endpoint RBAC to the full matrix (currently: auth everywhere + admin on user
