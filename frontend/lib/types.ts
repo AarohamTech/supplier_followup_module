@@ -699,7 +699,7 @@ export interface CustomerReply {
 export interface CustomerDraftReply {
   subject: string;
   body: string;
-  source: "order-data" | "generic";
+  source: "ai" | "order-data" | "generic";
   supplier_po_no: string | null;
 }
 
@@ -716,4 +716,22 @@ export interface OutboxDraft {
   receiver_email: string | null;
   in_reply_to: string | null;
   created_at: string;
+}
+
+// ─── AI assistant ────────────────────────────────────────────────────────────
+export interface ChatMessage {
+  role: "user" | "assistant" | "system";
+  content: string;
+}
+
+export interface AiChatResponse {
+  reply: string;
+  model: string;
+}
+
+export interface AiHealth {
+  enabled: boolean;
+  model: string;
+  base_url: string;
+  has_key: boolean;
 }

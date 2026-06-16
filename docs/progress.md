@@ -173,6 +173,21 @@ npm run dev
   drafts. Plugged in real POP3/SMTP creds (tested OK). Scheduler ON; auto PO-blast OFF.
 - **Next:** remaining P2/P3 backlog in REVIEW_FINDINGS.md (several need a quick product decision — *).
 
+### Phase 4 — AI / LLM + HTML mail _(2026-06-16)_
+- **Dedicated AI module** (kept separate so endpoints don't mix): `services/ai_service.py`
+  (single place that talks to the LLM) + `routers/ai.py` under its own `/api/ai/*` prefix.
+  OpenAI-compatible client pointed at **NVIDIA NIM** (`gpt-oss-120b`), config via `LLM_*` env.
+- **Assistant page** (`/assistant`, all roles) — chatbot via `POST /api/ai/chat`. Agentic tools later.
+- **HTML emails:** customer replies now send a branded HTML body (plain-text fallback kept).
+- **AI reply drafts:** `POST /api/customer-mails/{id}/draft-reply?ai=true` polishes the reply with
+  the LLM, grounded in order data; **default is the instant deterministic template** (no LLM call).
+  Frontend shows the template instantly + an "Improve with AI" button (on-demand, to respect the
+  free-tier rate limit).
+- **Speed/robustness:** `reasoning_effort=low` + token cap → ~2-5s chat; 30s timeout, no retry,
+  graceful fallback to the template on timeout.
+- ⚠️ The NVIDIA **free tier rate-limits** bursts → calls can queue/timeout; the fallback covers it.
+  Rotate the NVIDIA key (shared in chat). Verified: chat live; 35/35 tests; frontend build (16 routes).
+
 ### Follow-ups / not in this phase
 - Tighten per-endpoint RBAC to the full matrix (currently: auth everywhere + admin on user
   mgmt + manager+ on send/escalate & settings writes; other mutations are auth-only).

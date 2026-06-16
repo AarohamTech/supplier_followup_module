@@ -287,9 +287,14 @@ def list_customer_mail_replies(mail_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/{mail_id}/draft-reply")
-def draft_customer_reply(mail_id: int, db: Session = Depends(get_db)) -> dict:
-    """Phase 2: a suggested reply built deterministically from order data."""
-    draft = customer_mail_service.build_draft_reply(db, mail_id)
+def draft_customer_reply(
+    mail_id: int,
+    ai: bool = Query(default=False, description="Use the LLM (slower) vs the instant template"),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Suggested reply from order data. `ai=true` polishes it with the LLM; the
+    default is the instant deterministic template (no LLM call)."""
+    draft = customer_mail_service.build_draft_reply(db, mail_id, use_ai=ai)
     if draft is None:
         raise HTTPException(404, "Customer mail not found")
     return draft

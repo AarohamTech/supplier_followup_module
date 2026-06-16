@@ -1,7 +1,7 @@
 "use client";
 
 import { memo } from "react";
-import { Sparkles } from "lucide-react";
+import { Loader2, Sparkles } from "lucide-react";
 import { useRenderCount } from "./hooks";
 import { RISK_TONE, formatDate } from "./shared";
 
@@ -24,6 +24,8 @@ interface ProcurementContextPanelProps {
   loading: boolean;
   aiSuggestion: string;
   onUseSuggestion: () => void;
+  onAiDraft: () => void;
+  aiLoading: boolean;
 }
 
 function DataCard({ label, value, tone }: { label: string; value: string | null; tone?: string }) {
@@ -44,6 +46,8 @@ function ProcurementContextPanelBase({
   loading,
   aiSuggestion,
   onUseSuggestion,
+  onAiDraft,
+  aiLoading,
 }: ProcurementContextPanelProps) {
   useRenderCount("ProcurementContextPanel");
 
@@ -125,14 +129,26 @@ function ProcurementContextPanelBase({
           <Sparkles className="h-3.5 w-3.5" />
           AI Suggested Reply
         </div>
-        <p className="mt-1.5 text-xs leading-relaxed text-brand-dark">{aiSuggestion}</p>
-        <button
-          type="button"
-          onClick={onUseSuggestion}
-          className="mt-2 w-full rounded-md border border-violet-300 bg-white py-1.5 text-xs font-medium text-violet-700 hover:bg-violet-50"
-        >
-          Use this reply
-        </button>
+        <p className="mt-1.5 whitespace-pre-wrap text-xs leading-relaxed text-brand-dark">{aiSuggestion}</p>
+        <div className="mt-2 flex gap-2">
+          <button
+            type="button"
+            onClick={onUseSuggestion}
+            className="flex-1 rounded-md border border-violet-300 bg-white py-1.5 text-xs font-medium text-violet-700 hover:bg-violet-50"
+          >
+            Use this reply
+          </button>
+          <button
+            type="button"
+            onClick={onAiDraft}
+            disabled={aiLoading}
+            title="Rewrite with AI (uses the LLM)"
+            className="inline-flex items-center justify-center gap-1 rounded-md bg-violet-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-violet-700 disabled:opacity-50"
+          >
+            {aiLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+            {aiLoading ? "Writing…" : "Improve with AI"}
+          </button>
+        </div>
       </div>
     </div>
   );

@@ -77,6 +77,7 @@ export default function CustomerWorkspace() {
   const [replies, setReplies] = useState<CustomerReply[]>([]);
   const [replyReloadKey, setReplyReloadKey] = useState(0);
   const [serverDraft, setServerDraft] = useState<{ subject: string; body: string } | null>(null);
+  const [aiDraftLoading, setAiDraftLoading] = useState(false);
   const [seed, setSeed] = useState<{ text: string; nonce: number } | undefined>();
   const [sending, setSending] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -338,6 +339,21 @@ export default function CustomerWorkspace() {
     setDrawerOpen(false);
   }, [aiSuggestion]);
 
+  // On-demand LLM draft (kept off the select path to avoid burning rate limits).
+  const handleAiDraft = useCallback(() => {
+    if (selectedId == null) return;
+    setAiDraftLoading(true);
+    api
+      .draftCustomerReply(selectedId, true)
+      .then((d) => {
+        setServerDraft({ subject: d.subject, body: d.body });
+        setSeed((prev) => ({ text: d.body, nonce: (prev?.nonce ?? 0) + 1 }));
+        setToast(d.source === "ai" ? "AI draft ready." : "AI was busy — used a data template.");
+      })
+      .catch((err) => setToast((err as Error).message))
+      .finally(() => setAiDraftLoading(false));
+  }, [selectedId]);
+
   const openContext = useCallback(() => setDrawerOpen(true), []);
   const closeContext = useCallback(() => setDrawerOpen(false), []);
 
@@ -366,6 +382,8 @@ export default function CustomerWorkspace() {
         loading={loadingContext}
         aiSuggestion={aiSuggestion}
         onUseSuggestion={handleUseSuggestion}
+        onAiDraft={handleAiDraft}
+        aiLoading={aiDraftLoading}
       />
       <TaskPanel
         tasks={tasks}

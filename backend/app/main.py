@@ -6,11 +6,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi import Depends
 
 from .core.config import settings
-from .core.deps import require_writer_for_writes
+from .core.deps import get_current_user, require_writer_for_writes
 from .core.logging import setup_logging
 from .core.schema_evolve import ensure_columns
 from .database import Base, engine, ensure_schema
 from .routers import (
+    ai,
     auth,
     customer_mails,
     procurement,
@@ -96,6 +97,9 @@ app.include_router(communication_hub.router, dependencies=_rbac)
 app.include_router(customer_mails.router, dependencies=_rbac)
 app.include_router(po_followups.router, dependencies=_rbac)
 app.include_router(settings_router.router, dependencies=_rbac)
+
+# AI assistant: available to any logged-in user (including viewers).
+app.include_router(ai.router, dependencies=[Depends(get_current_user)])
 
 
 @app.get("/")

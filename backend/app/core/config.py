@@ -35,6 +35,19 @@ class Settings(BaseSettings):
     # machine). When empty, the webhook endpoints reject all calls (fail closed).
     WEBHOOK_SECRET: str | None = Field(default=None)
 
+    # ── LLM / AI (OpenAI-compatible endpoint, e.g. NVIDIA NIM) ────────────────
+    LLM_ENABLED: bool = Field(default=False)
+    LLM_BASE_URL: str = Field(default="https://integrate.api.nvidia.com/v1")
+    LLM_API_KEY: str | None = Field(default=None)
+    LLM_MODEL: str = Field(default="openai/gpt-oss-120b")
+    LLM_MAX_TOKENS: int = Field(default=1024)
+    LLM_TEMPERATURE: float = Field(default=0.7)
+    # gpt-oss reasoning effort: low keeps interactive responses fast. "" disables.
+    LLM_REASONING_EFFORT: str = Field(default="low")
+    # Hard request timeout (seconds) so a slow/hung LLM can't block the UI.
+    # Fail fast and fall back to the deterministic template on timeout.
+    LLM_TIMEOUT_SECONDS: float = Field(default=30.0)
+
     RED_AI_AFTER_DAYS: int = Field(...)
 
     # ── Mail automation toggles (safe defaults: everything OFF) ───────────

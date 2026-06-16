@@ -44,6 +44,9 @@ import type {
   CustomerReply,
   CustomerDraftReply,
   OutboxDraft,
+  ChatMessage,
+  AiChatResponse,
+  AiHealth,
   AuthUser,
   LoginResponse,
   UserCreatePayload,
@@ -435,8 +438,11 @@ export const api = {
     ),
   getCustomerMailReplies: (id: number) =>
     http<CustomerReply[]>(`/api/customer-mails/${id}/replies`),
-  draftCustomerReply: (id: number) =>
-    http<CustomerDraftReply>(`/api/customer-mails/${id}/draft-reply`, { method: "POST" }),
+  draftCustomerReply: (id: number, ai = false) =>
+    http<CustomerDraftReply>(
+      `/api/customer-mails/${id}/draft-reply${ai ? "?ai=true" : ""}`,
+      { method: "POST" },
+    ),
 
   // Outbound draft approvals (e.g. auto-reply acknowledgements)
   listOutboxDrafts: () => http<OutboxDraft[]>(`/api/communication-hub/drafts`),
@@ -539,6 +545,14 @@ export const api = {
     http<{ ok: boolean; deleted_id: number }>(`/api/users/${id}`, { method: "DELETE" }),
 
   listRoles: () => http<{ roles: string[] }>("/api/users/meta/roles"),
+
+  // ─── AI assistant ─────────────────────────────────────────────────────
+  aiChat: (messages: ChatMessage[]) =>
+    http<AiChatResponse>("/api/ai/chat", {
+      method: "POST",
+      body: JSON.stringify({ messages }),
+    }),
+  aiHealth: () => http<AiHealth>("/api/ai/health"),
 };
 
 export default api;
