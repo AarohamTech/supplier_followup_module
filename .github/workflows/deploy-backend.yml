@@ -1,0 +1,44 @@
+name: Deploy backend to EC2
+
+# Auto-deploys the FastAPI backend to the EC2 instance on every push to main
+# that touches the backend (or this workflow). Pulls the new code, reinstalls
+# deps, and restarts the systemd service.
+#
+# Required repo secrets (Settings → Secrets and variables → Actions):
+#   EC2_HOST     = 54.88.107.89
+#   EC2_SSH_KEY  = full contents of SUPPLIER_EMAIL_MODULE_API.pem (the private key)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - ".github/workflows/deploy-backend.yml"
+  workflow_dispatch: {}
+
+concurrency:
+  group: deploy-backend
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ubuntu
+          key: ${{ secrets.EC2_SSH_KEY }}
+          command_timeout: 10m
+          script: |
+            set -e
+            export PATH="$HOME/.local/bin:$PATH"
+            cd ~/supplier_followup_module
+            git fetch --quiet origin main
+            git reset --hard origin/main
+            cd backend
+            uv pip install --python .venv/bin/python -r requirements.txt
+            sudo systemctl restart sfa-backend
+            sleep 5
+            curl -fsS http://localhost:8000/healthz && echo " — deploy OK"
