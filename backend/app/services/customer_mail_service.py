@@ -317,6 +317,7 @@ def build_draft_reply(
                 material=material,
                 status=status,
                 dispatch_date=date,
+                instruction=instruction,
             )
             if ai_body:
                 return {"subject": subject, "body": ai_body, "source": "ai", "supplier_po_no": po or None}
