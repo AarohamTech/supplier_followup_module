@@ -6,22 +6,21 @@ export default {
     extend: {
       colors: {
         brand: {
-          red: "#D81F2F",
-          fg: "#101418",
-          dark: "#101418",
-          muted: "#66717A",
-          surface: "#EEF3F2",
-          border: "#DFE5E7",
+          red: "#E11D2E",
+          dark: "#111827",
+          muted: "#6B7280",
+          surface: "#F7F8FA",
+          border: "#E5E7EB",
         },
         signal: {
-          green: "#14845F",
-          yellow: "#B7791F",
-          red: "#D81F2F",
-          black: "#101418",
+          green: "#16A34A",
+          yellow: "#F59E0B",
+          red: "#E11D2E",
+          black: "#111827",
         },
       },
       boxShadow: {
-        card: "0 18px 44px rgba(30,42,49,.08), 0 1px 2px rgba(16,20,24,.05)",
+        card: "0 1px 2px rgba(16,24,40,.04), 0 1px 3px rgba(16,24,40,.06)",
       },
     },
   },

@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useStore } from "@/lib/store";
 import api from "@/lib/api";
 import type { SupplierEmail } from "@/lib/types";
-import { Mail, Pencil, Trash2, Plus, X, Save } from "lucide-react";
+import { Pencil, Trash2, Plus, X, Save } from "lucide-react";
 
 const EMPTY: Partial<SupplierEmail> = {
   supplier_id: undefined,
@@ -79,27 +79,19 @@ export default function Page() {
   };
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <span className="grid h-10 w-10 place-items-center rounded-lg bg-brand-dark text-white shadow-card">
-            <Mail size={18} />
-          </span>
-          <div>
-            <h1 className="text-xl font-bold text-brand-dark">Email Master</h1>
-            <p className="text-sm text-brand-muted">Supplier recipient rules and escalation contacts.</p>
-          </div>
-        </div>
+        <h1 className="text-xl font-semibold">Email Master</h1>
         <button onClick={() => { setError(null); setEditing({ ...EMPTY }); }} className="btn-primary">
           <Plus size={14} /> Add Mapping
         </button>
       </div>
 
       <div className="card overflow-hidden">
-        <table className="data-table min-w-full text-sm">
-          <thead>
+        <table className="min-w-full text-sm">
+          <thead className="bg-gray-50">
             <tr>
-              {["Supplier", "Recipients", "Contact", "Status", "Actions"].map((h) => (
+              {["Supplier", "Primary", "CC", "BCC", "Escalation", "Active", "Actions"].map((h) => (
                 <th key={h} className="text-left px-4 py-3 table-header whitespace-nowrap">{h}</th>
               ))}
             </tr>
@@ -107,37 +99,20 @@ export default function Page() {
           <tbody>
             {mappings.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-4 py-10 text-center text-brand-muted">No mappings yet.</td>
+                <td colSpan={7} className="px-4 py-10 text-center text-brand-muted">No mappings yet.</td>
               </tr>
             )}
             {mappings.map((mapping) => (
               <tr key={mapping.id} className="border-t border-brand-border hover:bg-gray-50">
-                <td className="px-4 py-3">
-                  <div className="font-semibold text-brand-dark">{mapping.supplier_name}</div>
-                  {mapping.remarks && (
-                    <div className="mt-0.5 max-w-[260px] truncate text-xs text-brand-muted" title={mapping.remarks}>
-                      {mapping.remarks}
-                    </div>
-                  )}
-                </td>
-                <td className="px-4 py-3 text-xs">
-                  <div className="max-w-[360px] truncate font-medium text-brand-dark" title={joinEmails(mapping.to_emails)}>
-                    To: {joinEmails(mapping.to_emails)}
-                  </div>
-                  <div className="mt-1 flex flex-wrap gap-1">
-                    <span className="badge bg-brand-surface text-brand-muted">CC {mapping.cc_emails?.length ?? 0}</span>
-                    <span className="badge bg-brand-surface text-brand-muted">BCC {mapping.bcc_emails?.length ?? 0}</span>
-                    <span className="badge bg-brand-surface text-brand-muted">Esc {mapping.escalation_emails?.length ?? 0}</span>
-                  </div>
-                </td>
-                <td className="px-4 py-3 text-xs">
-                  <div className="font-medium text-brand-dark">{mapping.contact_person || "-"}</div>
-                  <div className="text-brand-muted">{mapping.phone || ""}</div>
-                </td>
+                <td className="px-4 py-3 font-medium">{mapping.supplier_name}</td>
+                <td className="px-4 py-3 text-xs">{joinEmails(mapping.to_emails)}</td>
+                <td className="px-4 py-3 text-xs">{joinEmails(mapping.cc_emails)}</td>
+                <td className="px-4 py-3 text-xs">{joinEmails(mapping.bcc_emails)}</td>
+                <td className="px-4 py-3 text-xs">{joinEmails(mapping.escalation_emails)}</td>
                 <td className="px-4 py-3">
                   {mapping.is_active
-                    ? <span className="badge badge-track">Active</span>
-                    : <span className="badge badge-overdue">Inactive</span>}
+                    ? <span className="badge badge-track">YES</span>
+                    : <span className="badge badge-overdue">NO</span>}
                 </td>
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-2">

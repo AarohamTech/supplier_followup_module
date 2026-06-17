@@ -54,12 +54,12 @@ function buildSuggestion(mail: CustomerMail | null, ctx: ProcurementContext | nu
 export default function CustomerWorkspace() {
   useRenderCount("CustomerWorkspace");
 
-  // Filters
+  // ── Filters ────────────────────────────────────────────────────────────
   const [searchInput, setSearchInput] = useState("");
   const search = useDebouncedValue(searchInput, 350);
   const [activeTab, setActiveTab] = useState(QUEUE_TABS[0].key);
 
-  // Data
+  // ── Data ───────────────────────────────────────────────────────────────
   const [data, setData] = useState<CustomerMailListResponse | null>(null);
   const [loadingList, setLoadingList] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
@@ -73,7 +73,7 @@ export default function CustomerWorkspace() {
   const [loadingTasks, setLoadingTasks] = useState(false);
   const [taskReloadKey, setTaskReloadKey] = useState(0);
 
-  // UI state
+  // ── UI state ─────────────────────────────────────────────────────────────
   const [replies, setReplies] = useState<CustomerReply[]>([]);
   const [replyReloadKey, setReplyReloadKey] = useState(0);
   const [serverDraft, setServerDraft] = useState<{ subject: string; body: string } | null>(null);
@@ -85,7 +85,7 @@ export default function CustomerWorkspace() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
-  // Fetch list (debounced search only; tabs group client-side)
+  // ── Fetch list (debounced search only; tabs group client-side) ───────────
   useEffect(() => {
     let cancelled = false;
     setLoadingList(true);
@@ -120,7 +120,7 @@ export default function CustomerWorkspace() {
     [items, selectedId],
   );
 
-  // Grouping + counts (single memoized pass)
+  // ── Grouping + counts (single memoized pass) ─────────────────────────────
   const counts = useMemo(() => {
     const out: Record<string, number> = {};
     for (const tab of QUEUE_TABS) out[tab.key] = 0;
@@ -135,7 +135,7 @@ export default function CustomerWorkspace() {
     return items.filter(tab.match);
   }, [items, activeTab]);
 
-  // Fetch procurement context (keyed on linked PO; ignores stale)
+  // ── Fetch procurement context (keyed on linked PO; ignores stale) ────────
   const linkedPo = selected?.linked_supplier_po_no ?? null;
   useEffect(() => {
     if (!linkedPo) {
@@ -166,8 +166,8 @@ export default function CustomerWorkspace() {
           latestUpdate: commit?.supplier_remark ?? first?.last_supplier_reply ?? null,
           materials: records.slice(0, 5).map((r) => ({
             name: r.material_name,
-            stock: fmtQty(r.stock) ?? "-",
-            status: r.po_status ?? (r.signal as string) ?? "-",
+            stock: fmtQty(r.stock) ?? "—",
+            status: r.po_status ?? (r.signal as string) ?? "—",
           })),
         };
         setContext(ctx);
@@ -183,7 +183,7 @@ export default function CustomerWorkspace() {
     };
   }, [linkedPo]);
 
-  // Fetch the persisted replies (conversation) for the selected mail
+  // ── Fetch the persisted replies (conversation) for the selected mail ─────
   useEffect(() => {
     if (selectedId == null) {
       setReplies([]);
@@ -203,7 +203,7 @@ export default function CustomerWorkspace() {
     };
   }, [selectedId, replyReloadKey]);
 
-  // Fetch the server-side smart draft (Phase 2, from live order data)
+  // ── Fetch the server-side smart draft (Phase 2, from live order data) ────
   useEffect(() => {
     if (selectedId == null) {
       setServerDraft(null);
@@ -223,7 +223,7 @@ export default function CustomerWorkspace() {
     };
   }, [selectedId]);
 
-  // Fetch tasks for selected mail (lazy, ignores stale)
+  // ── Fetch tasks for selected mail (lazy, ignores stale) ──────────────────
   useEffect(() => {
     if (selectedId == null) {
       setTasks([]);
@@ -254,7 +254,7 @@ export default function CustomerWorkspace() {
   // Prefer the server's data-driven draft (Phase 2); fall back to the client one.
   const aiSuggestion = serverDraft?.body || clientSuggestion;
 
-  // Stable handlers
+  // ── Stable handlers ──────────────────────────────────────────────────────
   const handleSelect = useCallback((id: number) => {
     setSelectedId(id);
     setDrawerOpen(false);
@@ -282,27 +282,10 @@ export default function CustomerWorkspace() {
                 }
               : prev,
           );
-          setToast(res.sent ? "Reply sent." : "Reply queued - sending shortly.");
+          setToast(res.queued ? "Reply queued for send." : "Reply sent.");
         })
         .catch((err) => setToast((err as Error).message))
         .finally(() => setSending(false));
-    },
-    [selectedId],
-  );
-
-  // Prompt-driven AI reply from the composer: the agent's typed text is the
-  // instruction. Returns the generated body for the composer to drop in.
-  const handleAiGenerate = useCallback(
-    async (instruction: string): Promise<string> => {
-      if (selectedId == null) return "";
-      try {
-        const d = await api.draftCustomerReply(selectedId, true, instruction || undefined);
-        setToast(d.source === "ai" ? "AI reply generated." : "AI was busy - used a data template.");
-        return d.body;
-      } catch (err) {
-        setToast((err as Error).message);
-        return "";
-      }
     },
     [selectedId],
   );
@@ -365,13 +348,13 @@ export default function CustomerWorkspace() {
       .then((d) => {
         setServerDraft({ subject: d.subject, body: d.body });
         setSeed((prev) => ({ text: d.body, nonce: (prev?.nonce ?? 0) + 1 }));
-        setToast(d.source === "ai" ? "AI draft ready." : "AI was busy - used a data template.");
+        setToast(d.source === "ai" ? "AI draft ready." : "AI was busy — used a data template.");
       })
       .catch((err) => setToast((err as Error).message))
       .finally(() => setAiDraftLoading(false));
   }, [selectedId]);
 
-  // AI triage / summarize for the selected mail
+  // ── AI triage / summarize for the selected mail ──────────────────────────
   const [aiBusy, setAiBusy] = useState<null | "triage" | "summary">(null);
 
   const patchSelectedMail = useCallback(
@@ -401,7 +384,7 @@ export default function CustomerWorkspace() {
           ai_summary: r.summary,
           ai_triaged_at: new Date().toISOString(),
         });
-        setToast(`Triaged: ${r.urgency} | ${r.category} | ${r.action}`);
+        setToast(`Triaged: ${r.urgency} · ${r.category} · ${r.action}`);
       })
       .catch((err) => setToast((err as Error).message))
       .finally(() => setAiBusy(null));
@@ -462,12 +445,14 @@ export default function CustomerWorkspace() {
   );
 
   return (
-    <div className="mail-workbench -m-4 flex h-[calc(100vh-64px)] flex-col sm:-m-5 lg:-m-7">
+    <div className="flex h-[calc(100vh-128px)] flex-col">
       {/* Header */}
-      <div className="mail-commandbar flex min-h-16 items-center justify-between gap-3 px-4 py-3 lg:px-6">
-        <div className="min-w-0">
-          <h1 className="truncate text-lg font-bold text-brand-dark">Customer Response Workspace</h1>
-          <p className="text-xs text-brand-muted">Customer inbox, reply drafting, order context, and tasks.</p>
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div>
+          <h1 className="text-lg font-semibold text-brand-dark">Customer Response Workspace</h1>
+          <p className="text-xs text-brand-muted">
+            Manage customer communication, internal coordination and response preparation.
+          </p>
         </div>
         <div className="flex items-center gap-2">
           {toast && (
@@ -479,7 +464,7 @@ export default function CustomerWorkspace() {
                 type="button"
                 onClick={handleTriage}
                 disabled={aiBusy !== null}
-                className="mail-toolbar-button disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 rounded-md border border-brand-border px-2.5 py-1.5 text-xs font-medium text-brand-dark hover:bg-gray-50 disabled:opacity-50"
                 title="Classify category / urgency / suggested action with AI"
               >
                 {aiBusy === "triage" ? (
@@ -493,7 +478,7 @@ export default function CustomerWorkspace() {
                 type="button"
                 onClick={handleSummarize}
                 disabled={aiBusy !== null}
-                className="mail-toolbar-button disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 rounded-md border border-brand-border px-2.5 py-1.5 text-xs font-medium text-brand-dark hover:bg-gray-50 disabled:opacity-50"
                 title="Summarize this mail + its replies"
               >
                 {aiBusy === "summary" ? (
@@ -510,7 +495,7 @@ export default function CustomerWorkspace() {
 
       {/* AI triage / summary banner for the selected mail */}
       {selected && (selected.ai_summary || selected.ai_urgency) && (
-        <div className="mail-statusbar flex flex-wrap items-center gap-2 px-4 py-2 text-xs lg:px-6">
+        <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-brand-border bg-brand-surface px-3 py-2 text-xs">
           {selected.ai_urgency && (
             <span
               className={`rounded px-1.5 py-0.5 font-semibold ${
@@ -528,7 +513,7 @@ export default function CustomerWorkspace() {
             <span className="rounded bg-gray-100 px-1.5 py-0.5 text-brand-dark">{selected.ai_category}</span>
           )}
           {selected.ai_action && (
-            <span className="rounded bg-violet-100 px-1.5 py-0.5 text-violet-700">{selected.ai_action}</span>
+            <span className="rounded bg-violet-100 px-1.5 py-0.5 text-violet-700">→ {selected.ai_action}</span>
           )}
           {selected.ai_summary && (
             <span className="min-w-0 flex-1 text-brand-muted">{selected.ai_summary}</span>
@@ -537,9 +522,9 @@ export default function CustomerWorkspace() {
       )}
 
       {/* Workspace grid */}
-      <div className="flex min-h-0 flex-1 flex-col md:flex-row">
+      <div className="flex min-h-0 flex-1 flex-col gap-3 md:flex-row">
         {/* Left queue */}
-        <aside className="mail-pane max-h-64 w-full shrink-0 overflow-hidden md:max-h-none md:w-[340px]">
+        <aside className="max-h-64 w-full shrink-0 overflow-hidden rounded-xl border border-brand-border bg-white md:max-h-none md:w-72">
           <MailQueue
             tabs={QUEUE_TABS}
             activeTab={activeTab}
@@ -555,7 +540,7 @@ export default function CustomerWorkspace() {
         </aside>
 
         {/* Center conversation */}
-        <section className="mail-conversation flex min-w-0 flex-1 overflow-hidden">
+        <section className="flex min-w-0 flex-1 overflow-hidden rounded-xl border border-brand-border bg-white">
           {selected ? (
             <div className="flex h-full w-full flex-col">
               <ConversationPanel
@@ -565,18 +550,17 @@ export default function CustomerWorkspace() {
                 seed={seed}
                 onSend={handleSend}
                 onOpenContext={openContext}
-                onAiGenerate={handleAiGenerate}
               />
             </div>
           ) : (
             <div className="flex h-full w-full items-center justify-center text-sm text-brand-muted">
-              {loadingList ? "Loading..." : "Select a mail to view the conversation."}
+              {loadingList ? "Loading…" : "Select a mail to view the conversation."}
             </div>
           )}
         </section>
 
         {/* Right context (fixed on xl, drawer below) */}
-        <aside className="mail-context-panel hidden w-[360px] shrink-0 overflow-hidden xl:block">
+        <aside className="hidden w-80 shrink-0 overflow-hidden rounded-xl border border-brand-border bg-white xl:block">
           {rightPanel}
         </aside>
       </div>

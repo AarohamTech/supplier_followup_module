@@ -6,6 +6,6 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 export function fmtNum(n: number | undefined | null) {
-  if (n == null) return "-";
+  if (n == null) return "—";
   return n.toLocaleString();
 }

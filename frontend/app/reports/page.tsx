@@ -1,7 +1,6 @@
 "use client";
 import { useStore } from "@/lib/store";
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid, Legend } from "recharts";
-import { BarChart3 } from "lucide-react";
 
 export default function Page() {
   const list = useStore((s) => s.list);
@@ -22,19 +21,10 @@ export default function Page() {
     statusMap.set(key, (statusMap.get(key) ?? 0) + 1);
   });
   const statusData = Array.from(statusMap.entries()).map(([name, value]) => ({ name, value }));
-  const criticalItems = items.filter((r) => r.signal === "RED" || r.signal === "BLACK");
 
   return (
-    <div className="space-y-5">
-      <div className="flex items-center gap-3">
-        <span className="grid h-10 w-10 place-items-center rounded-lg bg-brand-dark text-white shadow-card">
-          <BarChart3 size={18} />
-        </span>
-        <div>
-          <h1 className="text-xl font-bold text-brand-dark">Reports & Analytics</h1>
-          <p className="text-sm text-brand-muted">Supplier signal mix, PO status, and critical procurement lines.</p>
-        </div>
-      </div>
+    <div className="space-y-4">
+      <h1 className="text-xl font-semibold">Reports & Analytics</h1>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div className="card p-4">
@@ -74,14 +64,14 @@ export default function Page() {
 
       <div className="card p-4">
         <div className="font-semibold text-sm mb-3">Critical Procurement Lines (RED + BLACK)</div>
-        <table className="data-table min-w-full text-sm">
-          <thead>
+        <table className="min-w-full text-sm">
+          <thead className="bg-gray-50">
             <tr>{["PO No.", "SUPPLIER", "MATERIAL", "QTY", "SIGNAL", "STATUS"].map((h) => (
               <th key={h} className="text-left px-3 py-2 table-header">{h}</th>
             ))}</tr>
           </thead>
           <tbody>
-            {criticalItems.map((r) => (
+            {items.filter((r) => r.signal === "RED" || r.signal === "BLACK").map((r) => (
               <tr key={r.id} className="border-t border-brand-border">
                 <td className="px-3 py-2">{r.supplier_po_no}</td>
                 <td className="px-3 py-2">{r.supplier_name}</td>
@@ -91,13 +81,6 @@ export default function Page() {
                 <td className="px-3 py-2 text-xs">{r.followup_status}</td>
               </tr>
             ))}
-            {criticalItems.length === 0 && (
-              <tr>
-                <td className="px-3 py-8 text-center text-brand-muted" colSpan={6}>
-                  No critical procurement lines in the current data set.
-                </td>
-              </tr>
-            )}
           </tbody>
         </table>
       </div>

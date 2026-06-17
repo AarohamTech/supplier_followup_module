@@ -11,7 +11,7 @@ export default function FiltersBar() {
   const statuses = Array.from(new Set((list?.items ?? []).map((r) => r.po_status).filter(Boolean) as string[])).sort();
 
   return (
-    <div className="card grid grid-cols-1 gap-3 p-4 sm:grid-cols-2 lg:grid-cols-5">
+    <div className="card p-4 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
       <Sel label="SIGNAL" value={filters.signal ?? ""} onChange={(v) => setFilters({ signal: v })} options={["GREEN", "YELLOW", "RED", "BLACK"]} />
       <Sel label="SUPPLIER" value={filters.supplier_name ?? ""} onChange={(v) => setFilters({ supplier_name: v })} options={suppliers} />
       <Sel label="PO STATUS" value={filters.po_status ?? ""} onChange={(v) => setFilters({ po_status: v })} options={statuses} />
@@ -23,11 +23,11 @@ export default function FiltersBar() {
 
 function Sel({ label, value, onChange, options }: { label: string; value: string; onChange: (v: string) => void; options: string[] }) {
   return (
-    <div className="flex min-w-0 flex-col gap-1">
-      <label className="text-[11px] font-bold uppercase text-brand-muted">{label}</label>
+    <div className="flex flex-col gap-1">
+      <label className="text-[10px] uppercase tracking-wider text-brand-muted font-semibold">{label}</label>
       <select
         value={value} onChange={(e) => onChange(e.target.value)}
-        className="w-full border border-brand-border px-2.5 py-2 text-sm"
+        className="border border-brand-border rounded-md px-2 py-1.5 text-sm bg-white"
       >
         <option value="">All</option>
         {options.map((o) => <option key={o} value={o}>{o}</option>)}
@@ -37,12 +37,12 @@ function Sel({ label, value, onChange, options }: { label: string; value: string
 }
 function Inp({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
   return (
-    <div className="flex min-w-0 flex-col gap-1">
-      <label className="text-[11px] font-bold uppercase text-brand-muted">{label}</label>
+    <div className="flex flex-col gap-1">
+      <label className="text-[10px] uppercase tracking-wider text-brand-muted font-semibold">{label}</label>
       <input
         value={value} onChange={(e) => onChange(e.target.value)}
         placeholder="Contains..."
-        className="w-full border border-brand-border px-2.5 py-2 text-sm"
+        className="border border-brand-border rounded-md px-2 py-1.5 text-sm bg-white"
       />
     </div>
   );

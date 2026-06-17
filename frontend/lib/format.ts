@@ -1,17 +1,17 @@
 export function fmtDate(s?: string | null): string {
-  if (!s) return "-";
+  if (!s) return "—";
   const d = new Date(s);
   if (isNaN(d.getTime())) return s;
   return d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
 }
 
 export function fmtNum(n?: number | null, opts: Intl.NumberFormatOptions = {}): string {
-  if (n === null || n === undefined) return "-";
+  if (n === null || n === undefined) return "—";
   return new Intl.NumberFormat("en-IN", opts).format(Number(n));
 }
 
 export function fmtCurrency(n?: number | null): string {
-  if (n === null || n === undefined) return "-";
+  if (n === null || n === undefined) return "—";
   return new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(Number(n));
 }
 

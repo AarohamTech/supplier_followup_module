@@ -29,13 +29,13 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="grid min-h-screen place-items-center px-4 py-8">
-      <div className="card w-full max-w-sm p-8">
+    <div className="min-h-screen flex items-center justify-center bg-brand-surface px-4">
+      <div className="w-full max-w-sm rounded-2xl border border-brand-border bg-white p-8 shadow-sm">
         <div className="mb-6 text-center">
-          <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-lg bg-brand-dark text-white shadow-card">
+          <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-red-50 text-signal-red">
             <Lock size={20} />
           </div>
-          <h1 className="text-lg font-bold text-brand-dark">Supplier Follow-up Agent</h1>
+          <h1 className="text-lg font-bold text-signal-red">Supplier Follow-up Agent</h1>
           <p className="mt-1 text-xs text-brand-muted">Sign in to your account</p>
         </div>
 
@@ -48,7 +48,7 @@ export default function LoginPage() {
               autoFocus
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full border border-brand-border px-3 py-2 text-sm"
+              className="w-full rounded-md border border-brand-border px-3 py-2 text-sm outline-none focus:border-signal-red"
               placeholder="you@example.com"
             />
           </div>
@@ -59,8 +59,8 @@ export default function LoginPage() {
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full border border-brand-border px-3 py-2 text-sm"
-              placeholder="********"
+              className="w-full rounded-md border border-brand-border px-3 py-2 text-sm outline-none focus:border-signal-red"
+              placeholder="••••••••"
             />
           </div>
 
@@ -71,10 +71,10 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={submitting}
-            className="btn-primary flex w-full items-center justify-center gap-2 disabled:opacity-60"
+            className="flex w-full items-center justify-center gap-2 rounded-md bg-signal-red px-3 py-2 text-sm font-medium text-white transition hover:bg-red-700 disabled:opacity-60"
           >
             {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-            {submitting ? "Signing in..." : "Sign in"}
+            {submitting ? "Signing in…" : "Sign in"}
           </button>
         </form>
       </div>

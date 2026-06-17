@@ -13,23 +13,10 @@ import AIInsights from "@/components/dashboard/AIInsights";
 import OverdueDonut from "@/components/dashboard/OverdueDonut";
 import StatusDonut from "@/components/dashboard/StatusDonut";
 import MailEngineStatusCard from "@/components/dashboard/MailEngineStatusCard";
-import { Activity } from "lucide-react";
 
 export default function DashboardPage() {
   return (
-    <div className="space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <span className="grid h-10 w-10 place-items-center rounded-lg bg-brand-dark text-white shadow-card">
-            <Activity size={18} />
-          </span>
-          <div>
-            <h1 className="text-xl font-bold text-brand-dark">Control Tower</h1>
-            <p className="text-sm text-brand-muted">Live supplier follow-up, risk, and mail operations.</p>
-          </div>
-        </div>
-        <span className="chip bg-emerald-50 text-emerald-700">Auto-monitoring</span>
-      </div>
+    <div className="space-y-4">
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <SyncCard />
         <SupplierMasterCard />

@@ -17,6 +17,9 @@ export default function AlertsCard() {
         <Row label="Red (Overdue)" value={k?.red_count ?? 0} tone="red" />
         <Row label="AI Follow-up Required" value={k?.ai_required_count ?? 0} />
       </div>
+      <button className="mt-3 w-full bg-red-50 text-signal-red text-sm font-medium py-2 rounded-md">
+        View Alerts
+      </button>
     </div>
   );
 }

@@ -12,7 +12,7 @@ interface MailCardProps {
 }
 
 /**
- * Memoized so it only re-renders when its own mail/selected state changes -
+ * Memoized so it only re-renders when its own mail/selected state changes —
  * not when the parent re-renders for unrelated reasons (typing, drawer, etc.).
  */
 function MailCardBase({ mail, selected, onSelect }: MailCardProps) {
@@ -24,14 +24,14 @@ function MailCardBase({ mail, selected, onSelect }: MailCardProps) {
       type="button"
       onClick={() => onSelect(mail.id)}
       className={[
-        "mail-list-item px-3.5 py-3 transition-colors",
+        "w-full text-left rounded-lg border px-3 py-2.5 transition-colors",
         selected
-          ? "mail-list-item-active"
-          : "",
+          ? "border-signal-red bg-red-50/70"
+          : "border-brand-border bg-white hover:bg-gray-50",
       ].join(" ")}
     >
       <div className="flex items-start justify-between gap-2">
-        <span className="truncate text-sm font-bold text-brand-dark">
+        <span className="text-sm font-semibold text-brand-dark truncate">
           {mail.subject || "(no subject)"}
         </span>
         <span className="shrink-0 text-[11px] text-brand-muted">
@@ -39,11 +39,11 @@ function MailCardBase({ mail, selected, onSelect }: MailCardProps) {
         </span>
       </div>
 
-      <div className="mt-1 truncate text-xs font-medium text-brand-muted">
+      <div className="mt-0.5 text-xs text-brand-muted truncate">
         {mail.from_name || mail.customer_name || mail.from_email || "Unknown sender"}
       </div>
 
-      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+      <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
         {mail.linked_supplier_po_no && (
           <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-red-50 text-signal-red">
             {mail.linked_supplier_po_no}
@@ -66,8 +66,8 @@ function MailCardBase({ mail, selected, onSelect }: MailCardProps) {
             className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
               URGENCY_TONE[mail.ai_urgency] || "bg-gray-100 text-brand-muted"
             }`}
-            title={`AI triage${mail.ai_category ? ` | ${mail.ai_category}` : ""}${
-              mail.ai_action ? ` | ${mail.ai_action}` : ""
+            title={`AI triage${mail.ai_category ? ` · ${mail.ai_category}` : ""}${
+              mail.ai_action ? ` · ${mail.ai_action}` : ""
             }`}
           >
             {mail.ai_urgency}
