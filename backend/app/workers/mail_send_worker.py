@@ -255,3 +255,30 @@ def send_ready_messages(limit: int = 25) -> dict[str, Any]:
         return {"enabled": True, "attempted": len(rows), "results": results, "ran_at": datetime.utcnow().isoformat()}
     finally:
         db.close()
+
+
+def send_message_now(db: Session, message_id: int) -> dict[str, Any]:
+    """Send a single queued (READY) outgoing message immediately.
+
+    Used by user-initiated actions (e.g. a customer reply) so the mail goes out
+    at once instead of waiting for the send cron. Best-effort: on SMTP failure
+    the message is left READY (retry counter bumped) for the cron to pick up,
+    and this never raises. Uses the caller's session.
+    """
+    ready, reason = _config_ready()
+    if not ready:
+        return {"enabled": False, "reason": reason, "sent": False}
+    msg = db.get(CommunicationMessage, message_id)
+    if msg is None or msg.direction != "OUTGOING" or msg.status != "READY":
+        return {"enabled": True, "sent": False, "reason": "not a queued outgoing message"}
+    try:
+        em = _build_email(msg)
+        _send_one(em)
+        _sync_delivery_state(db, msg, status="SENT")
+        db.commit()
+        return {"enabled": True, "sent": True, "status": "SENT", "message_id": msg.id}
+    except Exception as exc:  # noqa: BLE001
+        log.exception("Immediate send failed for message id=%s (left READY for cron)", message_id)
+        _bump_retry(msg, str(exc))
+        db.commit()
+        return {"enabled": True, "sent": False, "status": "READY", "error": str(exc)}

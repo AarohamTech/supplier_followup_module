@@ -145,8 +145,14 @@ def suggest_customer_reply(
     material: str | None = None,
     status: str | None = None,
     dispatch_date: str | None = None,
+    instruction: str | None = None,
 ) -> str:
-    """Draft a customer reply body from the order facts (returns plain text)."""
+    """Draft a customer reply body from the order facts (returns plain text).
+
+    `instruction` is free-text guidance the agent typed in the composer (e.g.
+    "tell them it ships Friday and apologise for the delay") — the model must
+    follow it while staying grounded in the order facts.
+    """
     facts = [
         f"Customer name: {customer_name or 'there'}",
         f"Their subject: {subject or '(none)'}",
@@ -156,11 +162,14 @@ def suggest_customer_reply(
         f"Current status: {status or 'in progress'}",
         f"Committed dispatch date: {dispatch_date or 'not yet confirmed'}",
     ]
-    user = (
-        "Draft a reply to this customer using these facts:\n"
-        + "\n".join(facts)
-        + "\n\nReply with only the email body."
-    )
+    user = "Draft a reply to this customer using these facts:\n" + "\n".join(facts)
+    if instruction and instruction.strip():
+        user += (
+            "\n\nThe support agent wrote these notes/instructions for the reply — "
+            "follow them closely and expand into a complete, professional message:\n"
+            + instruction.strip()
+        )
+    user += "\n\nReply with only the email body."
     return _complete(
         [{"role": "system", "content": SYSTEM_CUSTOMER_REPLY}, {"role": "user", "content": user}],
         temperature=0.5,

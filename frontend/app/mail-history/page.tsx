@@ -44,9 +44,7 @@ import {
   X,
 } from "lucide-react";
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Constants
-// ─────────────────────────────────────────────────────────────────────────────
 const ASSIGNEES = [
   "Rajesh Kumar",
   "Procurement Lead",
@@ -115,17 +113,15 @@ const PRIORITY_CHIP: Record<TaskPriority, string> = {
   P3: "bg-gray-100 text-gray-600",
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Helpers
-// ─────────────────────────────────────────────────────────────────────────────
 function signalRank(s: string): number {
   return ({ GREEN: 0, YELLOW: 1, RED: 2, BLACK: 3 } as Record<string, number>)[s] ?? 0;
 }
 
 function relTime(value: string | null | undefined): string {
-  if (!value) return "—";
+  if (!value) return "-";
   const d = new Date(value);
-  if (isNaN(d.getTime())) return "—";
+  if (isNaN(d.getTime())) return "-";
   const diffMs = Date.now() - d.getTime();
   const min = Math.floor(diffMs / 60000);
   if (min < 1) return "just now";
@@ -167,7 +163,7 @@ function fmtDueDate(value: string | null | undefined): { text: string; overdue: 
 
 function truncate(s: string, n: number) {
   if (!s) return "";
-  return s.length > n ? s.slice(0, n) + "…" : s;
+  return s.length > n ? s.slice(0, n) + "..." : s;
 }
 
 function toDatetimeLocal(iso: string): string {
@@ -244,23 +240,21 @@ function fmtTableQty(value: number | null | undefined): string {
   return Number(value).toLocaleString("en-IN", { maximumFractionDigits: 3 });
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Page
-// ─────────────────────────────────────────────────────────────────────────────
 export default function Page() {
-  // ── API-driven state ──
+  // API-driven state
   const [hubKpis, setHubKpis] = useState<CommHubDashboard | null>(null);
   const [supplierList, setSupplierList] = useState<CommHubSupplier[]>([]);
   const [poList, setPoList] = useState<CommHubPO[]>([]);
   const [thread, setThread] = useState<CommHubThread | null>(null);
   const [taskGroups, setTaskGroups] = useState<CommHubTasksGrouped | null>(null);
 
-  // ── Selection state ──
+  // Selection state
   const [selectedSupplierName, setSelectedSupplierName] = useState<string | null>(null);
   const [selectedSupplierId, setSelectedSupplierId] = useState<number | null>(null);
   const [selectedProcurementId, setSelectedProcurementId] = useState<number | null>(null);
 
-  // ── UI state ──
+  // UI state
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -275,7 +269,7 @@ export default function Page() {
   const [showMaterials, setShowMaterials] = useState(false);
   const selectPoGroup = useStore((s) => s.selectPoGroup);
 
-  // ── Derived ──
+  // Derived
   const activeSupplier = supplierList.find((s) => s.supplier_name === selectedSupplierName) ?? null;
   const activePo = poList.find((p) => p.procurement_record_id === selectedProcurementId) ?? null;
   const threadMessages: CommHubMessage[] = thread?.messages ?? [];
@@ -302,14 +296,14 @@ export default function Page() {
     openTasks: hubKpis?.open_tasks ?? 0,
   };
 
-  // ── Toast helper ──
+  // Toast helper
   const pushToast = useCallback((tone: "ok" | "err", msg: string) => {
     const id = Date.now() + Math.random();
     setToasts((prev) => [...prev, { id, tone, msg }]);
     setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 3000);
   }, []);
 
-  // ── Search filter (supplier name + last subject) ──
+  // Search filter (supplier name + last subject)
   const filteredSuppliers = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return supplierList;
@@ -320,7 +314,7 @@ export default function Page() {
     );
   }, [supplierList, search]);
 
-  // ── Data loaders ──
+  // Data loaders
   const loadKpis = useCallback(async () => {
     try {
       setHubKpis(await api.hubDashboard());
@@ -371,7 +365,7 @@ export default function Page() {
     [],
   );
 
-  // ── Select supplier ──
+  // Select supplier
   const handleSelectSupplier = useCallback(
     async (supplierName: string, supplierId: number | null) => {
       if (supplierName === selectedSupplierName) return;
@@ -399,7 +393,7 @@ export default function Page() {
     [selectedSupplierName, loadPos, loadThread, loadTasks, loadCommitments],
   );
 
-  // ── Select PO ──
+  // Select PO
   const handleSelectPo = useCallback(
     async (procurementRecordId: number, supplierName?: string, supplierPoNo?: string) => {
       if (procurementRecordId === selectedProcurementId) return;
@@ -442,7 +436,7 @@ export default function Page() {
     ],
   );
 
-  // ── Full refresh ──
+  // Full refresh
   const loadAll = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -517,7 +511,7 @@ export default function Page() {
     selectedSupplierName,
   ]);
 
-  // ── Actions ──
+  // Actions
   const openAssign = (seed: Partial<CommunicationTaskCreate>) => {
     setAssignSeed(seed);
     setAssignOpen(true);
@@ -526,7 +520,7 @@ export default function Page() {
   const handleCreateTask = async (payload: CommunicationTaskCreate) => {
     try {
       const created = await api.hubCreateTask(payload);
-      pushToast("ok", `Task assigned to ${created.assigned_to ?? "—"}`);
+      pushToast("ok", `Task assigned to ${created.assigned_to ?? "-"}`);
       setAssignOpen(false);
       if (selectedProcurementId != null) {
         await loadTasks({ procurement_record_id: selectedProcurementId });
@@ -589,7 +583,7 @@ export default function Page() {
           status === "SENT" ? "ok" : "err",
           status === "SENT"
             ? "Mail dispatched via SMTP."
-            : `Mail status: ${status}${summary.error ? ` — ${summary.error}` : ""}`,
+            : `Mail status: ${status}${summary.error ? ` - ${summary.error}` : ""}`,
         );
       }
       await Promise.all([
@@ -613,24 +607,24 @@ export default function Page() {
   };
 
   return (
-    <div className="-m-6 flex flex-col h-[calc(100vh-64px)] bg-white">
+    <div className="mail-workbench -m-4 flex h-[calc(100vh-64px)] flex-col sm:-m-5 lg:-m-7">
       {/* Header bar */}
-      <header className="h-14 px-6 flex items-center justify-between border-b border-brand-border bg-white">
-        <div className="flex items-center gap-5">
-          <h1 className="text-lg font-semibold text-brand-dark">
+      <header className="mail-commandbar flex min-h-16 items-center justify-between gap-4 px-4 py-3 lg:px-6">
+        <div className="flex min-w-0 flex-1 items-center gap-4">
+          <h1 className="shrink-0 text-lg font-bold text-brand-dark">
             Supplier Communication Hub
           </h1>
-          <div className="relative">
+          <div className="mail-search relative w-full max-w-xl">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search supplier, subject…  (Ctrl+K)"
-              className="pl-9 pr-3 py-1.5 bg-gray-50 border border-transparent focus:border-brand-border focus:bg-white rounded-md w-96 text-sm outline-none"
+              placeholder="Search suppliers, POs, subjects"
+              className="w-full border-0 bg-transparent py-2 pl-9 pr-3 text-sm outline-none"
             />
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2">
           <button onClick={loadAll} className="btn-ghost" disabled={loading}>
             {loading ? (
               <Loader2 size={14} className="animate-spin" />
@@ -639,7 +633,7 @@ export default function Page() {
             )}
             <span className="ml-1">Refresh</span>
           </button>
-          <button className="p-2 rounded hover:bg-gray-100 text-gray-500 relative">
+          <button className="relative grid h-9 w-9 place-items-center rounded-lg border border-brand-border bg-white text-gray-500 shadow-sm hover:bg-gray-50">
             <Bell size={16} />
             {kpis.openTasks > 0 && (
               <span className="absolute -top-0.5 -right-0.5 bg-signal-red text-white text-[9px] font-bold rounded-full px-1">
@@ -651,15 +645,15 @@ export default function Page() {
       </header>
 
       {/* KPI strip */}
-      <div className="px-6 py-3 flex gap-4 items-center border-b border-brand-border bg-white">
-        <div className="flex-1 grid grid-cols-4 gap-4">
+      <div className="mail-statusbar flex items-center gap-4 px-4 py-3 lg:px-6">
+        <div className="grid flex-1 grid-cols-2 gap-3 lg:grid-cols-4">
           <KpiPill label="Unread Drafts" value={kpis.drafts} tone="text-signal-red" />
           <KpiPill label="Waiting Supplier" value={kpis.waiting} tone="text-amber-600" />
           <KpiPill label="Delayed POs" value={kpis.delayed} tone="text-orange-600" />
           <KpiPill label="Open Tasks" value={kpis.openTasks} tone="text-gray-800" />
         </div>
         <button
-          className="btn-primary"
+          className="btn-primary shrink-0"
           onClick={() =>
             openAssign({
               supplier_name: activeSupplier?.supplier_name ?? null,
@@ -680,9 +674,9 @@ export default function Page() {
       )}
 
       {/* Workspace */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex min-h-0 flex-1 overflow-hidden">
         {/* Suppliers panel */}
-        <section className="w-[24%] min-w-[260px] border-r border-brand-border flex flex-col bg-white">
+        <section className="mail-pane flex w-[25%] min-w-[280px] flex-col">
           <ColumnHeader
             title="Suppliers"
             right={
@@ -695,7 +689,7 @@ export default function Page() {
           <div className="flex-1 overflow-y-auto">
             {loading && supplierList.length === 0 ? (
               <EmptyState icon={<Loader2 className="animate-spin" size={18} />}>
-                Loading…
+                Loading...
               </EmptyState>
             ) : filteredSuppliers.length === 0 ? (
               <EmptyState icon={<Inbox size={20} />}>
@@ -709,10 +703,10 @@ export default function Page() {
                   <button
                     key={s.supplier_name}
                     onClick={() => void handleSelectSupplier(s.supplier_name, s.supplier_id)}
-                    className={`w-full text-left px-4 py-3 border-b border-brand-border hover:bg-gray-50 transition-colors ${
+                    className={`mail-list-item px-4 py-3 transition-colors ${
                       active
-                        ? "bg-red-50/40 border-l-2 border-l-signal-red"
-                        : "border-l-2 border-l-transparent"
+                        ? "mail-list-item-active"
+                        : ""
                     }`}
                   >
                     <div className="flex items-center gap-2 mb-1">
@@ -757,7 +751,7 @@ export default function Page() {
         </section>
 
         {/* PO panel */}
-        <section className="w-[22%] min-w-[220px] border-r border-brand-border flex flex-col bg-white">
+        <section className="mail-pane flex w-[22%] min-w-[250px] flex-col">
           <ColumnHeader title="Purchase Orders" />
           <div className="flex-1 overflow-y-auto">
             {activeSupplier && poList.length === 0 && !loading ? (
@@ -775,8 +769,8 @@ export default function Page() {
                 return (
                   <div
                     key={p.procurement_record_id}
-                    className={`group relative w-full border-b border-brand-border hover:bg-gray-50 transition-colors ${
-                      active ? "bg-amber-50/50" : ""
+                    className={`mail-list-item group relative transition-colors ${
+                      active ? "mail-list-item-active" : ""
                     }`}
                   >
                     <button
@@ -820,7 +814,7 @@ export default function Page() {
                       <div className="flex justify-between items-center text-[10px] text-gray-500">
                         <span>
                           {p.mail_count} mail{p.mail_count === 1 ? "" : "s"}
-                          {p.task_count > 0 && ` · ${p.task_count} task${p.task_count === 1 ? "" : "s"}`}
+                          {p.task_count > 0 && ` | ${p.task_count} task${p.task_count === 1 ? "" : "s"}`}
                         </span>
                         <span className="text-gray-400">{relTime(p.last_activity_at)}</span>
                       </div>
@@ -912,16 +906,16 @@ export default function Page() {
         </section>
 
         {/* Conversation thread */}
-        <section className="flex-1 flex flex-col bg-[#FDFDFD] min-w-0">
+        <section className="mail-conversation flex min-w-0 flex-1 flex-col">
           {activePo && activeSupplier ? (
             <>
               {/* Thread header */}
-              <div className="px-6 py-4 border-b border-brand-border bg-white">
+              <div className="mail-thread-header px-5 py-4 lg:px-6">
                 <div className="flex justify-between items-center mb-2">
                   <div className="flex items-center gap-2 min-w-0">
                     <span className={`w-2 h-2 rounded-full ${SIGNAL_DOT[threadSignal] ?? "bg-gray-300"}`} />
                     <h3 className="font-semibold text-brand-dark truncate">
-                      PO #{activePo.supplier_po_no} — {activeSupplier.supplier_name}
+                      PO #{activePo.supplier_po_no} | {activeSupplier.supplier_name}
                     </h3>
                     <span
                       className={`text-[10px] font-bold px-1.5 py-0.5 rounded uppercase ${SIGNAL_CHIP[threadSignal] ?? ""}`}
@@ -959,8 +953,8 @@ export default function Page() {
                     size={14}
                     className={`transition-transform ${showAiSummary ? "rotate-180" : ""}`}
                   />
-                  AI Summary — {threadMessages.length} message
-                  {threadMessages.length === 1 ? "" : "s"} · {draftCount} draft ·{" "}
+                  AI Summary | {threadMessages.length} message
+                  {threadMessages.length === 1 ? "" : "s"} | {draftCount} draft |{" "}
                   {SIGNAL_LABEL[threadSignal] ?? threadSignal} risk
                 </button>
                 {showAiSummary && (
@@ -971,7 +965,7 @@ export default function Page() {
                       {draftCount} draft / {sentCount} sent mails.
                     </p>
                     <p className="text-gray-700">
-                      <strong>Latest:</strong> {lastMessage?.subject ?? "—"}
+                      <strong>Latest:</strong> {lastMessage?.subject ?? "-"}
                     </p>
                     <p className="text-gray-700">
                       <strong>Suggested action:</strong>{" "}
@@ -981,7 +975,7 @@ export default function Page() {
                           ? "Send strong follow-up and create P0 task."
                           : threadSignal === "YELLOW"
                             ? "Send reminder and confirm commitment date."
-                            : "Monitor — no action required."}
+                            : "Monitor - no action required."}
                     </p>
                   </div>
                 )}
@@ -1047,7 +1041,7 @@ export default function Page() {
               </div>
 
               {/* Mail thread */}
-              <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
+              <div className="flex-1 overflow-y-auto px-4 py-5 lg:px-6 space-y-5">
                 {threadMessages.length === 0 ? (
                   <EmptyState icon={<MessagesSquare size={20} />}>
                     No emails sent yet for this PO.
@@ -1072,7 +1066,7 @@ export default function Page() {
               </div>
 
               {/* Composer */}
-              <div className="p-4 border-t border-brand-border bg-white shadow-[0_-4px_20px_rgba(0,0,0,0.03)]">
+              <div className="mail-composer p-4">
                 <div className="flex gap-2 mb-3 items-center flex-wrap">
                   <ToolButton icon={<Reply size={13} />}>Reply</ToolButton>
                   <ToolButton
@@ -1144,8 +1138,8 @@ export default function Page() {
                   <textarea
                     value={composer}
                     onChange={(e) => setComposer(e.target.value)}
-                    placeholder="Type your message…"
-                    className="w-full h-24 p-3 bg-gray-50 border border-transparent focus:border-brand-border focus:bg-white rounded-lg text-sm outline-none resize-none"
+                    placeholder="Type your message"
+                    className="h-24 w-full resize-none border border-brand-border bg-white p-3 text-sm outline-none"
                   />
                   <button
                     className="absolute bottom-3 right-3 bg-signal-red text-white p-2 rounded-md hover:opacity-90 shadow-sm disabled:opacity-50"
@@ -1220,13 +1214,11 @@ export default function Page() {
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Sub-components (UI unchanged)
-// ─────────────────────────────────────────────────────────────────────────────
+// Sub-components
 function ColumnHeader({ title, right }: { title: string; right?: React.ReactNode }) {
   return (
-    <div className="px-4 h-12 flex items-center justify-between border-b border-brand-border">
-      <span className="font-semibold text-sm text-brand-dark">{title}</span>
+    <div className="mail-pane-header flex h-12 items-center justify-between px-4">
+      <span className="text-sm font-bold text-brand-dark">{title}</span>
       {right}
     </div>
   );
@@ -1234,8 +1226,8 @@ function ColumnHeader({ title, right }: { title: string; right?: React.ReactNode
 
 function KpiPill({ label, value, tone }: { label: string; value: number; tone: string }) {
   return (
-    <div className="bg-gray-50 border border-brand-border rounded-lg px-4 py-2 flex justify-between items-center">
-      <span className="text-[11px] font-semibold uppercase tracking-wider text-brand-muted">
+    <div className="flex items-center justify-between rounded-lg border border-brand-border bg-white/84 px-3 py-2 shadow-sm">
+      <span className="text-[11px] font-bold uppercase text-brand-muted">
         {label}
       </span>
       <span className={`text-lg font-bold ${tone}`}>{value}</span>
@@ -1259,7 +1251,7 @@ function HealthChip({ pct }: { pct: number }) {
 
 function EmptyState({ children, icon }: { children: React.ReactNode; icon?: React.ReactNode }) {
   return (
-    <div className="px-4 py-10 text-center text-brand-muted text-sm flex flex-col items-center gap-2">
+    <div className="flex flex-col items-center gap-2 px-4 py-10 text-center text-sm text-brand-muted">
       {icon}
       <div>{children}</div>
     </div>
@@ -1280,11 +1272,7 @@ function ToolButton({
   return (
     <button
       onClick={onClick}
-      className={`px-3 py-1.5 border rounded-md text-[11px] font-semibold flex items-center gap-1 transition-colors ${
-        accent
-          ? "border-signal-red/30 text-signal-red hover:bg-red-50"
-          : "border-brand-border text-brand-dark hover:bg-gray-50"
-      }`}
+      className={`mail-toolbar-button ${accent ? "mail-toolbar-button-accent" : ""}`}
     >
       {icon}
       {children}
@@ -1320,8 +1308,8 @@ function MailBubble({ mail, onAssign }: { mail: CommHubMessage; onAssign: () => 
   return (
     <div className={`flex flex-col ${isIncoming ? "items-start" : "items-end"}`}>
       <div
-        className={`group max-w-[88%] p-4 rounded-lg border shadow-sm relative ${
-          isIncoming ? "bg-white border-brand-border" : "bg-amber-50 border-amber-100"
+        className={`mail-message group relative max-w-[88%] p-4 ${
+          isIncoming ? "mail-message-incoming" : "mail-message-outgoing"
         }`}
       >
         <div className="flex items-center justify-between gap-3 mb-1">
@@ -1345,9 +1333,9 @@ function MailBubble({ mail, onAssign }: { mail: CommHubMessage; onAssign: () => 
         {tableRows.length > 0 && <ThreadMessageTable rows={tableRows} />}
         <div className="mt-2 flex items-center gap-2 text-[10px] text-gray-400 flex-wrap">
           <span>{fmtTime(mail.sent_at ?? mail.received_at ?? mail.created_at)}</span>
-          <span>·</span>
+          <span>|</span>
           <span>{mail.mail_type || mail.source || "MAIL"}</span>
-          <span>·</span>
+          <span>|</span>
           <span>{isIncoming ? (mail.sender_email || mail.supplier_name || "Supplier") : (mail.supplier_name ?? "You")}</span>
         </div>
         <button
@@ -1364,9 +1352,9 @@ function MailBubble({ mail, onAssign }: { mail: CommHubMessage; onAssign: () => 
 
 function ThreadMessageTable({ rows }: { rows: ThreadTableRow[] }) {
   return (
-    <div className="mt-3 overflow-x-auto border border-brand-border rounded bg-white">
-      <table className="min-w-full text-xs">
-        <thead className="bg-slate-100">
+    <div className="mt-3 overflow-x-auto rounded-lg border border-brand-border bg-white">
+      <table className="data-table min-w-full text-xs">
+        <thead>
           <tr>
             {["CRM No", "Material Name", "Qty", "UOM", "Due Date", "Status", "Commitment Date", "Remark"].map((header) => (
               <th
@@ -1401,9 +1389,7 @@ function ThreadMessageTable({ rows }: { rows: ThreadTableRow[] }) {
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Task Panel
-// ─────────────────────────────────────────────────────────────────────────────
 function TaskPanel({
   open,
   onToggle,
@@ -1430,7 +1416,7 @@ function TaskPanel({
 
   if (!open) {
     return (
-      <aside className="w-[72px] border-l border-brand-border bg-white flex flex-col items-center py-4 relative">
+      <aside className="mail-context-panel relative flex w-[72px] flex-col items-center py-4">
         <button
           onClick={onToggle}
           className="p-2 rounded hover:bg-gray-100 text-gray-500 relative"
@@ -1465,8 +1451,8 @@ function TaskPanel({
   }
 
   return (
-    <aside className="w-[320px] border-l border-brand-border bg-white flex flex-col">
-      <div className="px-4 h-12 flex items-center justify-between border-b border-brand-border">
+    <aside className="mail-context-panel flex w-[320px] flex-col">
+      <div className="mail-pane-header flex h-12 items-center justify-between px-4">
         <div className="flex flex-col">
           <span className="font-semibold text-sm text-brand-dark">Task Center ({openCount})</span>
           <span className="text-[10px] text-brand-muted truncate max-w-[200px]">{contextLabel}</span>
@@ -1492,7 +1478,7 @@ function TaskPanel({
             return (
               <div key={g.key}>
                 <div className="text-[10px] font-bold uppercase tracking-wider text-brand-muted px-1 mb-2">
-                  {g.label} · {groupTasks.length}
+                  {g.label} | {groupTasks.length}
                 </div>
                 <div className="space-y-2">
                   {groupTasks.map((t) => (
@@ -1534,7 +1520,7 @@ function TaskCard({ task, onToggleDone }: { task: CommunicationTask; onToggleDon
           </p>
           {(task.supplier_po_no || task.supplier_name) && (
             <p className="text-[10px] text-brand-muted truncate mt-0.5">
-              {task.supplier_po_no && <>#{task.supplier_po_no} · </>}
+              {task.supplier_po_no && <>#{task.supplier_po_no} | </>}
               {task.supplier_name}
             </p>
           )}
@@ -1562,9 +1548,7 @@ function TaskCard({ task, onToggleDone }: { task: CommunicationTask; onToggleDon
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Assign Modal
-// ─────────────────────────────────────────────────────────────────────────────
 function AssignModal({
   seed,
   suppliers,
@@ -1652,7 +1636,7 @@ function AssignModal({
               onChange={(e) => setDescription(e.target.value)}
               rows={3}
               className="input resize-none"
-              placeholder="Add context, expected outcome…"
+              placeholder="Add context, expected outcome"
             />
           </Field>
 
@@ -1682,10 +1666,10 @@ function AssignModal({
           </Field>
           <Field label="Signal">
             <select value={signal} onChange={(e) => setSignal(e.target.value as TaskSignal)} className="input">
-              <option value="GREEN">● Green — On Track</option>
-              <option value="YELLOW">● Yellow — Reminder</option>
-              <option value="RED">● Red — Delayed</option>
-              <option value="BLACK">● Black — Critical</option>
+              <option value="GREEN">Green - On Track</option>
+              <option value="YELLOW">Yellow - Reminder</option>
+              <option value="RED">Red - Delayed</option>
+              <option value="BLACK">Black - Critical</option>
             </select>
           </Field>
 

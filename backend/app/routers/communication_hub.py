@@ -32,11 +32,17 @@ from ..schemas.communication_task import (
     CommunicationTaskCreate,
     CommunicationTaskUpdate,
 )
+import logging
+
 from ..services.followup_engine import apply_followup_logic, get_followup_rule
 from ..services.mail_template_service import build_context, pick_template, render
+from ..services import ai_service
 from ..services import communication_message_service as msg_service
+from ..services import po_followup_mail_service
 from ..services import po_followup_service
 from ..services.reply_table_parser import parse_reply_table
+
+log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/communication-hub", tags=["communication-hub"])
 
@@ -920,7 +926,8 @@ def ai_reply(
         f"{label} | PO No. {rec.supplier_po_no} | "
         f"{rec.material_name} | {rec.supplier_name or ''}"
     )
-    body = (
+
+    template_body = (
         render(template.body_template, ctx)
         if template
         else (
@@ -935,7 +942,37 @@ def ai_reply(
             "Regards,\nProcurement"
         )
     )
-    return {"subject": subject, "body": body, "mail_type": rule.mail_type}
+
+    # Real AI body when the LLM is enabled — grounded in the record's facts and,
+    # when RAG is on, how this supplier replied to past follow-ups. Falls back to
+    # the template on any error so the button always returns something usable.
+    body = template_body
+    source = "template"
+    if ai_service.is_enabled():
+        try:
+            days_late = (datetime.utcnow() - rec.shipment_date).days if rec.shipment_date else None
+            materials_summary = (
+                f"{rec.material_name} | qty {rec.qty or '-'} {rec.uom or ''} "
+                f"| current status {rec.po_status or '-'}"
+            )
+            ai_body = ai_service.suggest_po_followup(
+                supplier_name=rec.supplier_name,
+                supplier_po_no=rec.supplier_po_no,
+                overall_signal=rec.signal,
+                days_late=days_late,
+                followup_count=rec.followup_count,
+                materials_summary=materials_summary,
+                earliest_due_date=rec.shipment_date.isoformat() if rec.shipment_date else None,
+                last_supplier_reply=rec.last_supplier_reply,
+                precedent=po_followup_mail_service._supplier_precedent(db, rec.supplier_name),
+            )
+            if ai_body and ai_body.strip():
+                body = ai_body.strip()
+                source = "ai"
+        except Exception:  # noqa: BLE001
+            log.exception("hub ai_reply LLM failed; using template")
+
+    return {"subject": subject, "body": body, "mail_type": rule.mail_type, "source": source}
 
 
 # ─────────────────────────────────────────────────────────────────────────────

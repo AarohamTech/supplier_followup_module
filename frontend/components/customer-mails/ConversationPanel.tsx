@@ -29,6 +29,7 @@ interface ConversationPanelProps {
   seed?: { text: string; nonce: number };
   onSend: (text: string) => void;
   onOpenContext: () => void;
+  onAiGenerate?: (instruction: string) => Promise<string>;
 }
 
 function ConversationPanelBase({
@@ -38,6 +39,7 @@ function ConversationPanelBase({
   seed,
   onSend,
   onOpenContext,
+  onAiGenerate,
 }: ConversationPanelProps) {
   useRenderCount("ConversationPanel");
   const recipient = mail.from_name || mail.customer_name || mail.from_email || "customer";
@@ -45,7 +47,7 @@ function ConversationPanelBase({
   return (
     <div className="flex h-full flex-col">
       {/* Header */}
-      <div className="shrink-0 border-b border-brand-border px-4 py-3">
+      <div className="mail-thread-header shrink-0 px-5 py-4">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <h2 className="truncate text-base font-semibold text-brand-dark">
@@ -57,7 +59,7 @@ function ConversationPanelBase({
               </span>
               <span className="truncate">{mail.from_email}</span>
               {mail.linked_supplier_po_no && (
-                <span className="text-signal-red">· Ref {mail.linked_supplier_po_no}</span>
+                <span className="text-signal-red">Ref {mail.linked_supplier_po_no}</span>
               )}
             </div>
           </div>
@@ -71,14 +73,14 @@ function ConversationPanelBase({
             </span>
             <button
               type="button"
-              className="rounded-md border border-brand-border p-1.5 text-brand-muted hover:bg-gray-50"
+              className="grid h-8 w-8 place-items-center rounded-lg border border-brand-border bg-white text-brand-muted hover:bg-gray-50"
               title="Schedule"
             >
               <Calendar className="h-4 w-4" />
             </button>
             <button
               type="button"
-              className="rounded-md border border-brand-border p-1.5 text-brand-muted hover:bg-gray-50"
+              className="grid h-8 w-8 place-items-center rounded-lg border border-brand-border bg-white text-brand-muted hover:bg-gray-50"
               title="History"
             >
               <Clock className="h-4 w-4" />
@@ -86,7 +88,7 @@ function ConversationPanelBase({
             <button
               type="button"
               onClick={onOpenContext}
-              className="rounded-md border border-brand-border p-1.5 text-brand-muted hover:bg-gray-50 xl:hidden"
+              className="grid h-8 w-8 place-items-center rounded-lg border border-brand-border bg-white text-brand-muted hover:bg-gray-50 xl:hidden"
               title="Procurement context"
             >
               <PanelRightOpen className="h-4 w-4" />
@@ -96,11 +98,11 @@ function ConversationPanelBase({
       </div>
 
       {/* Messages (scrolls) */}
-      <div className="flex-1 space-y-3 overflow-y-auto bg-brand-surface px-4 py-4">
-        <article className="rounded-xl border border-brand-border bg-white p-4">
+      <div className="flex-1 space-y-4 overflow-y-auto px-4 py-5 lg:px-6">
+        <article className="mail-message mail-message-incoming p-4">
           <div className="mb-2 flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
-              <span className="flex h-7 w-7 items-center justify-center rounded-md bg-signal-red text-[11px] font-semibold text-white">
+              <span className="mail-avatar">
                 {(mail.from_name || mail.from_email || "?").slice(0, 2).toUpperCase()}
               </span>
               <div className="leading-tight">
@@ -108,12 +110,12 @@ function ConversationPanelBase({
                   {mail.from_name || mail.customer_name || "Unknown"}
                 </div>
                 <div className="text-[11px] text-brand-muted">
-                  to ProcureDirect Support
+                  to support
                 </div>
               </div>
             </div>
             <span className="text-[11px] text-brand-muted">
-              {formatDateTime(mail.received_at)} · {timeAgo(mail.received_at)}
+              {formatDateTime(mail.received_at)} | {timeAgo(mail.received_at)}
             </span>
           </div>
           <p className="whitespace-pre-wrap text-sm leading-relaxed text-brand-dark">
@@ -124,7 +126,7 @@ function ConversationPanelBase({
         {localReplies.map((reply) => (
           <article
             key={reply.id}
-            className="ml-8 rounded-xl border border-red-200 bg-red-50/60 p-4"
+            className="mail-message mail-message-outgoing ml-8 p-4"
           >
             <div className="mb-1.5 flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -153,6 +155,7 @@ function ConversationPanelBase({
         seed={seed}
         sending={sending}
         onSend={onSend}
+        onAiGenerate={onAiGenerate}
       />
     </div>
   );

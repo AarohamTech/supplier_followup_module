@@ -16,14 +16,15 @@ export default function QuickFilters() {
   ];
 
   return (
-    <div className="card p-3 flex flex-wrap items-center gap-2">
-      <span className="text-[10px] uppercase tracking-wider text-brand-muted font-semibold mr-2">Quick Filters:</span>
+    <div className="card flex flex-wrap items-center gap-2 p-3">
+      <span className="mr-1 text-[11px] font-bold uppercase text-brand-muted">Signal</span>
       {chips.map((c) => {
         const active = filters.signal === c.sig;
         return (
           <button
             key={c.label}
             onClick={() => setFilters({ signal: active ? undefined : c.sig })}
+            aria-pressed={active}
             className={"chip " + (active ? "bg-signal-red text-white border-signal-red" : "")}
           >
             {c.label}
@@ -31,13 +32,13 @@ export default function QuickFilters() {
         );
       })}
       <div className="flex-1" />
-      <div className="relative">
-        <Search size={14} className="absolute left-2 top-1/2 -translate-y-1/2 text-brand-muted" />
+      <div className="relative w-full sm:w-auto">
+        <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-brand-muted" />
         <input
-          placeholder="Search PO No. / CRM / material / supplier..."
+          placeholder="Search PO, CRM, material, supplier"
           value={filters.search ?? ""}
           onChange={(e) => setFilters({ search: e.target.value })}
-          className="pl-7 pr-3 py-1.5 border border-brand-border rounded-md text-sm w-[320px] bg-white"
+          className="w-full border border-brand-border py-2 pl-8 pr-3 text-sm sm:w-[340px]"
         />
       </div>
       <button onClick={clear} className="btn-ghost">Clear Filters</button>

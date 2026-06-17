@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
@@ -17,6 +17,7 @@ from ..models.customer_mail import (
     CustomerMail,
 )
 from ..services import customer_mail_service
+from ..workers import mail_send_worker
 
 router = APIRouter(prefix="/api/customer-mails", tags=["customer-mails"])
 
@@ -134,6 +135,11 @@ class CustomerMailTaskPayload(BaseModel):
 class CustomerReplyPayload(BaseModel):
     body: str = Field(min_length=1)
     subject: str | None = Field(default=None, max_length=500)
+
+
+class DraftReplyPayload(BaseModel):
+    # Free-text notes the agent typed in the composer; used as the AI prompt.
+    instruction: str | None = Field(default=None, max_length=2000)
 
 
 class CustomerReplyOut(BaseModel):
@@ -266,7 +272,7 @@ def reply_to_customer_mail(
     payload: CustomerReplyPayload,
     db: Session = Depends(get_db),
 ):
-    """Queue an outbound reply to the customer (sent by the SMTP worker)."""
+    """Queue an outbound reply to the customer, then send it immediately."""
     try:
         mail, msg = customer_mail_service.reply_to_mail(
             db, mail_id, body=payload.body, subject=payload.subject
@@ -275,11 +281,20 @@ def reply_to_customer_mail(
         raise HTTPException(422, str(exc))
     if mail is None or msg is None:
         raise HTTPException(404, "Customer mail not found")
+    # Send right away so the customer reply goes out now instead of waiting for
+    # the 5-minute send cron. On any SMTP error it stays READY and the cron
+    # retries it — so this is best-effort and never fails the request.
+    try:
+        mail_send_worker.send_message_now(db, msg.id)
+        db.refresh(msg)
+    except Exception:  # noqa: BLE001
+        pass
     return {
         "ok": True,
         "message_id": msg.id,
         "status": msg.status,
         "mail_status": mail.status,
+        "sent": msg.status == "SENT",
         "queued": msg.status == "READY",
     }
 
@@ -295,11 +310,16 @@ def list_customer_mail_replies(mail_id: int, db: Session = Depends(get_db)):
 def draft_customer_reply(
     mail_id: int,
     ai: bool = Query(default=False, description="Use the LLM (slower) vs the instant template"),
+    payload: DraftReplyPayload | None = Body(default=None),
     db: Session = Depends(get_db),
 ) -> dict:
     """Suggested reply from order data. `ai=true` polishes it with the LLM; the
-    default is the instant deterministic template (no LLM call)."""
-    draft = customer_mail_service.build_draft_reply(db, mail_id, use_ai=ai)
+    default is the instant deterministic template (no LLM call). An optional
+    `instruction` in the body is passed to the AI as the agent's guidance."""
+    instruction = payload.instruction if payload else None
+    draft = customer_mail_service.build_draft_reply(
+        db, mail_id, use_ai=ai, instruction=instruction
+    )
     if draft is None:
         raise HTTPException(404, "Customer mail not found")
     return draft

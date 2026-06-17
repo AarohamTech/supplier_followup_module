@@ -435,16 +435,17 @@ export const api = {
 
   // Customer reply (Phase 1) + smart draft (Phase 2)
   replyToCustomerMail: (id: number, body: string, subject?: string) =>
-    http<{ ok: boolean; message_id: number; status: string; mail_status: string; queued: boolean }>(
+    http<{ ok: boolean; message_id: number; status: string; mail_status: string; queued: boolean; sent: boolean }>(
       `/api/customer-mails/${id}/reply`,
       { method: "POST", body: JSON.stringify({ body, subject }) },
     ),
   getCustomerMailReplies: (id: number) =>
     http<CustomerReply[]>(`/api/customer-mails/${id}/replies`),
-  draftCustomerReply: (id: number, ai = false) =>
+  // `instruction` is the agent's typed notes, used as the AI prompt when ai=true.
+  draftCustomerReply: (id: number, ai = false, instruction?: string) =>
     http<CustomerDraftReply>(
       `/api/customer-mails/${id}/draft-reply${ai ? "?ai=true" : ""}`,
-      { method: "POST" },
+      { method: "POST", body: JSON.stringify({ instruction }) },
     ),
 
   // Outbound draft approvals (e.g. auto-reply acknowledgements)

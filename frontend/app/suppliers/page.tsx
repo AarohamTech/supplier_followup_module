@@ -2,18 +2,27 @@
 
 import { useStore } from "@/lib/store";
 import { signalClass } from "@/lib/format";
+import { Users } from "lucide-react";
 
 export default function Page() {
   const suppliers = useStore((s) => s.supplierMasters);
 
   return (
-    <div className="space-y-4">
-      <h1 className="text-xl font-semibold">Supplier Master</h1>
+    <div className="space-y-5">
+      <div className="flex items-center gap-3">
+        <span className="grid h-10 w-10 place-items-center rounded-lg bg-brand-dark text-white shadow-card">
+          <Users size={18} />
+        </span>
+        <div>
+          <h1 className="text-xl font-bold text-brand-dark">Supplier Master</h1>
+          <p className="text-sm text-brand-muted">Supplier health and mapped communication contacts.</p>
+        </div>
+      </div>
       <div className="card overflow-hidden">
-        <table className="min-w-full text-sm">
-          <thead className="bg-gray-50">
+        <table className="data-table min-w-full text-sm">
+          <thead>
             <tr>
-              {["Supplier", "Signal", "Email Mapped", "Primary Email", "PO No."].map((h) => (
+              {["Supplier", "Signal", "Email", "Primary email", "Latest PO"].map((h) => (
                 <th key={h} className="text-left px-4 py-3 table-header whitespace-nowrap">{h}</th>
               ))}
             </tr>
@@ -42,8 +51,8 @@ export default function Page() {
                   </td>
                   <td className="px-4 py-3">
                     {supplier.email_mapped
-                      ? <span className="badge badge-track">YES</span>
-                      : <span className="badge badge-overdue">NO</span>}
+                      ? <span className="badge badge-track">Mapped</span>
+                      : <span className="badge badge-overdue">Missing</span>}
                   </td>
                   <td className="px-4 py-3 text-xs">{supplier.primary_email ?? "-"}</td>
                   <td className="px-4 py-3 text-xs">{supplier.latest_supplier_po_no ?? "-"}</td>

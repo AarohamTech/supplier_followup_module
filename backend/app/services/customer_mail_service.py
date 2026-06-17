@@ -245,9 +245,14 @@ def list_replies(db: Session, mail_id: int) -> list[CommunicationMessage]:
     )
 
 
-def build_draft_reply(db: Session, mail_id: int, *, use_ai: bool = True) -> dict[str, Any] | None:
+def build_draft_reply(
+    db: Session, mail_id: int, *, use_ai: bool = True, instruction: str | None = None
+) -> dict[str, Any] | None:
     """Compose a suggested reply. Uses the LLM when enabled (grounded in the same
-    order facts) and always falls back to a deterministic template."""
+    order facts) and always falls back to a deterministic template.
+
+    `instruction` is free-text the agent typed in the composer; it's passed to the
+    LLM as guidance so "AI Generate" writes the reply the way the agent wants."""
     mail = get_mail(db, mail_id)
     if mail is None:
         return None

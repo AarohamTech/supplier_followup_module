@@ -1,7 +1,7 @@
 "use client";
 
 import { memo } from "react";
-import { Loader2, Sparkles } from "lucide-react";
+import { Sparkles } from "lucide-react";
 import { useRenderCount } from "./hooks";
 import { RISK_TONE, formatDate } from "./shared";
 
@@ -22,20 +22,22 @@ export interface ProcurementContext {
 interface ProcurementContextPanelProps {
   context: ProcurementContext | null;
   loading: boolean;
-  aiSuggestion: string;
-  onUseSuggestion: () => void;
-  onAiDraft: () => void;
-  aiLoading: boolean;
+  // AI reply now lives in the composer ("AI Generate"); these are accepted for
+  // backward compatibility but no longer rendered here.
+  aiSuggestion?: string;
+  onUseSuggestion?: () => void;
+  onAiDraft?: () => void;
+  aiLoading?: boolean;
 }
 
 function DataCard({ label, value, tone }: { label: string; value: string | null; tone?: string }) {
   return (
-    <div className="rounded-lg border border-brand-border bg-white p-2.5">
-      <div className="text-[10px] font-medium uppercase tracking-wide text-brand-muted">
+    <div className="rounded-lg border border-brand-border bg-white/86 p-2.5 shadow-sm">
+      <div className="text-[10px] font-bold uppercase text-brand-muted">
         {label}
       </div>
       <div className={`mt-0.5 truncate text-sm font-semibold ${tone || "text-brand-dark"}`}>
-        {value || "—"}
+        {value || "-"}
       </div>
     </div>
   );
@@ -44,16 +46,12 @@ function DataCard({ label, value, tone }: { label: string; value: string | null;
 function ProcurementContextPanelBase({
   context,
   loading,
-  aiSuggestion,
-  onUseSuggestion,
-  onAiDraft,
-  aiLoading,
 }: ProcurementContextPanelProps) {
   useRenderCount("ProcurementContextPanel");
 
   if (loading) {
     return (
-      <div className="p-4 text-xs text-brand-muted">Loading procurement context…</div>
+      <div className="p-4 text-xs text-brand-muted">Loading procurement context...</div>
     );
   }
 
@@ -62,15 +60,15 @@ function ProcurementContextPanelBase({
 
   return (
     <div className="space-y-3 p-3">
-      <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-signal-red">
+      <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase text-signal-red">
         <Sparkles className="h-3.5 w-3.5" />
         Auto Procurement Summary
       </div>
 
       {/* Primary material */}
-      <div className="rounded-xl border border-red-200 bg-red-50/50 p-3">
+      <div className="rounded-lg border border-red-200 bg-red-50/50 p-3">
         <div className="flex items-center justify-between gap-2">
-          <div className="text-[10px] font-medium uppercase tracking-wide text-brand-muted">
+          <div className="text-[10px] font-bold uppercase text-brand-muted">
             Primary Material
           </div>
           {c?.risk && (
@@ -97,18 +95,18 @@ function ProcurementContextPanelBase({
       <DataCard label="Supplier Commitment Date" value={formatDate(c?.commitmentDate)} />
 
       <div className="rounded-lg border border-brand-border bg-white p-2.5">
-        <div className="text-[10px] font-medium uppercase tracking-wide text-brand-muted">
+        <div className="text-[10px] font-bold uppercase text-brand-muted">
           Latest Supplier Update
         </div>
         <p className="mt-1 text-xs italic leading-relaxed text-brand-dark">
-          {c?.latestUpdate ? `“${c.latestUpdate}”` : "No supplier update yet."}
+          {c?.latestUpdate ? `"${c.latestUpdate}"` : "No supplier update yet."}
         </p>
       </div>
 
       {/* Linked materials */}
       {c && c.materials.length > 0 && (
         <div className="rounded-lg border border-brand-border bg-white p-2.5">
-          <div className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-brand-muted">
+          <div className="mb-1.5 text-[10px] font-bold uppercase text-brand-muted">
             Linked Materials (PO Items)
           </div>
           <div className="space-y-1">
@@ -122,34 +120,6 @@ function ProcurementContextPanelBase({
           </div>
         </div>
       )}
-
-      {/* AI Suggested Reply */}
-      <div className="rounded-xl border border-violet-200 bg-violet-50/60 p-3">
-        <div className="flex items-center gap-1.5 text-[11px] font-semibold text-violet-700">
-          <Sparkles className="h-3.5 w-3.5" />
-          AI Suggested Reply
-        </div>
-        <p className="mt-1.5 whitespace-pre-wrap text-xs leading-relaxed text-brand-dark">{aiSuggestion}</p>
-        <div className="mt-2 flex gap-2">
-          <button
-            type="button"
-            onClick={onUseSuggestion}
-            className="flex-1 rounded-md border border-violet-300 bg-white py-1.5 text-xs font-medium text-violet-700 hover:bg-violet-50"
-          >
-            Use this reply
-          </button>
-          <button
-            type="button"
-            onClick={onAiDraft}
-            disabled={aiLoading}
-            title="Rewrite with AI (uses the LLM)"
-            className="inline-flex items-center justify-center gap-1 rounded-md bg-violet-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-violet-700 disabled:opacity-50"
-          >
-            {aiLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
-            {aiLoading ? "Writing…" : "Improve with AI"}
-          </button>
-        </div>
-      </div>
     </div>
   );
 }
