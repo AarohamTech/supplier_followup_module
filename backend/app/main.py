@@ -12,6 +12,7 @@ from .core.schema_evolve import ensure_columns
 from .database import Base, engine, ensure_schema
 from .routers import (
     ai,
+    ai_insights,
     auth,
     customer_mails,
     procurement,
@@ -49,6 +50,14 @@ async def lifespan(app: FastAPI):
                 log.info("Schema evolve added columns: %s", ", ".join(changes))
         except Exception:  # noqa: BLE001
             log.exception("Schema evolve failed (continuing)")
+        # pgvector knowledge store (Postgres only; no-op + safe on SQLite).
+        if settings.RAG_ENABLED:
+            try:
+                from .services import vector_store
+
+                vector_store.ensure_store()
+            except Exception:  # noqa: BLE001
+                log.exception("Vector store init failed (continuing; RAG degraded)")
         try:
             result = seed_module.run()
             log.info("Seed result: %s", result)
@@ -103,8 +112,10 @@ app.include_router(customer_mails.router, dependencies=_rbac)
 app.include_router(po_followups.router, dependencies=_rbac)
 app.include_router(settings_router.router, dependencies=_rbac)
 
-# AI assistant: available to any logged-in user (including viewers).
+# AI assistant + insights: available to any logged-in user (including viewers).
+# Write/heavy actions inside add their own require_writer / require_manager.
 app.include_router(ai.router, dependencies=[Depends(get_current_user)])
+app.include_router(ai_insights.router, dependencies=[Depends(get_current_user)])
 
 
 @app.get("/")

@@ -26,7 +26,9 @@ from ..core.config import settings
 from ..database import SessionLocal
 from ..models.customer_mail import CustomerMail
 from ..services import (
+    ai_insights_service,
     communication_message_service as msg_service,
+    knowledge_indexer,
     mail_parser_service,
     status_change_service,
 )
@@ -178,11 +180,23 @@ def _process_one(
             )
             db.add(customer)
             db.commit()
+            # Best-effort AI enrichment — never block or fail the fetch.
+            triaged: dict[str, Any] | None = None
+            if settings.AI_TRIAGE_ENABLED:
+                try:
+                    triaged = ai_insights_service.triage_mail(db, customer, use_ai=True)
+                except Exception:  # noqa: BLE001
+                    log.exception("auto-triage failed for customer_mail %s", customer.id)
+            try:
+                knowledge_indexer.index_customer_mail(db, customer)
+            except Exception:  # noqa: BLE001
+                log.exception("indexing failed for customer_mail %s", customer.id)
             return {
                 "message_uid": message_id,
                 "skipped": False,
                 "routed_to": "customer_mail",
                 "customer_mail_id": customer.id,
+                "triaged": triaged,
             }
         return {
             "message_uid": message_id,
@@ -228,6 +242,13 @@ def _process_one(
             log.exception(
                 "apply_material_reply_table failed for message_uid=%s", message_id
             )
+
+    # Best-effort: add the supplier reply to the semantic memory.
+    if msg is not None:
+        try:
+            knowledge_indexer.index_supplier_reply(db, msg)
+        except Exception:  # noqa: BLE001
+            log.exception("indexing failed for supplier reply %s", getattr(msg, "id", None))
 
     return {
         "message_uid": message_id,

@@ -46,6 +46,13 @@ export const PRIORITY_TONE: Record<string, string> = {
   P3: "bg-gray-200 text-brand-dark",
 };
 
+/** AI-triage urgency badge tones. */
+export const URGENCY_TONE: Record<string, string> = {
+  HIGH: "bg-red-100 text-signal-red",
+  MEDIUM: "bg-amber-100 text-amber-700",
+  LOW: "bg-emerald-100 text-emerald-700",
+};
+
 /** Selectable assignees, mirrored from the Communication Hub task creator. */
 export const ASSIGNEES = [
   "Rajesh Kumar",

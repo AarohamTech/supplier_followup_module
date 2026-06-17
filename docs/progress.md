@@ -195,3 +195,46 @@ npm run dev
 - Optional: drop the ~16 stray empty tables left in the OLD project's DB.
 - Optional: switch table creation to Alembic migrations (currently `create_all` on startup).
 - Rotate the Supabase password + set a fresh `JWT_SECRET` for any shared/prod environment.
+
+### Phase 5 — Agentic AI + RAG memory + insights _(2026-06-17)_
+Tier 1 + Tier 2 of the AI follow-up roadmap. All AI lives under `/api/ai/*`; every feature is
+flag-gated and degrades gracefully (LLM off → templates/heuristics; RAG off → SQL-only agent).
+
+- **Agentic Assistant** — `POST /api/ai/chat` now tool-calls the live DB. Tools in
+  `services/ai_tools_service.py`: `get_overview`, `list_red_pos`, `get_po_status`,
+  `search_supplier`, `get_mail_thread`, and `search_knowledge` (RAG; only exposed when RAG on).
+  Loop in `ai_service.chat_with_tools()`; the assistant page shows which tools were used.
+- **Auto-triage** (`AI_TRIAGE_ENABLED`) — incoming customer mails classified on fetch
+  (category / urgency / action / summary) → persisted on `customer_mails.ai_*`. LLM with a
+  keyword-heuristic fallback. On-demand: `POST /api/ai/triage/customer-mail/{id}`. Badges in the
+  mail queue + a triage banner + "Triage"/"Summarize" buttons in the workspace.
+- **AI PO follow-up** (`AI_PO_FOLLOWUP_ENABLED`) — RED/BLACK follow-up bodies polished by the LLM,
+  grounded in PO facts (+ RAG precedent of how the supplier replied before). Keeps the structured
+  material + reply tables; falls back to the template on any error.
+- **Predictive delay risk** — heuristic scorer (`ai_insights_service.compute_delay_risk`) writes
+  `procurement_records.risk_score/risk_band/risk_reason/risk_scored_at`. Cron `delay_risk_cron`
+  (60 min) + `POST /api/ai/insights/delay-risk/rescore`. Listed via `GET .../delay-risk`.
+- **Supplier scorecards** — `GET /api/ai/insights/suppliers` (grouped-query heuristic: signal mix,
+  overdue, avg follow-ups, reply rate → score + A–D grade).
+- **Conversation summary** — `POST /api/ai/summary/customer-mail/{id}` summarises mail + replies.
+- **RAG memory (pgvector)** — `services/vector_store.py` (raw SQL, **Postgres-only**, no-op on
+  SQLite, no new Python dep), `embeddings_service.py` (NVIDIA `nv-embedqa-e5-v5`, 1024-dim,
+  input_type-aware), `knowledge_indexer.py` (embed mails/replies on fetch + backfill). Cron
+  `knowledge_index_cron` (30 min). `GET /api/ai/memory/stats`, `POST /api/ai/memory/backfill`.
+- **Frontend** — new `/insights` page (delay-risk table + supplier scorecards + memory status &
+  backfill), sidebar "AI Insights", triage badges/summary in customer mails, tool chips on the
+  assistant. `lib/api.ts` + `lib/types.ts` extended.
+- **New cols** added online by `schema_evolve` (Postgres): `customer_mails.ai_*`,
+  `procurement_records.risk_*`. Vector table created by `vector_store.ensure_store()` on startup
+  when `RAG_ENABLED`.
+- **Verified:** 35/35 backend tests; `tsc --noEmit` clean; isolated SQLite smoke test (risk,
+  scorecards, triage, all agent tool executors); **live NVIDIA tool-calling confirmed** (called
+  `list_red_pos`, correct grounded answer). Free-tier 70B tool-calling is ~30-40s/round →
+  `LLM_AGENT_TIMEOUT_SECONDS=60` for the agent path (triage/drafts stay fail-fast at 30s).
+
+#### To enable on EC2 (env additions — see `backend/example.env`)
+- Agentic chat is **on by default** once `LLM_ENABLED=true` (already set).
+- Triage/PO-AI: set `AI_TRIAGE_ENABLED=true` / `AI_PO_FOLLOWUP_ENABLED=true`.
+- RAG: set `RAG_ENABLED=true` (Postgres only). `EMBED_API_KEY` blank reuses `LLM_API_KEY`. The
+  Supabase **session pooler** is fine for pgvector; `ensure_store()` runs `CREATE EXTENSION vector`.
+  After enabling, call `POST /api/ai/memory/backfill` once (manager) to embed existing mail.

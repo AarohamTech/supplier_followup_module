@@ -14,6 +14,7 @@ import {
   MailCheck,
   ShieldCheck,
   Sparkles,
+  Gauge,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
@@ -29,6 +30,7 @@ type NavItem = {
 const items: NavItem[] = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/assistant", label: "AI Assistant", icon: Sparkles },
+  { href: "/insights", label: "AI Insights", icon: Gauge },
   { href: "/po-followups", label: "PO Follow-ups", icon: FileSpreadsheet },
   { href: "/suppliers", label: "Supplier Master", icon: Users },
   { href: "/emails", label: "Email Master", icon: Mail },

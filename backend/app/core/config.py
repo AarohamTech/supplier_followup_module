@@ -54,6 +54,35 @@ class Settings(BaseSettings):
     # Hard request timeout (seconds) so a slow/hung LLM can't block the UI.
     # Fail fast and fall back to the deterministic template on timeout.
     LLM_TIMEOUT_SECONDS: float = Field(default=30.0)
+    # Agentic chat makes several sequential tool-calling round-trips and has no
+    # template fallback, so it gets a longer per-request budget than the fail-
+    # fast helpers above (free-tier 70B tool-calling can take ~30-40s per call).
+    LLM_AGENT_TIMEOUT_SECONDS: float = Field(default=60.0)
+
+    # ── Agentic assistant + AI feature toggles ───────────────────────────────
+    # Let the Assistant chatbot call DB tools (PO lookups, supplier search, RAG).
+    AI_AGENT_ENABLED: bool = Field(default=True)
+    # Max tool-call rounds before the agent is forced to answer.
+    AI_AGENT_MAX_ROUNDS: int = Field(default=4)
+    # Auto-classify (category/urgency/action) incoming customer mails on fetch.
+    AI_TRIAGE_ENABLED: bool = Field(default=False)
+    # AI-polish RED/BLACK PO follow-up bodies (falls back to template on error).
+    AI_PO_FOLLOWUP_ENABLED: bool = Field(default=False)
+
+    # ── RAG / vector memory (pgvector on Postgres; no-op on SQLite) ───────────
+    # Master switch. When false the agent runs SQL-only and indexing is skipped.
+    RAG_ENABLED: bool = Field(default=False)
+    # Embedding endpoint (OpenAI-compatible). Defaults reuse the NVIDIA NIM key.
+    EMBED_BASE_URL: str = Field(default="https://integrate.api.nvidia.com/v1")
+    EMBED_API_KEY: str | None = Field(default=None)  # falls back to LLM_API_KEY
+    EMBED_MODEL: str = Field(default="nvidia/nv-embedqa-e5-v5")
+    EMBED_DIM: int = Field(default=1024)
+    # NVIDIA embedqa models require an input_type ("passage" for docs, "query"
+    # for searches). Harmless for providers that ignore it.
+    EMBED_USES_INPUT_TYPE: bool = Field(default=True)
+    EMBED_TIMEOUT_SECONDS: float = Field(default=30.0)
+    # How many top chunks the search_knowledge tool / draft retrieval pulls.
+    RAG_TOP_K: int = Field(default=5)
 
     RED_AI_AFTER_DAYS: int = Field(...)
 
@@ -84,6 +113,11 @@ class Settings(BaseSettings):
     STATUS_CHANGE_INTERVAL_MINUTES: int = Field(...)
     AUTO_REPLY_INTERVAL_MINUTES: int = Field(...)
     MAIL_SEND_INTERVAL_MINUTES: int = Field(...)
+
+    @property
+    def embed_api_key(self) -> str | None:
+        """Embedding key, falling back to the chat LLM key (same NVIDIA account)."""
+        return self.EMBED_API_KEY or self.LLM_API_KEY
 
     @field_validator("DB_SCHEMA", mode="before")
     @classmethod

@@ -54,6 +54,17 @@ class CustomerMail(Base):
     message_uid: Mapped[str | None] = mapped_column(String(255), index=True)
     raw_payload: Mapped[dict | None] = mapped_column(JSON)
 
+    # ── AI triage (populated on fetch or on demand; all nullable) ────────────
+    # Category mirrors mail_type vocab but is the model's classification.
+    ai_category: Mapped[str | None] = mapped_column(String(32), index=True)
+    # Urgency the team should treat this with: HIGH / MEDIUM / LOW.
+    ai_urgency: Mapped[str | None] = mapped_column(String(16), index=True)
+    # Suggested next action: REPLY / ESCALATE / RESOLVE / MONITOR.
+    ai_action: Mapped[str | None] = mapped_column(String(32))
+    # One-line AI summary of the mail (and thread, when summarized).
+    ai_summary: Mapped[str | None] = mapped_column(Text)
+    ai_triaged_at: Mapped[datetime | None] = mapped_column(DateTime)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False
     )

@@ -3,7 +3,7 @@
 import { memo } from "react";
 import type { CustomerMail } from "@/lib/types";
 import { useRenderCount } from "./hooks";
-import { PRIORITY_TONE, formatDateTime } from "./shared";
+import { PRIORITY_TONE, URGENCY_TONE, formatDateTime } from "./shared";
 
 interface MailCardProps {
   mail: CustomerMail;
@@ -59,6 +59,18 @@ function MailCardBase({ mail, selected, onSelect }: MailCardProps) {
         {openTasks > 0 && (
           <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-violet-100 text-violet-700">
             {openTasks} task{openTasks === 1 ? "" : "s"}
+          </span>
+        )}
+        {mail.ai_urgency && (
+          <span
+            className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
+              URGENCY_TONE[mail.ai_urgency] || "bg-gray-100 text-brand-muted"
+            }`}
+            title={`AI triage${mail.ai_category ? ` · ${mail.ai_category}` : ""}${
+              mail.ai_action ? ` · ${mail.ai_action}` : ""
+            }`}
+          >
+            {mail.ai_urgency}
           </span>
         )}
       </div>

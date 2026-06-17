@@ -1,6 +1,8 @@
 """PO follow-up mail generation and automatic queueing."""
 from __future__ import annotations
 
+import logging
+import re
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from html import escape
@@ -12,9 +14,11 @@ from sqlalchemy.orm import Session
 from ..core.config import settings
 from ..models.mail_history import MailHistory
 from ..models.procurement import ProcurementRecord
-from . import communication_message_service as msg_service
-from . import po_followup_service
+from . import ai_service, communication_message_service as msg_service
+from . import embeddings_service, po_followup_service, vector_store
 from .followup_engine import apply_followup_logic
+
+log = logging.getLogger(__name__)
 from .mail_template_service import (
     PO_MAIL_TYPE_BY_SIGNAL,
     PO_REPLY_INSTRUCTIONS,
@@ -102,7 +106,12 @@ def _po_fallback_body(group: dict[str, Any], table_text: str) -> str:
     )
 
 
-def _po_body_html(group: dict[str, Any], table_html: str, reply_table_html: str | None = None) -> str:
+def _po_body_html(
+    group: dict[str, Any],
+    table_html: str,
+    reply_table_html: str | None = None,
+    intro_html: str | None = None,
+) -> str:
     supplier = escape(str(group.get("supplier_name") or "Supplier"))
     po_no = escape(str(group.get("supplier_po_no") or "-"))
     count = escape(str(group.get("material_count") or 0))
@@ -135,9 +144,15 @@ def _po_body_html(group: dict[str, Any], table_html: str, reply_table_html: str 
         "<span style=\"color:#ffffff;font-size:16px;font-weight:700;\">Procurement Follow-up</span>"
         "</div>"
         "<div style=\"padding:20px;color:#1e293b;font-size:13px;line-height:1.5;\">"
-        f"<p style=\"margin:0 0 12px;\">Dear {supplier},</p>"
-        "<p style=\"margin:0 0 14px;\">We request a material-wise status update for the "
-        "following purchase order. Kindly review the summary and reply using the table provided.</p>"
+        + (
+            intro_html
+            or (
+                f"<p style=\"margin:0 0 12px;\">Dear {supplier},</p>"
+                "<p style=\"margin:0 0 14px;\">We request a material-wise status update for the "
+                "following purchase order. Kindly review the summary and reply using the table provided.</p>"
+            )
+        )
+        +
         # PO summary card
         "<table role=\"presentation\" style=\"border-collapse:collapse;width:100%;margin:0 0 16px;\">"
         "<tr>"
@@ -169,6 +184,73 @@ def _po_body_html(group: dict[str, Any], table_html: str, reply_table_html: str 
         "Follow-up Agent. Please reply keeping the table format intact.</div>"
         "</div></div>"
     )
+
+
+def _ai_intro_html(text: str) -> str:
+    """Turn an AI-written plain-text body into HTML paragraphs for the intro slot."""
+    blocks = [b.strip() for b in re.split(r"\n\s*\n", text.strip()) if b.strip()]
+    return "".join(
+        f'<p style="margin:0 0 12px;">{escape(b).replace(chr(10), "<br/>")}</p>'
+        for b in blocks
+    )
+
+
+def _supplier_precedent(db: Session, supplier_name: str | None) -> str | None:
+    """RAG: pull how this supplier previously responded to follow-ups (if RAG on)."""
+    if not supplier_name or not (embeddings_service.is_enabled() and vector_store.available()):
+        return None
+    try:
+        emb = embeddings_service.embed_query(
+            f"follow-up reply from {supplier_name} about delivery delay or dispatch date"
+        )
+        hits = vector_store.search(db, embedding=emb, k=3, source_types=["supplier_reply"])
+        snippets = [
+            h["content"]
+            for h in hits
+            if (h.get("metadata") or {}).get("supplier_name", "").upper()
+            == supplier_name.upper()
+        ]
+        return "\n---\n".join(snippets[:2]) if snippets else None
+    except Exception:  # noqa: BLE001
+        log.exception("supplier precedent lookup failed")
+        return None
+
+
+def _maybe_ai_polish(
+    db: Session,
+    group: dict[str, Any],
+    anchor_rec: ProcurementRecord | None,
+    table_text: str,
+) -> tuple[str, str] | None:
+    """Return (plain_body, intro_html) from the LLM, or None to keep the template."""
+    if not ai_service.is_enabled():
+        return None
+    try:
+        due = group.get("earliest_due_date")
+        days_late: int | None = None
+        if due:
+            try:
+                days_late = (date.today() - datetime.fromisoformat(due).date()).days
+            except ValueError:
+                days_late = None
+        ai_body = ai_service.suggest_po_followup(
+            supplier_name=group.get("supplier_name"),
+            supplier_po_no=group.get("supplier_po_no"),
+            overall_signal=group.get("overall_signal"),
+            days_late=days_late,
+            followup_count=getattr(anchor_rec, "followup_count", None),
+            materials_summary=table_text,
+            earliest_due_date=due,
+            last_supplier_reply=getattr(anchor_rec, "last_supplier_reply", None),
+            precedent=_supplier_precedent(db, group.get("supplier_name")),
+        )
+        if not ai_body or not ai_body.strip():
+            return None
+        plain = f"{ai_body.strip()}\n\n{table_text}\n\n{PO_REPLY_INSTRUCTIONS}"
+        return plain, _ai_intro_html(ai_body.strip())
+    except Exception:  # noqa: BLE001
+        log.exception("AI PO follow-up polish failed; using template")
+        return None
 
 
 def _active_window_start() -> datetime:
@@ -332,6 +414,17 @@ def create_po_followup_mail(
             mail_type=resolved_mail_type,
             overall_signal=group.get("overall_signal"),
         )
+
+    # AI-polish high-risk (RED/BLACK) follow-ups when enabled; keep the
+    # structured material + reply tables, just replace the intro/tone.
+    if (
+        getattr(settings, "AI_PO_FOLLOWUP_ENABLED", False)
+        and (group.get("overall_signal") or "").upper() in {"RED", "BLACK"}
+    ):
+        polished = _maybe_ai_polish(db, group, anchor_rec, table_text)
+        if polished:
+            body_plain, intro_html = polished
+            body_html = _po_body_html(group, table_html, reply_table_html, intro_html=intro_html)
 
     history = MailHistory(
         procurement_record_id=anchor_id,

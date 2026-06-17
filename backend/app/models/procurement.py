@@ -59,6 +59,14 @@ class ProcurementRecord(Base):
     # ("day 1" = first day late) instead of counting from the ship date.
     red_since: Mapped[datetime | None] = mapped_column(DateTime)
 
+    # ── Predictive delay risk (heuristic, refreshed by the ai_risk cron) ─────
+    # 0-100 likelihood-of-delay score; band is LOW/MEDIUM/HIGH; reason is a
+    # short human-readable explanation of the top contributing factors.
+    risk_score: Mapped[int | None] = mapped_column(Integer)
+    risk_band: Mapped[str | None] = mapped_column(String(16), index=True)
+    risk_reason: Mapped[str | None] = mapped_column(String(500))
+    risk_scored_at: Mapped[datetime | None] = mapped_column(DateTime)
+
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
 

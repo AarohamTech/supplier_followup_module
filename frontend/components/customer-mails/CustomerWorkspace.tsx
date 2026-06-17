@@ -6,7 +6,7 @@ import {
   useMemo,
   useState,
 } from "react";
-import { X } from "lucide-react";
+import { X, Sparkles, FileText, Loader2 } from "lucide-react";
 import { api } from "@/lib/api";
 import type {
   CommunicationTask,
@@ -354,6 +354,55 @@ export default function CustomerWorkspace() {
       .finally(() => setAiDraftLoading(false));
   }, [selectedId]);
 
+  // ── AI triage / summarize for the selected mail ──────────────────────────
+  const [aiBusy, setAiBusy] = useState<null | "triage" | "summary">(null);
+
+  const patchSelectedMail = useCallback(
+    (patch: Partial<CustomerMail>) => {
+      setData((prev) =>
+        prev
+          ? {
+              ...prev,
+              items: prev.items.map((m) => (m.id === selectedId ? { ...m, ...patch } : m)),
+            }
+          : prev,
+      );
+    },
+    [selectedId],
+  );
+
+  const handleTriage = useCallback(() => {
+    if (selectedId == null) return;
+    setAiBusy("triage");
+    api
+      .triageCustomerMail(selectedId)
+      .then((r) => {
+        patchSelectedMail({
+          ai_category: r.category,
+          ai_urgency: r.urgency,
+          ai_action: r.action,
+          ai_summary: r.summary,
+          ai_triaged_at: new Date().toISOString(),
+        });
+        setToast(`Triaged: ${r.urgency} · ${r.category} · ${r.action}`);
+      })
+      .catch((err) => setToast((err as Error).message))
+      .finally(() => setAiBusy(null));
+  }, [selectedId, patchSelectedMail]);
+
+  const handleSummarize = useCallback(() => {
+    if (selectedId == null) return;
+    setAiBusy("summary");
+    api
+      .summarizeCustomerMail(selectedId)
+      .then((r) => {
+        patchSelectedMail({ ai_summary: r.summary });
+        setToast("Summary ready.");
+      })
+      .catch((err) => setToast((err as Error).message))
+      .finally(() => setAiBusy(null));
+  }, [selectedId, patchSelectedMail]);
+
   const openContext = useCallback(() => setDrawerOpen(true), []);
   const closeContext = useCallback(() => setDrawerOpen(false), []);
 
@@ -398,17 +447,79 @@ export default function CustomerWorkspace() {
   return (
     <div className="flex h-[calc(100vh-128px)] flex-col">
       {/* Header */}
-      <div className="mb-3 flex items-center justify-between">
+      <div className="mb-3 flex items-center justify-between gap-3">
         <div>
           <h1 className="text-lg font-semibold text-brand-dark">Customer Response Workspace</h1>
           <p className="text-xs text-brand-muted">
             Manage customer communication, internal coordination and response preparation.
           </p>
         </div>
-        {toast && (
-          <span className="rounded-md bg-brand-dark px-3 py-1.5 text-xs text-white">{toast}</span>
-        )}
+        <div className="flex items-center gap-2">
+          {toast && (
+            <span className="rounded-md bg-brand-dark px-3 py-1.5 text-xs text-white">{toast}</span>
+          )}
+          {selected && (
+            <>
+              <button
+                type="button"
+                onClick={handleTriage}
+                disabled={aiBusy !== null}
+                className="inline-flex items-center gap-1.5 rounded-md border border-brand-border px-2.5 py-1.5 text-xs font-medium text-brand-dark hover:bg-gray-50 disabled:opacity-50"
+                title="Classify category / urgency / suggested action with AI"
+              >
+                {aiBusy === "triage" ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Sparkles className="h-3.5 w-3.5" />
+                )}
+                Triage
+              </button>
+              <button
+                type="button"
+                onClick={handleSummarize}
+                disabled={aiBusy !== null}
+                className="inline-flex items-center gap-1.5 rounded-md border border-brand-border px-2.5 py-1.5 text-xs font-medium text-brand-dark hover:bg-gray-50 disabled:opacity-50"
+                title="Summarize this mail + its replies"
+              >
+                {aiBusy === "summary" ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <FileText className="h-3.5 w-3.5" />
+                )}
+                Summarize
+              </button>
+            </>
+          )}
+        </div>
       </div>
+
+      {/* AI triage / summary banner for the selected mail */}
+      {selected && (selected.ai_summary || selected.ai_urgency) && (
+        <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-brand-border bg-brand-surface px-3 py-2 text-xs">
+          {selected.ai_urgency && (
+            <span
+              className={`rounded px-1.5 py-0.5 font-semibold ${
+                selected.ai_urgency === "HIGH"
+                  ? "bg-red-100 text-signal-red"
+                  : selected.ai_urgency === "MEDIUM"
+                    ? "bg-amber-100 text-amber-700"
+                    : "bg-emerald-100 text-emerald-700"
+              }`}
+            >
+              {selected.ai_urgency}
+            </span>
+          )}
+          {selected.ai_category && (
+            <span className="rounded bg-gray-100 px-1.5 py-0.5 text-brand-dark">{selected.ai_category}</span>
+          )}
+          {selected.ai_action && (
+            <span className="rounded bg-violet-100 px-1.5 py-0.5 text-violet-700">→ {selected.ai_action}</span>
+          )}
+          {selected.ai_summary && (
+            <span className="min-w-0 flex-1 text-brand-muted">{selected.ai_summary}</span>
+          )}
+        </div>
+      )}
 
       {/* Workspace grid */}
       <div className="flex min-h-0 flex-1 flex-col gap-3 md:flex-row">

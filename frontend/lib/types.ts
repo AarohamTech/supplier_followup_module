@@ -612,6 +612,11 @@ export interface CustomerMail {
   linked_task_id: number | null;
   linked_supplier_po_no: string | null;
   message_uid: string | null;
+  ai_category?: string | null;
+  ai_urgency?: string | null;
+  ai_action?: string | null;
+  ai_summary?: string | null;
+  ai_triaged_at?: string | null;
   task_count?: number;
   open_task_count?: number;
   created_at: string;
@@ -724,9 +729,23 @@ export interface ChatMessage {
   content: string;
 }
 
+export interface AiToolUse {
+  name: string;
+  args: Record<string, unknown>;
+}
+
 export interface AiChatResponse {
   reply: string;
   model: string;
+  tools_used?: AiToolUse[];
+}
+
+export interface AiRagHealth {
+  enabled: boolean;
+  model: string;
+  dim: number;
+  base_url: string;
+  has_key: boolean;
 }
 
 export interface AiHealth {
@@ -734,4 +753,53 @@ export interface AiHealth {
   model: string;
   base_url: string;
   has_key: boolean;
+  agent_enabled?: boolean;
+  triage_enabled?: boolean;
+  po_followup_ai?: boolean;
+  rag?: AiRagHealth;
+}
+
+// ─── AI insights (delay risk + supplier scorecards + memory) ─────────────────
+export interface DelayRiskItem {
+  supplier_name: string | null;
+  supplier_po_no: string;
+  risk_score: number;
+  risk_band: "LOW" | "MEDIUM" | "HIGH" | string;
+  risk_reason: string | null;
+  signal: string;
+  earliest_due_date: string | null;
+  material_count: number;
+  at_risk_materials: number;
+  days_late: number | null;
+}
+
+export interface DelayRiskResponse {
+  count: number;
+  band: string | null;
+  items: DelayRiskItem[];
+}
+
+export interface SupplierScorecard {
+  supplier_name: string;
+  by_signal: Record<string, number>;
+  total_records: number;
+  overdue: number;
+  avg_followups: number;
+  incoming_msgs: number;
+  outgoing_msgs: number;
+  high_risk: number;
+  red_black: number;
+  response_rate: number | null;
+  score: number;
+  grade: "A" | "B" | "C" | "D" | string;
+}
+
+export interface AiMemoryStats {
+  embeddings: AiRagHealth | null;
+  store: {
+    available: boolean;
+    total: number;
+    by_source: Record<string, number>;
+  };
+  indexer_enabled: boolean;
 }

@@ -1,19 +1,21 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Bot, Loader2, SendHorizonal, Sparkles, User } from "lucide-react";
+import { Bot, Loader2, SendHorizonal, Sparkles, User, Wrench } from "lucide-react";
 
 import { api } from "@/lib/api";
-import type { ChatMessage } from "@/lib/types";
+import type { ChatMessage, AiToolUse } from "@/lib/types";
+
+type UiMessage = ChatMessage & { tools?: AiToolUse[] };
 
 const SUGGESTIONS = [
-  "Summarise what a RED signal means in this system.",
-  "Draft a polite follow-up to a supplier who is 3 days late.",
-  "What should I check before marking a PO dispatched?",
+  "Summarise our RED signals right now.",
+  "Which purchase orders are most at risk of delay?",
+  "How have we handled late supplier deliveries before?",
 ];
 
 export default function AssistantPage() {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [messages, setMessages] = useState<UiMessage[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -32,13 +34,17 @@ export default function AssistantPage() {
     const content = text.trim();
     if (!content || sending) return;
     setError(null);
-    const next = [...messages, { role: "user" as const, content }];
+    const next: UiMessage[] = [...messages, { role: "user" as const, content }];
     setMessages(next);
     setInput("");
     setSending(true);
     try {
-      const res = await api.aiChat(next);
-      setMessages((prev) => [...prev, { role: "assistant", content: res.reply }]);
+      // Send only {role, content} to the API; tools are display-only metadata.
+      const res = await api.aiChat(next.map((m) => ({ role: m.role, content: m.content })));
+      setMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: res.reply, tools: res.tools_used },
+      ]);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -63,7 +69,7 @@ export default function AssistantPage() {
         <div>
           <h1 className="text-lg font-semibold text-brand-dark">AI Assistant</h1>
           <p className="text-xs text-brand-muted">
-            Ask about follow-ups, POs, suppliers or draft a message. Agentic tools coming soon.
+            Agentic — reads your live POs, suppliers, mail threads and past-mail memory to answer.
           </p>
         </div>
         {enabled === false && (
@@ -102,14 +108,29 @@ export default function AssistantPage() {
                 >
                   {m.role === "user" ? <User size={14} /> : <Bot size={14} />}
                 </span>
-                <div
-                  className={`max-w-[80%] whitespace-pre-wrap rounded-xl px-3.5 py-2.5 text-sm leading-relaxed ${
-                    m.role === "user"
-                      ? "bg-brand-dark text-white"
-                      : "border border-brand-border bg-brand-surface text-brand-dark"
-                  }`}
-                >
-                  {m.content}
+                <div className={`max-w-[80%] ${m.role === "user" ? "items-end" : ""}`}>
+                  <div
+                    className={`whitespace-pre-wrap rounded-xl px-3.5 py-2.5 text-sm leading-relaxed ${
+                      m.role === "user"
+                        ? "bg-brand-dark text-white"
+                        : "border border-brand-border bg-brand-surface text-brand-dark"
+                    }`}
+                  >
+                    {m.content}
+                  </div>
+                  {m.tools && m.tools.length > 0 && (
+                    <div className="mt-1.5 flex flex-wrap gap-1">
+                      {m.tools.map((t, ti) => (
+                        <span
+                          key={ti}
+                          className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2 py-0.5 text-[11px] text-signal-red"
+                          title={JSON.stringify(t.args)}
+                        >
+                          <Wrench size={10} /> {t.name}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             ))}

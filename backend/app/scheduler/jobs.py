@@ -20,7 +20,13 @@ from ..database import SessionLocal
 from ..models.communication_message import CommunicationMessage
 from ..models.engine_job import EngineJob
 from ..models.status_change_log import StatusChangeLog
-from ..services import engine_registry, po_followup_mail_service, settings_service
+from ..services import (
+    ai_insights_service,
+    engine_registry,
+    knowledge_indexer,
+    po_followup_mail_service,
+    settings_service,
+)
 from ..services.engine_registry import EngineJobSpec
 from ..workers import mail_fetch_worker, mail_send_worker
 
@@ -144,6 +150,38 @@ def po_followup_mail_runner() -> dict[str, Any]:
         db.close()
 
 
+def delay_risk_runner() -> dict[str, Any]:
+    """Recompute predictive delay-risk scores across all procurement records."""
+    db: Session = SessionLocal()
+    try:
+        result = ai_insights_service.rescore_all(db)
+        log.info("[cron] delay_risk_runner done: %s", result)
+        return result
+    except Exception:  # noqa: BLE001
+        db.rollback()
+        log.exception("delay_risk_runner failed")
+        return {"updated": 0, "error": True}
+    finally:
+        db.close()
+
+
+def knowledge_index_runner() -> dict[str, Any]:
+    """Embed any new customer mails / supplier replies into the vector store."""
+    if not knowledge_indexer.enabled():
+        return {"enabled": False, "indexed": 0, "skipped": 0}
+    db: Session = SessionLocal()
+    try:
+        result = knowledge_indexer.backfill(db, limit=200)
+        log.info("[cron] knowledge_index_runner done: %s", result)
+        return result
+    except Exception:  # noqa: BLE001
+        db.rollback()
+        log.exception("knowledge_index_runner failed")
+        return {"indexed": 0, "error": True}
+    finally:
+        db.close()
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Registry bootstrapping
 # ─────────────────────────────────────────────────────────────────────────────
@@ -187,6 +225,22 @@ JOB_SPECS: list[EngineJobSpec] = [
         default_interval_minutes=int(getattr(settings, "MAIL_SEND_INTERVAL_MINUTES", 5) or 5),
         runner=mail_send_runner,
         category="MAIL",
+    ),
+    EngineJobSpec(
+        job_name="delay_risk_cron",
+        display_name="Delay Risk Scorer",
+        description="Recompute predictive delivery-delay risk for all records.",
+        default_interval_minutes=60,
+        runner=delay_risk_runner,
+        category="STATUS",
+    ),
+    EngineJobSpec(
+        job_name="knowledge_index_cron",
+        display_name="Knowledge Indexer",
+        description="Embed new mails/replies into the pgvector memory (RAG).",
+        default_interval_minutes=30,
+        runner=knowledge_index_runner,
+        category="OTHER",
     ),
 ]
 

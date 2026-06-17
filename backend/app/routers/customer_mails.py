@@ -92,6 +92,11 @@ class CustomerMailOut(BaseModel):
     linked_task_id: int | None
     linked_supplier_po_no: str | None
     message_uid: str | None
+    ai_category: str | None = None
+    ai_urgency: str | None = None
+    ai_action: str | None = None
+    ai_summary: str | None = None
+    ai_triaged_at: datetime | None = None
     task_count: int = 0
     open_task_count: int = 0
     created_at: datetime

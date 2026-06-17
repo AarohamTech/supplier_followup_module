@@ -47,6 +47,9 @@ import type {
   ChatMessage,
   AiChatResponse,
   AiHealth,
+  DelayRiskResponse,
+  SupplierScorecard,
+  AiMemoryStats,
   AuthUser,
   LoginResponse,
   UserCreatePayload,
@@ -547,12 +550,54 @@ export const api = {
   listRoles: () => http<{ roles: string[] }>("/api/users/meta/roles"),
 
   // ─── AI assistant ─────────────────────────────────────────────────────
-  aiChat: (messages: ChatMessage[]) =>
+  aiChat: (messages: ChatMessage[], use_tools?: boolean) =>
     http<AiChatResponse>("/api/ai/chat", {
       method: "POST",
-      body: JSON.stringify({ messages }),
+      body: JSON.stringify({ messages, use_tools }),
     }),
   aiHealth: () => http<AiHealth>("/api/ai/health"),
+  aiTools: () => http<{ agent_enabled: boolean; tools: string[] }>("/api/ai/tools"),
+
+  // Triage + summarize a customer mail
+  triageCustomerMail: (id: number) =>
+    http<{ ok: boolean; mail_id: number; category: string; urgency: string; action: string; summary: string }>(
+      `/api/ai/triage/customer-mail/${id}`,
+      { method: "POST" },
+    ),
+  summarizeCustomerMail: (id: number) =>
+    http<{ ok: boolean; mail_id: number; summary: string }>(
+      `/api/ai/summary/customer-mail/${id}`,
+      { method: "POST" },
+    ),
+
+  // Semantic memory (RAG)
+  aiMemoryStats: () => http<AiMemoryStats>("/api/ai/memory/stats"),
+  aiMemoryBackfill: (limit = 500) =>
+    http<{ enabled: boolean; indexed: number; skipped: number }>(
+      `/api/ai/memory/backfill?limit=${limit}`,
+      { method: "POST" },
+    ),
+
+  // ─── AI insights: delay risk + supplier scorecards ────────────────────
+  getDelayRisk: (params: { band?: string; limit?: number } = {}) => {
+    const q = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== "") q.append(k, String(v));
+    });
+    const qs = q.toString();
+    return http<DelayRiskResponse>(`/api/ai/insights/delay-risk${qs ? `?${qs}` : ""}`);
+  },
+  rescoreDelayRisk: () =>
+    http<{ updated: number; by_band: Record<string, number>; ran_at: string }>(
+      "/api/ai/insights/delay-risk/rescore",
+      { method: "POST" },
+    ),
+  getSupplierScorecards: (limit = 100) =>
+    http<{ count: number; items: SupplierScorecard[] }>(
+      `/api/ai/insights/suppliers?limit=${limit}`,
+    ),
+  getSupplierScorecard: (name: string) =>
+    http<SupplierScorecard>(`/api/ai/insights/suppliers/${encodeURIComponent(name)}`),
 };
 
 export default api;
