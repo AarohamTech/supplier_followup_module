@@ -40,5 +40,15 @@ jobs:
             cd backend
             uv pip install --python .venv/bin/python -r requirements.txt
             sudo systemctl restart sfa-backend
-            sleep 5
-            curl -fsS http://localhost:8000/healthz && echo " — deploy OK"
+            # The service runs schema + pgvector init on boot (~15s), so poll the
+            # health endpoint instead of a single probe that races the startup.
+            for i in $(seq 1 30); do
+              if curl -fsS http://localhost:8000/healthz >/dev/null 2>&1; then
+                echo "deploy OK — healthy after ~$((i * 2))s"
+                exit 0
+              fi
+              sleep 2
+            done
+            echo "healthcheck failed after 60s — recent logs:"
+            sudo journalctl -u sfa-backend --since "2 min ago" --no-pager | tail -40
+            exit 1
