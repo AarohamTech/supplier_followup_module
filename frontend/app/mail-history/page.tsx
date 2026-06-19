@@ -301,7 +301,7 @@ export default function Page() {
   const [search, setSearch] = useState("");
   const [queueFilter, setQueueFilter] = useState<QueueFilter>("needs_reply");
   const [showAiSummary, setShowAiSummary] = useState(true);
-  const [taskPanelOpen, setTaskPanelOpen] = useState(true);
+  const [taskPanelOpen, setTaskPanelOpen] = useState(false);
   const [composer, setComposer] = useState("");
   const [assignOpen, setAssignOpen] = useState(false);
   const [assignSeed, setAssignSeed] = useState<Partial<CommunicationTaskCreate>>({});
@@ -1335,6 +1335,13 @@ export default function Page() {
           onAiReply={() => void handleAiReply()}
           onSend={() => void handleSendMailNow()}
           onEscalate={() => void handleEscalate()}
+          onPoMail={() => {
+            if (!activePo) return;
+            selectPoGroup({
+              supplier_name: activePo.supplier_name,
+              supplier_po_no: activePo.supplier_po_no,
+            });
+          }}
           onCreate={() =>
             openAssign({
               supplier_name: activeSupplier?.supplier_name ?? null,
@@ -1569,6 +1576,7 @@ function ActionRail({
   onAiReply,
   onSend,
   onEscalate,
+  onPoMail,
   onCreate,
   onToggleDone,
 }: {
@@ -1582,6 +1590,7 @@ function ActionRail({
   onAiReply: () => void;
   onSend: () => void;
   onEscalate: () => void;
+  onPoMail: () => void;
   onCreate: () => void;
   onToggleDone: (t: CommunicationTask) => void;
 }) {
@@ -1592,11 +1601,13 @@ function ActionRail({
 
   if (!open) {
     return (
-      <aside className="flex w-[72px] flex-col items-center rounded-lg border border-brand-border bg-white py-4 shadow-card">
+      <aside className="flex w-12 shrink-0 flex-col items-center rounded-lg border border-brand-border bg-white py-3 shadow-card transition-all">
         <button
           onClick={onToggle}
           className="relative rounded-md p-2 text-brand-muted hover:bg-gray-100 hover:text-brand-dark"
-          title="Open action rail"
+          title="Open Action Center"
+          aria-label="Open Action Center"
+          aria-expanded={false}
         >
           <CheckCircle2 size={22} />
           {openTasks.length > 0 && (
@@ -1606,7 +1617,7 @@ function ActionRail({
           )}
         </button>
         <span
-          className="mt-4 text-[11px] font-bold uppercase tracking-widest text-brand-muted [writing-mode:vertical-lr]"
+          className="mt-3 text-[10px] font-bold uppercase tracking-widest text-brand-muted [writing-mode:vertical-lr]"
           style={{ transform: "rotate(180deg)" }}
         >
           Actions
@@ -1616,7 +1627,7 @@ function ActionRail({
   }
 
   return (
-    <aside className="flex w-[330px] shrink-0 flex-col overflow-hidden rounded-lg border border-brand-border bg-white shadow-card">
+    <aside className="flex w-[330px] shrink-0 flex-col overflow-hidden rounded-lg border border-brand-border bg-white shadow-card transition-all">
       <div className="border-b border-brand-border px-4 py-3">
         <div className="flex items-start justify-between gap-2">
           <div>
@@ -1625,7 +1636,13 @@ function ActionRail({
               {activePo ? `PO #${activePo.supplier_po_no}` : activeSupplier?.supplier_name || "No PO selected"}
             </div>
           </div>
-          <button onClick={onToggle} className="rounded-md p-1.5 text-brand-muted hover:bg-gray-100" title="Collapse">
+          <button
+            onClick={onToggle}
+            className="rounded-md p-1.5 text-brand-muted hover:bg-gray-100"
+            title="Collapse Action Center"
+            aria-label="Collapse Action Center"
+            aria-expanded={true}
+          >
             <ChevronRight size={16} />
           </button>
         </div>
@@ -1645,7 +1662,7 @@ function ActionRail({
           <ActionButton icon={<AlertTriangle size={14} />} label="Escalate" onClick={onEscalate} disabled={disabled} danger />
           <ActionButton icon={<UserPlus size={14} />} label="Assign" onClick={onCreate} disabled={disabled && !activeSupplier} />
           <ActionButton icon={<Bell size={14} />} label="Reminder" onClick={onCreate} disabled={disabled && !activeSupplier} />
-          <ActionButton icon={<Mail size={14} />} label="PO Mail" onClick={onCreate} disabled={disabled} />
+          <ActionButton icon={<Mail size={14} />} label="PO Mail" onClick={onPoMail} disabled={disabled} />
         </div>
       </div>
 
