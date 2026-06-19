@@ -216,13 +216,14 @@ def _supplier_precedent(db: Session, supplier_name: str | None) -> str | None:
         return None
 
 
-def _maybe_ai_polish(
+def _ai_followup_narrative(
     db: Session,
     group: dict[str, Any],
     anchor_rec: ProcurementRecord | None,
-    table_text: str,
-) -> tuple[str, str] | None:
-    """Return (plain_body, intro_html) from the LLM, or None to keep the template."""
+    materials_summary: str,
+    instruction: str | None = None,
+) -> str | None:
+    """The LLM's PROSE follow-up body only (no table — that's added as HTML)."""
     if not ai_service.is_enabled():
         return None
     try:
@@ -233,24 +234,42 @@ def _maybe_ai_polish(
                 days_late = (date.today() - datetime.fromisoformat(due).date()).days
             except ValueError:
                 days_late = None
-        ai_body = ai_service.suggest_po_followup(
+        body = ai_service.suggest_po_followup(
             supplier_name=group.get("supplier_name"),
             supplier_po_no=group.get("supplier_po_no"),
             overall_signal=group.get("overall_signal"),
             days_late=days_late,
             followup_count=getattr(anchor_rec, "followup_count", None),
-            materials_summary=table_text,
+            materials_summary=materials_summary,
             earliest_due_date=due,
             last_supplier_reply=getattr(anchor_rec, "last_supplier_reply", None),
             precedent=_supplier_precedent(db, group.get("supplier_name")),
+            instruction=instruction,
         )
-        if not ai_body or not ai_body.strip():
-            return None
-        plain = f"{ai_body.strip()}\n\n{table_text}\n\n{PO_REPLY_INSTRUCTIONS}"
-        return plain, _ai_intro_html(ai_body.strip())
+        return body.strip() if body and body.strip() else None
     except Exception:  # noqa: BLE001
-        log.exception("AI PO follow-up polish failed; using template")
+        log.exception("AI PO follow-up draft failed; using template")
         return None
+
+
+def _maybe_ai_polish(
+    db: Session,
+    group: dict[str, Any],
+    anchor_rec: ProcurementRecord | None,
+    table_text: str,
+    instruction: str | None = None,
+) -> tuple[str, str] | None:
+    """Return (plain_body, intro_html) from the LLM, or None to keep the template.
+
+    The LLM supplies only the prose; the material table (text + HTML) is appended
+    by us, so the email always has a clean, structured table — never the model's
+    own markdown.
+    """
+    narrative = _ai_followup_narrative(db, group, anchor_rec, table_text, instruction)
+    if not narrative:
+        return None
+    plain = f"{narrative}\n\n{table_text}\n\n{PO_REPLY_INSTRUCTIONS}"
+    return plain, _ai_intro_html(narrative)
 
 
 def _active_window_start() -> datetime:
@@ -340,6 +359,7 @@ def create_po_followup_mail(
     force_new: bool = False,
     require_mapping: bool = False,
     commit: bool = True,
+    instruction: str | None = None,
 ) -> PoMailQueueResult:
     group = po_followup_service.get_po_group(db, supplier_name, supplier_po_no)
     if not group:
@@ -415,13 +435,14 @@ def create_po_followup_mail(
             overall_signal=group.get("overall_signal"),
         )
 
-    # AI-polish high-risk (RED/BLACK) follow-ups when enabled; keep the
-    # structured material + reply tables, just replace the intro/tone.
-    if (
+    # AI-polish when (a) the user gave an explicit instruction/command, or
+    # (b) it's a high-risk RED/BLACK follow-up and AI polishing is enabled.
+    # Keeps the structured material + reply tables; replaces the intro/tone.
+    if (instruction and instruction.strip()) or (
         getattr(settings, "AI_PO_FOLLOWUP_ENABLED", False)
         and (group.get("overall_signal") or "").upper() in {"RED", "BLACK"}
     ):
-        polished = _maybe_ai_polish(db, group, anchor_rec, table_text)
+        polished = _maybe_ai_polish(db, group, anchor_rec, table_text, instruction=instruction)
         if polished:
             body_plain, intro_html = polished
             body_html = _po_body_html(group, table_html, reply_table_html, intro_html=intro_html)
@@ -550,6 +571,23 @@ def queue_due_po_followups(
             first.supplier_po_no,
         )
         mail_type = PO_MAIL_TYPE_BY_SIGNAL.get(group["overall_signal"], "PO_FOLLOWUP_GROUP")
+
+        # Chase until commitment: keep auto-following-up while any material is
+        # still missing a committed dispatch date; once EVERY material on the PO
+        # has a commitment date, stop chasing this PO.
+        materials = group.get("materials") or []
+        if materials and all((m.get("commitment") or {}).get("commitment_date") for m in materials):
+            skipped += 1
+            results.append({
+                "created": False,
+                "supplier_name": group.get("supplier_name"),
+                "supplier_po_no": group.get("supplier_po_no"),
+                "mail_type": mail_type,
+                "overall_signal": group.get("overall_signal"),
+                "skipped_reason": "Commitment date captured — follow-up stopped",
+            })
+            continue
+
         if not group.get("supplier_name"):
             skipped += 1
             results.append({
@@ -630,4 +668,92 @@ def queue_due_po_followups(
         "dry_run": dry_run,
         "ran_at": now.isoformat(),
         "results": results,
+    }
+
+
+def command_followup(
+    db: Session,
+    *,
+    supplier_po_no: str,
+    instruction: str,
+    send: bool = False,
+) -> dict[str, Any]:
+    """Generate (and optionally send) an AI follow-up for a PO from a free-text
+    user command (e.g. "also ask for a firm dispatch date by Friday").
+
+    Preview by default (no DB writes); `send=True` queues the mail and sends it
+    immediately to the mapped supplier address.
+    """
+    po = (supplier_po_no or "").strip()
+    rec = db.scalar(
+        select(ProcurementRecord)
+        .where(ProcurementRecord.supplier_po_no == po)
+        .order_by(ProcurementRecord.created_at.desc())
+    )
+    if rec is None:
+        return {"found": False, "error": "PO not found"}
+    supplier_name = rec.supplier_name or ""
+    group = po_followup_service.get_po_group(db, supplier_name, po)
+    if not group:
+        return {"found": False, "error": "PO group not found"}
+
+    mail_type = PO_MAIL_TYPE_BY_SIGNAL.get(group["overall_signal"], "PO_FOLLOWUP_GROUP")
+    subject = _po_subject(
+        mail_type, group.get("supplier_name"), group["supplier_po_no"], group["material_count"]
+    )
+
+    if send:
+        result = create_po_followup_mail(
+            db,
+            supplier_name=group["supplier_name"],
+            supplier_po_no=group["supplier_po_no"],
+            force_new=True,
+            require_mapping=True,
+            commit=True,
+            instruction=instruction,
+        )
+        sent = False
+        if result.created and result.message_id is not None:
+            from ..workers import mail_send_worker  # local import avoids import cycle
+
+            send_res = mail_send_worker.send_message_now(db, result.message_id)
+            sent = bool(send_res.get("sent"))
+        return {
+            "found": True,
+            "sent": sent,
+            "queued": bool(result.created and not sent),
+            "subject": result.subject or subject,
+            "body": result.body or "",
+            "body_html": result.body_html or "",
+            "source": "ai" if ai_service.is_enabled() else "template",
+            "mapping_active": group.get("mapping_active"),
+            "skipped_reason": result.skipped_reason,
+            "message_id": result.message_id,
+        }
+
+    # Preview only — no DB writes. Return the clean prose AND the rendered HTML so
+    # the UI shows exactly what the supplier will receive (branded layout + table).
+    ctx = build_po_group_context(group)
+    table_text = ctx["materials_table_text"]
+    table_html = ctx["materials_table_html"]
+    reply_table_html = ctx["reply_table_html"]
+    anchor_rec = db.get(ProcurementRecord, group["anchor_record_id"])
+    narrative = _ai_followup_narrative(db, group, anchor_rec, table_text, instruction=instruction)
+    source = "ai" if narrative else "template"
+    if not narrative:
+        narrative = (
+            f"Dear {group.get('supplier_name') or 'Supplier'},\n\n"
+            f"We require an urgent dispatch status update for PO No. {group['supplier_po_no']}. "
+            "Kindly review the material summary below and reply using the table provided.\n\n"
+            "Regards,\nProcurement Team"
+        )
+    body_html = _po_body_html(group, table_html, reply_table_html, intro_html=_ai_intro_html(narrative))
+    return {
+        "found": True,
+        "sent": False,
+        "subject": subject,
+        "body": narrative,
+        "body_html": body_html,
+        "source": source,
+        "mapping_active": group.get("mapping_active"),
     }

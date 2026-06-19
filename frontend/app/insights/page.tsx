@@ -6,6 +6,7 @@ import { Gauge, Loader2, RefreshCw, Database, TriangleAlert, Trophy } from "luci
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import type { DelayRiskItem, SupplierScorecard, AiMemoryStats } from "@/lib/types";
+import PageHeader from "@/components/layout/PageHeader";
 
 const BANDS = ["", "HIGH", "MEDIUM", "LOW"] as const;
 
@@ -116,34 +117,27 @@ export default function InsightsPage() {
   };
 
   return (
-    <div className="space-y-5">
-      {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-red-50 text-signal-red">
-            <Gauge size={16} />
-          </span>
-          <div>
-            <h1 className="text-lg font-semibold text-brand-dark">AI Insights</h1>
-            <p className="text-xs text-brand-muted">
-              Predictive delivery risk, supplier performance and the assistant&apos;s semantic memory.
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
+    <div className="page-stack">
+      <PageHeader
+        title="AI Insights"
+        description="Predictive delivery risk, supplier performance and the assistant's semantic memory."
+        icon={Gauge}
+        actions={
+          <>
           {toast && <span className="rounded-md bg-brand-dark px-3 py-1.5 text-xs text-white">{toast}</span>}
           {isManager && (
             <button
               onClick={rescore}
               disabled={busy === "rescore"}
-              className="inline-flex items-center gap-1.5 rounded-md border border-brand-border px-3 py-1.5 text-xs font-medium text-brand-dark hover:bg-gray-50 disabled:opacity-50"
+              className="btn-outline text-xs"
             >
               {busy === "rescore" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
               Recompute risk
             </button>
           )}
-        </div>
-      </div>
+          </>
+        }
+      />
 
       {error && <div className="rounded-md bg-red-50 px-3 py-2 text-xs text-signal-red">{error}</div>}
 
@@ -196,7 +190,7 @@ export default function InsightsPage() {
       </div>
 
       {loading ? (
-        <div className="rounded-xl border border-brand-border bg-white p-10 text-center text-sm text-brand-muted">
+        <div className="empty-state">
           <Loader2 className="mx-auto mb-2 h-5 w-5 animate-spin" /> Loading…
         </div>
       ) : tab === "risk" ? (
@@ -235,7 +229,7 @@ function RiskTable({
       </div>
 
       {items.length === 0 ? (
-        <div className="rounded-xl border border-brand-border bg-white p-10 text-center text-sm text-brand-muted">
+        <div className="empty-state">
           No scored records yet. {`Click "Recompute risk" to generate scores.`}
         </div>
       ) : (
@@ -299,7 +293,7 @@ function RiskTable({
 function SupplierTable({ items }: { items: SupplierScorecard[] }) {
   if (items.length === 0) {
     return (
-      <div className="rounded-xl border border-brand-border bg-white p-10 text-center text-sm text-brand-muted">
+      <div className="empty-state">
         No supplier data yet.
       </div>
     );

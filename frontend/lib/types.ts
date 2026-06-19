@@ -803,3 +803,77 @@ export interface AiMemoryStats {
   };
   indexer_enabled: boolean;
 }
+
+export interface BlackFollowupThreadItem {
+  id: number;
+  direction: "INCOMING" | "OUTGOING" | string;
+  status: string;
+  mail_type: string | null;
+  subject: string | null;
+  snippet: string | null;
+  parsed_status: string | null;
+  at: string | null;
+}
+
+export interface BlackFollowupCommitment {
+  material_name: string | null;
+  commitment_date: string | null;
+  supplier_status: string | null;
+}
+
+export interface BlackFollowup {
+  supplier_name: string | null;
+  supplier_po_no: string;
+  overall_signal: string;
+  material_count: number;
+  earliest_due_date: string | null;
+  days_late: number | null;
+  latest_followup_date: string | null;
+  escalation_levels: string[];
+  mapping_active: boolean;
+  commitment_captured: boolean;
+  committed_count: number;
+  commitments: BlackFollowupCommitment[];
+  message_count: number;
+  outgoing_count: number;
+  incoming_count: number;
+  thread: BlackFollowupThreadItem[];
+  status_label: string;
+}
+
+export interface BlackFollowupResponse {
+  count: number;
+  chasing: number;
+  items: BlackFollowup[];
+}
+
+export interface AiPrompt {
+  label: string;
+  value: string;
+  default: string;
+  is_custom: boolean;
+}
+export type AiPromptsMap = Record<string, AiPrompt>;
+
+export interface AiFeedbackInput {
+  feature: string;
+  rating: "up" | "down";
+  instruction?: string;
+  ai_output?: string;
+  edited_output?: string;
+  context_ref?: string;
+  note?: string;
+}
+
+export interface BlackFollowupCommandResult {
+  found: boolean;
+  sent: boolean;
+  queued?: boolean;
+  subject: string;
+  body: string;
+  body_html?: string;
+  source: string;
+  mapping_active?: boolean;
+  skipped_reason?: string | null;
+  message_id?: number | null;
+}

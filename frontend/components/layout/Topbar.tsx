@@ -14,7 +14,7 @@ const ROLE_LABEL: Record<string, string> = {
   viewer: "Viewer",
 };
 
-export default function Topbar() {
+export default function Topbar({ onMenuClick }: { onMenuClick?: () => void }) {
   const { user, logout } = useAuth();
   const [unread, setUnread] = useState<number>(0);
 
@@ -41,17 +41,26 @@ export default function Topbar() {
   const initial = name.charAt(0).toUpperCase();
 
   return (
-    <header className="sticky top-0 z-20 bg-white border-b border-brand-border">
-      <div className="max-w-[1600px] mx-auto px-6 py-3 flex items-center gap-4">
-        <button className="p-2 rounded hover:bg-gray-100"><Menu size={18} /></button>
+    <header className="sticky top-0 z-30 border-b border-brand-border bg-white/95 backdrop-blur">
+      <div className="max-w-[1600px] mx-auto px-4 py-3 sm:px-6 lg:px-8 flex items-center gap-4">
+        <button
+          type="button"
+          onClick={onMenuClick}
+          className="p-2 rounded-md hover:bg-gray-100 md:hidden"
+          aria-label="Open navigation"
+        >
+          <Menu size={18} />
+        </button>
         <div className="flex flex-col">
           <span className="text-signal-red font-bold text-lg leading-tight">Supplier Follow-up Agent</span>
-          <span className="text-xs text-brand-muted leading-tight">PO-wise and Material-wise Automated Follow-up System</span>
+          <span className="hidden text-xs text-brand-muted leading-tight sm:block">
+            PO-wise and Material-wise Automated Follow-up System
+          </span>
         </div>
         <div className="flex-1" />
         <Link
           href="/mail-history"
-          className="relative p-2 rounded hover:bg-gray-100"
+          className="relative p-2 rounded-md text-brand-muted hover:bg-red-50 hover:text-signal-red"
           title={unread > 0 ? `${unread} new supplier mail${unread === 1 ? "" : "s"}` : "No new mails"}
         >
           <Bell size={18} />
@@ -62,7 +71,7 @@ export default function Topbar() {
           )}
         </Link>
         <div className="flex items-center gap-3">
-          <div className="text-right">
+          <div className="hidden text-right sm:block">
             <div className="text-sm font-medium">{name}</div>
             <div className="text-[10px] uppercase text-brand-muted tracking-wider">
               {ROLE_LABEL[user?.role ?? ""] ?? user?.role}
@@ -74,7 +83,7 @@ export default function Topbar() {
           <button
             onClick={logout}
             title="Sign out"
-            className="p-2 rounded hover:bg-gray-100 text-brand-muted hover:text-signal-red"
+            className="p-2 rounded-md hover:bg-gray-100 text-brand-muted hover:text-signal-red"
           >
             <LogOut size={18} />
           </button>

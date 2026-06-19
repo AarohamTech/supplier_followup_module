@@ -18,6 +18,8 @@ from functools import lru_cache
 from typing import Any, Callable, Iterable
 
 from ..core.config import settings
+from ..database import SessionLocal
+from ..models.app_setting import AppSetting
 
 log = logging.getLogger(__name__)
 
@@ -29,9 +31,10 @@ SYSTEM_ASSISTANT = (
     "data isn't provided, say so plainly rather than inventing details."
 )
 
-SYSTEM_AGENT = (
-    SYSTEM_ASSISTANT
-    + " You have tools that read the live procurement database (purchase orders, "
+# Appended (not user-editable) to the assistant prompt for the agentic chat so
+# tool-calling behaviour stays correct even if the editable persona changes.
+AGENT_TOOLS_SUFFIX = (
+    " You have tools that read the live procurement database (purchase orders, "
     "risk signals, supplier records, mail threads) and a semantic memory of past "
     "mails. Prefer calling a tool to look up real data over guessing. Call tools "
     "only when they help answer the question, then give a clear, well-structured "
@@ -58,11 +61,13 @@ SYSTEM_SUMMARY = (
 )
 
 SYSTEM_PO_FOLLOWUP = (
-    "You draft concise, firm-but-polite follow-up emails from a procurement team "
-    "to a SUPPLIER chasing a delivery/dispatch update on a purchase order. Use "
-    "ONLY the facts provided. Do not invent dates, quantities or statuses. Match "
-    "the urgency to the risk signal (RED/BLACK = urgent, clear ask + deadline). "
-    "Return ONLY the email body, no subject line, signed 'Procurement Team'."
+    "You draft concise, firm and professional follow-up emails from a procurement "
+    "team to a SUPPLIER chasing a delivery/dispatch update on a purchase order. Use "
+    "ONLY the facts provided. Do not invent dates, quantities or statuses. Match the "
+    "urgency to the risk signal (RED/BLACK = urgent, with a clear ask and a deadline) "
+    "while staying courteous and relationship-preserving. Become firmer ONLY if the "
+    "procurement officer's instruction explicitly asks for it. Return ONLY the email "
+    "body, no subject line, signed 'Procurement Team'."
 )
 
 SYSTEM_CUSTOMER_REPLY = (
@@ -71,6 +76,98 @@ SYSTEM_CUSTOMER_REPLY = (
     "invent dates, quantities or statuses. Keep it to a few sentences, no "
     "placeholders, ready to send. Sign off as 'ProcureDirect Team'."
 )
+
+
+# ── Editable system prompts (DB-backed overrides, code defaults) ─────────────
+# Stored as one app_settings row {key: "ai_prompts", value: {prompt_key: text}}.
+# Edited live from the UI so the team can tune AI tone/behaviour without a deploy.
+PROMPT_DEFAULTS: dict[str, str] = {
+    "assistant": SYSTEM_ASSISTANT,
+    "po_followup": SYSTEM_PO_FOLLOWUP,
+    "customer_reply": SYSTEM_CUSTOMER_REPLY,
+    "triage": SYSTEM_TRIAGE,
+    "summary": SYSTEM_SUMMARY,
+}
+PROMPT_LABELS: dict[str, str] = {
+    "assistant": "AI Assistant (chatbot persona)",
+    "po_followup": "Supplier follow-up emails (incl. Black follow-ups)",
+    "customer_reply": "Customer reply drafts (AI Generate)",
+    "triage": "Incoming mail triage classifier",
+    "summary": "Thread summariser",
+}
+_PROMPTS_KEY = "ai_prompts"
+_prompt_cache: dict[str, str] | None = None
+
+
+def _load_prompt_overrides() -> dict[str, str]:
+    resolved = dict(PROMPT_DEFAULTS)
+    try:
+        db = SessionLocal()
+        try:
+            row = db.get(AppSetting, _PROMPTS_KEY)
+            overrides = row.value if row and isinstance(row.value, dict) else {}
+        finally:
+            db.close()
+        for key in PROMPT_DEFAULTS:
+            val = overrides.get(key)
+            if isinstance(val, str) and val.strip():
+                resolved[key] = val.strip()
+    except Exception:  # noqa: BLE001
+        log.exception("Loading prompt overrides failed; using code defaults")
+    return resolved
+
+
+def _prompt(key: str) -> str:
+    global _prompt_cache
+    if _prompt_cache is None:
+        _prompt_cache = _load_prompt_overrides()
+    return _prompt_cache.get(key) or PROMPT_DEFAULTS.get(key, "")
+
+
+def reload_prompts() -> None:
+    """Invalidate the in-memory prompt cache (call after an override is saved)."""
+    global _prompt_cache
+    _prompt_cache = None
+
+
+def list_prompts(db) -> dict[str, Any]:
+    """Return each editable prompt with its current value, default and custom flag."""
+    row = db.get(AppSetting, _PROMPTS_KEY)
+    overrides = row.value if row and isinstance(row.value, dict) else {}
+    out: dict[str, Any] = {}
+    for key, default in PROMPT_DEFAULTS.items():
+        ov = overrides.get(key)
+        if isinstance(ov, str) and ov.strip():
+            value, is_custom = ov.strip(), True
+        else:
+            value, is_custom = default, False
+        out[key] = {
+            "label": PROMPT_LABELS.get(key, key),
+            "value": value,
+            "default": default,
+            "is_custom": is_custom,
+        }
+    return out
+
+
+def set_prompts(db, values: dict[str, str | None]) -> dict[str, Any]:
+    """Upsert prompt overrides. A blank/None value resets that prompt to default."""
+    row = db.get(AppSetting, _PROMPTS_KEY)
+    overrides = dict(row.value) if row and isinstance(row.value, dict) else {}
+    for key, val in (values or {}).items():
+        if key not in PROMPT_DEFAULTS:
+            continue
+        if val is None or (isinstance(val, str) and not val.strip()):
+            overrides.pop(key, None)  # reset to default
+        else:
+            overrides[key] = str(val).strip()
+    if row is None:
+        db.add(AppSetting(key=_PROMPTS_KEY, value=overrides))
+    else:
+        row.value = overrides
+    db.commit()
+    reload_prompts()
+    return list_prompts(db)
 
 
 class AIDisabledError(RuntimeError):
@@ -132,7 +229,7 @@ def _normalize_messages(messages: Iterable[dict[str, Any]]) -> list[dict[str, st
 def chat(messages: Iterable[dict[str, Any]], *, system: str | None = None) -> str:
     """Run a chat turn for the Assistant. `messages` is a [{role, content}] list."""
     convo = _normalize_messages(messages)
-    payload = [{"role": "system", "content": system or SYSTEM_ASSISTANT}, *convo]
+    payload = [{"role": "system", "content": system or _prompt("assistant")}, *convo]
     return _complete(payload)
 
 
@@ -171,7 +268,7 @@ def suggest_customer_reply(
         )
     user += "\n\nReply with only the email body."
     return _complete(
-        [{"role": "system", "content": SYSTEM_CUSTOMER_REPLY}, {"role": "user", "content": user}],
+        [{"role": "system", "content": _prompt("customer_reply")}, {"role": "user", "content": user}],
         temperature=0.5,
     )
 
@@ -194,7 +291,7 @@ def chat_with_tools(
         raise AIDisabledError("AI is disabled (set LLM_ENABLED=true and LLM_API_KEY).")
     rounds = max_rounds or int(settings.AI_AGENT_MAX_ROUNDS)
     convo: list[dict[str, Any]] = [
-        {"role": "system", "content": system or SYSTEM_AGENT},
+        {"role": "system", "content": system or (_prompt("assistant") + AGENT_TOOLS_SUFFIX)},
         *_normalize_messages(messages),
     ]
     used: list[dict[str, Any]] = []
@@ -313,7 +410,7 @@ def triage_customer_mail(
         f"Subject: {subject or '(none)'}\n\n"
         f"Body:\n{(body or '').strip()[:4000]}"
     )
-    data = complete_json(SYSTEM_TRIAGE, user)
+    data = complete_json(_prompt("triage"), user)
     category = str(data.get("category") or "GENERAL").upper().strip()
     urgency = str(data.get("urgency") or "MEDIUM").upper().strip()
     action = str(data.get("action") or "REPLY").upper().strip()
@@ -330,7 +427,7 @@ def summarize_thread(transcript: str) -> str:
     """Summarise an email thread transcript into a short paragraph."""
     user = f"Summarise this thread:\n\n{transcript.strip()[:6000]}"
     return _complete(
-        [{"role": "system", "content": SYSTEM_SUMMARY}, {"role": "user", "content": user}],
+        [{"role": "system", "content": _prompt("summary")}, {"role": "user", "content": user}],
         temperature=0.3,
     )
 
@@ -346,8 +443,14 @@ def suggest_po_followup(
     earliest_due_date: str | None = None,
     last_supplier_reply: str | None = None,
     precedent: str | None = None,
+    instruction: str | None = None,
 ) -> str:
-    """Draft an AI supplier follow-up body grounded in the PO facts."""
+    """Draft an AI supplier follow-up body grounded in the PO facts.
+
+    `instruction` is a free-text command the user typed (e.g. "also ask for a
+    firm dispatch date by Friday and mention the penalty clause") — follow it
+    while staying grounded in the facts.
+    """
     facts = [
         f"Supplier: {supplier_name or 'Supplier'}",
         f"PO number: {supplier_po_no or 'unknown'}",
@@ -361,15 +464,49 @@ def suggest_po_followup(
         facts.append(f"Last supplier reply: {last_supplier_reply[:500]}")
     if precedent:
         facts.append(f"How this supplier responded to past follow-ups:\n{precedent[:800]}")
-    user = (
-        "Draft a follow-up email body to the supplier using these facts:\n"
-        + "\n".join(facts)
-        + "\n\nReturn only the email body."
+    user = "Draft a follow-up email to the supplier using these facts:\n" + "\n".join(facts)
+    if instruction and instruction.strip():
+        user += (
+            "\n\nThe procurement officer gave this specific instruction for THIS "
+            "follow-up — follow it closely:\n" + instruction.strip()
+        )
+    # Structured output: we only want the PROSE body. The material table and
+    # reply table are built from real PO data and rendered to HTML by the backend
+    # — so the model must NOT include any table, material list or markdown.
+    user += (
+        '\n\nReturn STRICT JSON only: {"draft": "<the email message as plain prose: '
+        "greeting, the ask, the urgency/deadline, and sign-off>\"}. Do NOT include "
+        "any table, material-wise list, PO summary block, markdown or code fences — "
+        "the material table is appended automatically by the system."
     )
-    return _complete(
-        [{"role": "system", "content": SYSTEM_PO_FOLLOWUP}, {"role": "user", "content": user}],
-        temperature=0.4,
-    )
+    base_prompt = _prompt("po_followup")
+    system = base_prompt + ' Output ONLY a strict JSON object {"draft": "..."} and nothing else.'
+    data = complete_json(system, user, temperature=0.4)
+    draft = str(data.get("draft") or "").strip()
+    if not draft:
+        # Fallback: plain completion if JSON parsing failed.
+        draft = _complete(
+            [
+                {"role": "system", "content": base_prompt},
+                {"role": "user", "content": user + "\n\n(If JSON is hard, just return the prose body.)"},
+            ],
+            temperature=0.4,
+        )
+    return _strip_md_tables(draft)
+
+
+def _strip_md_tables(text: str) -> str:
+    """Remove any leaked markdown table rows/separators from an LLM draft, so the
+    backend's own HTML table is the only one in the email."""
+    out: list[str] = []
+    for ln in (text or "").splitlines():
+        s = ln.strip()
+        if s.startswith("|") and s.endswith("|") and s.count("|") >= 2:
+            continue  # table row
+        if s and set(s) <= {"-", "|", " ", ":"}:
+            continue  # separator row like |---|---|
+        out.append(ln)
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(out)).strip()
 
 
 def health() -> dict[str, Any]:

@@ -15,11 +15,13 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
+from sqlalchemy import desc, func, select
 from sqlalchemy.orm import Session
 
 from ..core.config import settings
-from ..core.deps import require_manager, require_writer
+from ..core.deps import get_current_user, require_manager, require_writer
 from ..database import get_db
+from ..models.ai_feedback import AIFeedback
 from ..services import (
     ai_insights_service,
     ai_service,
@@ -152,3 +154,86 @@ def memory_backfill(
             "RAG is disabled or the vector store is unavailable (Postgres + RAG_ENABLED required).",
         )
     return knowledge_indexer.backfill(db, limit=max(1, min(limit, 2000)))
+
+
+# ── Editable system prompts (manager) ────────────────────────────────────────
+class PromptUpdate(BaseModel):
+    # {prompt_key: text | null}; null/blank resets that prompt to its default.
+    prompts: dict[str, str | None] = Field(default_factory=dict)
+
+
+@router.get("/prompts")
+def get_prompts(db: Session = Depends(get_db), _user=Depends(require_manager)) -> dict:
+    return {"prompts": ai_service.list_prompts(db)}
+
+
+@router.put("/prompts")
+def update_prompts(
+    payload: PromptUpdate, db: Session = Depends(get_db), _user=Depends(require_manager)
+) -> dict:
+    return {"prompts": ai_service.set_prompts(db, payload.prompts)}
+
+
+# ── AI feedback capture (tuning dataset) ─────────────────────────────────────
+class FeedbackIn(BaseModel):
+    feature: str = Field(min_length=1, max_length=48)
+    rating: str = Field(pattern="^(up|down)$")
+    instruction: str | None = None
+    ai_output: str | None = None
+    edited_output: str | None = None
+    context_ref: str | None = Field(default=None, max_length=128)
+    note: str | None = None
+
+
+@router.post("/feedback")
+def submit_feedback(
+    payload: FeedbackIn,
+    db: Session = Depends(get_db),
+    user=Depends(require_writer),
+) -> dict:
+    row = AIFeedback(
+        feature=payload.feature,
+        rating=payload.rating,
+        instruction=payload.instruction,
+        ai_output=payload.ai_output,
+        edited_output=payload.edited_output,
+        context_ref=payload.context_ref,
+        note=payload.note,
+        user_email=getattr(user, "email", None),
+    )
+    db.add(row)
+    db.commit()
+    return {"ok": True, "id": row.id}
+
+
+@router.get("/feedback")
+def list_feedback(
+    db: Session = Depends(get_db),
+    limit: int = 100,
+    _user=Depends(require_manager),
+) -> dict:
+    rows = db.scalars(
+        select(AIFeedback).order_by(desc(AIFeedback.id)).limit(max(1, min(limit, 500)))
+    ).all()
+    counts = dict(
+        db.execute(select(AIFeedback.rating, func.count(AIFeedback.id)).group_by(AIFeedback.rating)).all()
+    )
+    return {
+        "up": int(counts.get("up", 0)),
+        "down": int(counts.get("down", 0)),
+        "items": [
+            {
+                "id": r.id,
+                "feature": r.feature,
+                "rating": r.rating,
+                "instruction": r.instruction,
+                "ai_output": r.ai_output,
+                "edited_output": r.edited_output,
+                "context_ref": r.context_ref,
+                "note": r.note,
+                "user_email": r.user_email,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+            }
+            for r in rows
+        ],
+    }

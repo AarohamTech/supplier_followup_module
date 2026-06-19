@@ -115,6 +115,16 @@ const PRIORITY_CHIP: Record<TaskPriority, string> = {
   P3: "bg-gray-100 text-gray-600",
 };
 
+type QueueFilter = "needs_reply" | "drafts" | "delayed" | "tasks" | "all";
+
+const QUEUE_FILTERS: { key: QueueFilter; label: string; description: string }[] = [
+  { key: "needs_reply", label: "Needs Reply", description: "Drafts, red flags, and open work" },
+  { key: "drafts", label: "Drafts", description: "Generated mails waiting to send" },
+  { key: "delayed", label: "Delayed", description: "RED and BLACK signals" },
+  { key: "tasks", label: "Tasks", description: "Suppliers with open actions" },
+  { key: "all", label: "All", description: "Full supplier queue" },
+];
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
@@ -244,6 +254,31 @@ function fmtTableQty(value: number | null | undefined): string {
   return Number(value).toLocaleString("en-IN", { maximumFractionDigits: 3 });
 }
 
+function supplierMatchesFilter(s: CommHubSupplier, filter: QueueFilter): boolean {
+  const signal = (s.highest_signal || "").toUpperCase();
+  if (filter === "all") return true;
+  if (filter === "drafts") return s.draft_mail_count > 0;
+  if (filter === "delayed") return signal === "RED" || signal === "BLACK";
+  if (filter === "tasks") return s.task_count > 0;
+  return s.draft_mail_count > 0 || s.task_count > 0 || signal === "RED" || signal === "BLACK";
+}
+
+function recommendedAction(signal: TaskSignal, draftCount: number, openTasks: number): string {
+  if (signal === "BLACK") return "Escalate now";
+  if (signal === "RED") return draftCount > 0 ? "Send strong follow-up" : "Generate AI reply";
+  if (draftCount > 0) return "Review and send draft";
+  if (openTasks > 0) return "Close open actions";
+  if (signal === "YELLOW") return "Send reminder";
+  return "Monitor";
+}
+
+function actionDescription(signal: TaskSignal, lastSubject?: string | null): string {
+  if (signal === "BLACK") return "Critical PO. Create escalation pressure and keep leadership visible.";
+  if (signal === "RED") return "Delayed PO. Push for a firm commitment date before this slips further.";
+  if (signal === "YELLOW") return "Follow up before this becomes late.";
+  return lastSubject ? `Latest thread: ${lastSubject}` : "No urgent action detected.";
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Page
 // ─────────────────────────────────────────────────────────────────────────────
@@ -264,7 +299,8 @@ export default function Page() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
-  const [showAiSummary, setShowAiSummary] = useState(false);
+  const [queueFilter, setQueueFilter] = useState<QueueFilter>("needs_reply");
+  const [showAiSummary, setShowAiSummary] = useState(true);
   const [taskPanelOpen, setTaskPanelOpen] = useState(true);
   const [composer, setComposer] = useState("");
   const [assignOpen, setAssignOpen] = useState(false);
@@ -312,13 +348,24 @@ export default function Page() {
   // ── Search filter (supplier name + last subject) ──
   const filteredSuppliers = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return supplierList;
-    return supplierList.filter(
-      (s) =>
-        s.supplier_name.toLowerCase().includes(q) ||
-        (s.last_subject || "").toLowerCase().includes(q),
-    );
-  }, [supplierList, search]);
+    return supplierList
+      .filter((s) => supplierMatchesFilter(s, queueFilter))
+      .filter(
+        (s) =>
+          !q ||
+          s.supplier_name.toLowerCase().includes(q) ||
+          (s.last_subject || "").toLowerCase().includes(q),
+      )
+      .sort((a, b) => {
+        const priority =
+          signalRank((b.highest_signal || "GREEN").toUpperCase()) -
+          signalRank((a.highest_signal || "GREEN").toUpperCase());
+        if (priority !== 0) return priority;
+        if (b.draft_mail_count !== a.draft_mail_count) return b.draft_mail_count - a.draft_mail_count;
+        if (b.task_count !== a.task_count) return b.task_count - a.task_count;
+        return new Date(b.last_activity_at || 0).getTime() - new Date(a.last_activity_at || 0).getTime();
+      });
+  }, [supplierList, search, queueFilter]);
 
   // ── Data loaders ──
   const loadKpis = useCallback(async () => {
@@ -613,53 +660,86 @@ export default function Page() {
   };
 
   return (
-    <div className="-m-6 flex flex-col h-[calc(100vh-64px)] bg-white">
-      {/* Header bar */}
-      <header className="h-14 px-6 flex items-center justify-between border-b border-brand-border bg-white">
-        <div className="flex items-center gap-5">
-          <h1 className="text-lg font-semibold text-brand-dark">
+    <div className="-m-5 flex h-[calc(100vh-65px)] flex-col bg-brand-surface sm:-m-6 lg:-m-8">
+      {/* Command header */}
+      <header className="border-b border-brand-border bg-white px-5 py-4">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="icon-tile bg-red-50 text-signal-red">
+              <MessagesSquare size={17} />
+            </span>
+            <div className="min-w-0">
+          <h1 className="page-title truncate">
             Supplier Communication Hub
           </h1>
-          <div className="relative">
+              <p className="page-subtitle">
+                Triage supplier replies, PO risk, commitments and next actions from one cockpit.
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-1 flex-wrap items-center justify-end gap-2">
+          <div className="relative min-w-[260px] flex-1 sm:max-w-md">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search supplier, subject…  (Ctrl+K)"
-              className="pl-9 pr-3 py-1.5 bg-gray-50 border border-transparent focus:border-brand-border focus:bg-white rounded-md w-96 text-sm outline-none"
+              className="input h-9 pl-9"
             />
           </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <button onClick={loadAll} className="btn-ghost" disabled={loading}>
+          <button onClick={loadAll} className="btn-outline h-9" disabled={loading}>
             {loading ? (
               <Loader2 size={14} className="animate-spin" />
             ) : (
               <RefreshCcw size={14} />
             )}
-            <span className="ml-1">Refresh</span>
+            <span>Refresh</span>
           </button>
-          <button className="p-2 rounded hover:bg-gray-100 text-gray-500 relative">
+          <button className="relative h-9 rounded-md border border-brand-border bg-white px-2.5 text-brand-muted hover:bg-red-50 hover:text-signal-red">
             <Bell size={16} />
             {kpis.openTasks > 0 && (
-              <span className="absolute -top-0.5 -right-0.5 bg-signal-red text-white text-[9px] font-bold rounded-full px-1">
+              <span className="absolute -right-1 -top-1 rounded-full bg-signal-red px-1 text-[9px] font-bold text-white">
                 {kpis.openTasks}
               </span>
             )}
           </button>
         </div>
+        </div>
       </header>
 
-      {/* KPI strip */}
-      <div className="px-6 py-3 flex gap-4 items-center border-b border-brand-border bg-white">
-        <div className="flex-1 grid grid-cols-4 gap-4">
-          <KpiPill label="Unread Drafts" value={kpis.drafts} tone="text-signal-red" />
-          <KpiPill label="Waiting Supplier" value={kpis.waiting} tone="text-amber-600" />
-          <KpiPill label="Delayed POs" value={kpis.delayed} tone="text-orange-600" />
-          <KpiPill label="Open Tasks" value={kpis.openTasks} tone="text-gray-800" />
-        </div>
+      {/* Queue filters */}
+      <div className="flex flex-wrap items-center gap-2 border-b border-brand-border bg-white px-5 py-3">
+        {QUEUE_FILTERS.map((filter) => {
+          const value =
+            filter.key === "drafts"
+              ? kpis.drafts
+              : filter.key === "delayed"
+                ? kpis.delayed
+                : filter.key === "tasks"
+                  ? kpis.openTasks
+                  : filter.key === "all"
+                    ? supplierList.length
+                    : kpis.drafts + kpis.delayed + kpis.openTasks;
+          const active = queueFilter === filter.key;
+          return (
+            <button
+              key={filter.key}
+              type="button"
+              onClick={() => setQueueFilter(filter.key)}
+              title={filter.description}
+              className={`min-w-[116px] rounded-lg border px-3 py-2 text-left transition ${
+                active
+                  ? "border-signal-red bg-red-50 text-signal-red shadow-sm"
+                  : "border-brand-border bg-white text-brand-dark hover:bg-gray-50"
+              }`}
+            >
+              <span className="block text-[11px] font-semibold uppercase tracking-wide">{filter.label}</span>
+              <span className="mt-0.5 block text-lg font-bold leading-none">{value}</span>
+            </button>
+          );
+        })}
         <button
-          className="btn-primary"
+          className="btn-primary ml-auto h-10"
           onClick={() =>
             openAssign({
               supplier_name: activeSupplier?.supplier_name ?? null,
@@ -669,7 +749,7 @@ export default function Page() {
           }
         >
           <Edit3 size={14} />
-          <span className="ml-1.5">Compose Task</span>
+          Compose Task
         </button>
       </div>
 
@@ -680,11 +760,11 @@ export default function Page() {
       )}
 
       {/* Workspace */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex gap-3 overflow-hidden p-3">
         {/* Suppliers panel */}
-        <section className="w-[24%] min-w-[260px] border-r border-brand-border flex flex-col bg-white">
+        <section className="w-[420px] min-w-[340px] overflow-hidden rounded-lg border border-brand-border bg-white shadow-card flex flex-col">
           <ColumnHeader
-            title="Suppliers"
+            title="Work Queue"
             right={
               <span className="flex items-center gap-2 text-[11px] text-brand-muted">
                 {filteredSuppliers.length}
@@ -692,7 +772,7 @@ export default function Page() {
               </span>
             }
           />
-          <div className="flex-1 overflow-y-auto">
+          <div className="max-h-[45%] overflow-y-auto border-b border-brand-border">
             {loading && supplierList.length === 0 ? (
               <EmptyState icon={<Loader2 className="animate-spin" size={18} />}>
                 Loading…
@@ -754,10 +834,72 @@ export default function Page() {
               })
             )}
           </div>
+          <div className="flex min-h-0 flex-1 flex-col">
+            <div className="flex items-center justify-between border-b border-brand-border px-4 py-2">
+              <div>
+                <div className="text-xs font-semibold text-brand-dark">Purchase Orders</div>
+                <div className="text-[10px] text-brand-muted">
+                  {activeSupplier ? activeSupplier.supplier_name : "Select a supplier"}
+                </div>
+              </div>
+              {activeSupplier && (
+                <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-semibold text-brand-muted">
+                  {poList.length} PO{poList.length === 1 ? "" : "s"}
+                </span>
+              )}
+            </div>
+            <div className="flex-1 overflow-y-auto">
+              {activeSupplier && poList.length === 0 && !loading ? (
+                <EmptyState icon={<Inbox size={18} />}>No POs found for this supplier.</EmptyState>
+              ) : !activeSupplier ? (
+                <EmptyState icon={<Inbox size={18} />}>Select a supplier to see POs.</EmptyState>
+              ) : (
+                poList.map((p) => {
+                  const active = p.procurement_record_id === selectedProcurementId;
+                  const sig = (p.signal || "GREEN") as TaskSignal;
+                  const materialCount = p.material_count ?? p.materials?.length ?? 0;
+                  return (
+                    <button
+                      key={p.procurement_record_id}
+                      onClick={() => void handleSelectPo(p.procurement_record_id, p.supplier_name, p.supplier_po_no)}
+                      className={`w-full border-b border-brand-border px-4 py-3 text-left transition hover:bg-gray-50 ${
+                        active ? "bg-amber-50/70 shadow-[inset_3px_0_0_#F59E0B]" : ""
+                      }`}
+                    >
+                      <div className="mb-1 flex items-start justify-between gap-2">
+                        <div className="flex min-w-0 items-center gap-2">
+                          <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${SIGNAL_DOT[sig] ?? "bg-gray-300"}`} />
+                          <span className="truncate text-sm font-semibold text-brand-dark">#{p.supplier_po_no}</span>
+                          {(p.unread_inbound ?? 0) > 0 && (
+                            <span className="rounded-full bg-emerald-500 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                              {(p.unread_inbound ?? 0) > 99 ? "99+" : p.unread_inbound}
+                            </span>
+                          )}
+                        </div>
+                        <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold uppercase ${SIGNAL_CHIP[sig] ?? ""}`}>
+                          {SIGNAL_LABEL[sig] ?? sig}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2 text-xs text-brand-muted">
+                        <Package size={12} className="text-gray-400" />
+                        <span>{materialCount} material{materialCount === 1 ? "" : "s"}</span>
+                        <span>{p.mail_count} mail{p.mail_count === 1 ? "" : "s"}</span>
+                        {p.task_count > 0 && <span>{p.task_count} task{p.task_count === 1 ? "" : "s"}</span>}
+                      </div>
+                      <div className="mt-2 flex items-center justify-between text-[10px] text-gray-500">
+                        <span>{recommendedAction(sig, p.mail_count, p.task_count)}</span>
+                        <span>{relTime(p.last_activity_at)}</span>
+                      </div>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </div>
         </section>
 
         {/* PO panel */}
-        <section className="w-[22%] min-w-[220px] border-r border-brand-border flex flex-col bg-white">
+        <section className="hidden">
           <ColumnHeader title="Purchase Orders" />
           <div className="flex-1 overflow-y-auto">
             {activeSupplier && poList.length === 0 && !loading ? (
@@ -912,7 +1054,7 @@ export default function Page() {
         </section>
 
         {/* Conversation thread */}
-        <section className="flex-1 flex flex-col bg-[#FDFDFD] min-w-0">
+        <section className="min-w-0 flex-1 overflow-hidden rounded-lg border border-brand-border bg-[#FDFDFD] shadow-card flex flex-col">
           {activePo && activeSupplier ? (
             <>
               {/* Thread header */}
@@ -953,7 +1095,7 @@ export default function Page() {
                 </div>
                 <button
                   onClick={() => setShowAiSummary((s) => !s)}
-                  className="flex items-center gap-1.5 text-xs font-semibold text-signal-red hover:text-red-700"
+                  className="inline-flex items-center gap-1.5 rounded-full bg-red-50 px-2.5 py-1 text-xs font-semibold text-signal-red hover:bg-red-100"
                 >
                   <ChevronDown
                     size={14}
@@ -964,7 +1106,7 @@ export default function Page() {
                   {SIGNAL_LABEL[threadSignal] ?? threadSignal} risk
                 </button>
                 {showAiSummary && (
-                  <div className="mt-3 p-3 bg-red-50/50 rounded-lg border border-red-100 text-sm space-y-1">
+                  <div className="mt-3 rounded-lg border border-red-100 bg-red-50/60 p-3 text-sm">
                     <p className="text-gray-700">
                       <strong className="text-signal-red">Summary:</strong>{" "}
                       Conversation around {activePo.material_name || "this PO"} with{" "}
@@ -983,6 +1125,17 @@ export default function Page() {
                             ? "Send reminder and confirm commitment date."
                             : "Monitor — no action required."}
                     </p>
+                    <div className="mt-3 rounded-md border border-white bg-white/80 p-2">
+                      <div className="text-[10px] font-bold uppercase tracking-wide text-brand-muted">
+                        Recommended next move
+                      </div>
+                      <div className="mt-1 text-sm font-semibold text-brand-dark">
+                        {recommendedAction(threadSignal, draftCount, contextTasks.length)}
+                      </div>
+                      <p className="mt-1 text-xs leading-relaxed text-brand-muted">
+                        {actionDescription(threadSignal, lastMessage?.subject)}
+                      </p>
+                    </div>
                   </div>
                 )}
                 {(activePo.materials?.length ?? 0) > 0 && (
@@ -1170,23 +1323,24 @@ export default function Page() {
           )}
         </section>
 
-        {/* Task panel */}
-        <TaskPanel
+        {/* Action rail */}
+        <ActionRail
+          activePo={activePo}
+          activeSupplier={activeSupplier}
+          signal={threadSignal}
+          draftCount={draftCount}
+          tasks={contextTasks}
           open={taskPanelOpen}
           onToggle={() => setTaskPanelOpen((s) => !s)}
-          tasks={contextTasks}
-          contextLabel={
-            activePo
-              ? `PO #${activePo.supplier_po_no}`
-              : activeSupplier
-                ? activeSupplier.supplier_name
-                : "All"
-          }
+          onAiReply={() => void handleAiReply()}
+          onSend={() => void handleSendMailNow()}
+          onEscalate={() => void handleEscalate()}
           onCreate={() =>
             openAssign({
               supplier_name: activeSupplier?.supplier_name ?? null,
               supplier_po_no: activePo?.supplier_po_no ?? null,
               procurement_record_id: activePo?.procurement_record_id ?? null,
+              linked_mail_id: lastMessageId,
             })
           }
           onToggleDone={handleToggleDone}
@@ -1404,6 +1558,159 @@ function ThreadMessageTable({ rows }: { rows: ThreadTableRow[] }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Task Panel
 // ─────────────────────────────────────────────────────────────────────────────
+function ActionRail({
+  activePo,
+  activeSupplier,
+  signal,
+  draftCount,
+  tasks,
+  open,
+  onToggle,
+  onAiReply,
+  onSend,
+  onEscalate,
+  onCreate,
+  onToggleDone,
+}: {
+  activePo: CommHubPO | null;
+  activeSupplier: CommHubSupplier | null;
+  signal: TaskSignal;
+  draftCount: number;
+  tasks: CommunicationTask[];
+  open: boolean;
+  onToggle: () => void;
+  onAiReply: () => void;
+  onSend: () => void;
+  onEscalate: () => void;
+  onCreate: () => void;
+  onToggleDone: (t: CommunicationTask) => void;
+}) {
+  const openTasks = tasks.filter((t) => t.status !== "DONE");
+  const overdueCount = openTasks.filter((t) => t.due_date && new Date(t.due_date).getTime() < Date.now()).length;
+  const action = recommendedAction(signal, draftCount, openTasks.length);
+  const disabled = !activePo || !activeSupplier;
+
+  if (!open) {
+    return (
+      <aside className="flex w-[72px] flex-col items-center rounded-lg border border-brand-border bg-white py-4 shadow-card">
+        <button
+          onClick={onToggle}
+          className="relative rounded-md p-2 text-brand-muted hover:bg-gray-100 hover:text-brand-dark"
+          title="Open action rail"
+        >
+          <CheckCircle2 size={22} />
+          {openTasks.length > 0 && (
+            <span className="absolute -right-0.5 -top-0.5 rounded-full bg-signal-red px-1 text-[9px] font-bold text-white">
+              {openTasks.length}
+            </span>
+          )}
+        </button>
+        <span
+          className="mt-4 text-[11px] font-bold uppercase tracking-widest text-brand-muted [writing-mode:vertical-lr]"
+          style={{ transform: "rotate(180deg)" }}
+        >
+          Actions
+        </span>
+      </aside>
+    );
+  }
+
+  return (
+    <aside className="flex w-[330px] shrink-0 flex-col overflow-hidden rounded-lg border border-brand-border bg-white shadow-card">
+      <div className="border-b border-brand-border px-4 py-3">
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <div className="text-sm font-semibold text-brand-dark">Action Center</div>
+            <div className="text-[11px] text-brand-muted">
+              {activePo ? `PO #${activePo.supplier_po_no}` : activeSupplier?.supplier_name || "No PO selected"}
+            </div>
+          </div>
+          <button onClick={onToggle} className="rounded-md p-1.5 text-brand-muted hover:bg-gray-100" title="Collapse">
+            <ChevronRight size={16} />
+          </button>
+        </div>
+        <div className="mt-3 rounded-lg border border-red-100 bg-red-50/70 p-3">
+          <div className="text-[10px] font-bold uppercase tracking-wide text-signal-red">Recommended</div>
+          <div className="mt-1 text-sm font-semibold text-brand-dark">{disabled ? "Select a PO" : action}</div>
+          <p className="mt-1 text-xs leading-relaxed text-brand-muted">
+            {disabled ? "Choose a supplier and PO to unlock communication actions." : actionDescription(signal, activePo?.material_name)}
+          </p>
+        </div>
+      </div>
+
+      <div className="border-b border-brand-border p-3">
+        <div className="grid grid-cols-2 gap-2">
+          <ActionButton icon={<Sparkles size={14} />} label="AI Reply" onClick={onAiReply} disabled={disabled} accent />
+          <ActionButton icon={<Send size={14} />} label="Send Draft" onClick={onSend} disabled={disabled} />
+          <ActionButton icon={<AlertTriangle size={14} />} label="Escalate" onClick={onEscalate} disabled={disabled} danger />
+          <ActionButton icon={<UserPlus size={14} />} label="Assign" onClick={onCreate} disabled={disabled && !activeSupplier} />
+          <ActionButton icon={<Bell size={14} />} label="Reminder" onClick={onCreate} disabled={disabled && !activeSupplier} />
+          <ActionButton icon={<Mail size={14} />} label="PO Mail" onClick={onCreate} disabled={disabled} />
+        </div>
+      </div>
+
+      <div className="flex min-h-0 flex-1 flex-col">
+        <div className="flex items-center justify-between border-b border-brand-border px-4 py-2">
+          <div>
+            <div className="text-xs font-semibold text-brand-dark">Open Tasks ({openTasks.length})</div>
+            <div className="text-[10px] text-brand-muted">
+              {overdueCount > 0 ? `${overdueCount} overdue` : "No overdue actions"}
+            </div>
+          </div>
+          <button onClick={onCreate} className="rounded-md p-1.5 text-signal-red hover:bg-red-50" title="New task">
+            <Plus size={16} />
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto px-3 py-3">
+          {tasks.length === 0 ? (
+            <EmptyState icon={<CheckCircle2 size={20} />}>No tasks yet. Assign one when follow-up is needed.</EmptyState>
+          ) : (
+            <div className="space-y-2">
+              {tasks.map((task) => (
+                <TaskCard key={task.id} task={task} onToggleDone={() => onToggleDone(task)} />
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+function ActionButton({
+  icon,
+  label,
+  onClick,
+  disabled,
+  accent,
+  danger,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  onClick: () => void;
+  disabled?: boolean;
+  accent?: boolean;
+  danger?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={`inline-flex items-center justify-center gap-1.5 rounded-md border px-2.5 py-2 text-xs font-semibold disabled:pointer-events-none disabled:opacity-40 ${
+        danger
+          ? "border-red-200 bg-red-50 text-signal-red hover:bg-red-100"
+          : accent
+            ? "border-signal-red/30 bg-red-50 text-signal-red hover:bg-red-100"
+            : "border-brand-border bg-white text-brand-dark hover:bg-gray-50"
+      }`}
+    >
+      {icon}
+      {label}
+    </button>
+  );
+}
+
 function TaskPanel({
   open,
   onToggle,

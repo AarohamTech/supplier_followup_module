@@ -18,6 +18,7 @@ from ..models.communication_message import CommunicationMessage
 from ..models.customer_mail import CustomerMail
 from ..models.procurement import ProcurementRecord
 from . import ai_service
+from . import po_followup_service
 
 log = logging.getLogger(__name__)
 
@@ -294,6 +295,95 @@ def supplier_scorecards(
 
     out.sort(key=lambda x: x["score"])  # worst performers first
     return out[:limit]
+
+
+# ── Black follow-ups (autonomous AI chase view) ──────────────────────────────
+def list_black_followups(db: Session, *, limit: int = 100) -> list[dict[str, Any]]:
+    """BLACK-signal POs with their full message thread + commitment status.
+
+    Powers the "Black Follow-up" page: shows how the AI is auto-communicating
+    on the most critical POs and whether a commitment date has been captured
+    (the AI keeps chasing until it has one)."""
+    payload = po_followup_service.list_po_groups(db, size=500)
+    groups = [
+        g for g in payload.get("items", [])
+        if (g.get("overall_signal") or "").upper() == "BLACK"
+    ]
+    now = datetime.utcnow()
+    out: list[dict[str, Any]] = []
+
+    for g in groups[:limit]:
+        po = g.get("supplier_po_no")
+        msgs = (
+            db.scalars(
+                select(CommunicationMessage)
+                .where(CommunicationMessage.supplier_po_no == po)
+                .order_by(CommunicationMessage.created_at.asc())
+            ).all()
+            if po
+            else []
+        )
+        thread = [
+            {
+                "id": m.id,
+                "direction": m.direction,
+                "status": m.status,
+                "mail_type": m.mail_type,
+                "subject": m.subject,
+                "snippet": (m.body or "").strip()[:600],
+                "parsed_status": m.parsed_status,
+                "at": (m.sent_at or m.received_at or m.created_at).isoformat()
+                if (m.sent_at or m.received_at or m.created_at)
+                else None,
+            }
+            for m in msgs
+        ]
+
+        materials = g.get("materials") or []
+        committed = [m for m in materials if (m.get("commitment") or {}).get("commitment_date")]
+        commitment_captured = bool(materials) and len(committed) == len(materials)
+        commitments = [
+            {
+                "material_name": m.get("material_name"),
+                "commitment_date": (m.get("commitment") or {}).get("commitment_date"),
+                "supplier_status": (m.get("commitment") or {}).get("supplier_status"),
+            }
+            for m in materials
+        ]
+
+        due = g.get("earliest_due_date")
+        days_late = None
+        if due:
+            try:
+                days_late = (now.date() - datetime.fromisoformat(due).date()).days
+            except ValueError:
+                days_late = None
+
+        out.append(
+            {
+                "supplier_name": g.get("supplier_name"),
+                "supplier_po_no": po,
+                "overall_signal": g.get("overall_signal"),
+                "material_count": g.get("material_count"),
+                "earliest_due_date": due,
+                "days_late": days_late,
+                "latest_followup_date": g.get("latest_followup_date"),
+                "escalation_levels": g.get("escalation_levels"),
+                "mapping_active": g.get("mapping_active"),
+                "commitment_captured": commitment_captured,
+                "committed_count": len(committed),
+                "commitments": commitments,
+                "message_count": len(thread),
+                "outgoing_count": sum(1 for t in thread if t["direction"] == "OUTGOING"),
+                "incoming_count": sum(1 for t in thread if t["direction"] == "INCOMING"),
+                "thread": thread,
+                "status_label": "Commitment received" if commitment_captured else "AI chasing for commitment",
+            }
+        )
+
+    # Still-chasing first, then the most overdue.
+    out.sort(key=lambda x: (x["commitment_captured"], -(x["days_late"] or 0)))
+    return out
 
 
 # ── Triage persistence ───────────────────────────────────────────────────────

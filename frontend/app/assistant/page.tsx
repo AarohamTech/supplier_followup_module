@@ -5,6 +5,7 @@ import { Bot, Loader2, SendHorizonal, Sparkles, User, Wrench } from "lucide-reac
 
 import { api } from "@/lib/api";
 import type { ChatMessage, AiToolUse } from "@/lib/types";
+import PageHeader from "@/components/layout/PageHeader";
 
 type UiMessage = ChatMessage & { tools?: AiToolUse[] };
 
@@ -61,23 +62,19 @@ export default function AssistantPage() {
 
   return (
     <div className="mx-auto flex h-[calc(100vh-128px)] max-w-3xl flex-col">
-      {/* Header */}
-      <div className="mb-3 flex items-center gap-2">
-        <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-red-50 text-signal-red">
-          <Sparkles size={16} />
-        </span>
-        <div>
-          <h1 className="text-lg font-semibold text-brand-dark">AI Assistant</h1>
-          <p className="text-xs text-brand-muted">
-            Agentic — reads your live POs, suppliers, mail threads and past-mail memory to answer.
-          </p>
-        </div>
-        {enabled === false && (
-          <span className="ml-auto rounded-md bg-amber-50 px-2 py-1 text-xs text-amber-700">
-            AI is disabled (set LLM_ENABLED)
-          </span>
-        )}
-      </div>
+      <PageHeader
+        className="mb-3"
+        title="AI Assistant"
+        description="Agentic assistant that reads live POs, suppliers, mail threads and past-mail memory."
+        icon={Sparkles}
+        actions={
+          enabled === false && (
+            <span className="rounded-md bg-amber-50 px-2 py-1 text-xs text-amber-700">
+              AI is disabled (set LLM_ENABLED)
+            </span>
+          )
+        }
+      />
 
       {/* Messages */}
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto rounded-xl border border-brand-border bg-white p-4">

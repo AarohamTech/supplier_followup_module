@@ -1,3 +1,5 @@
+import { LayoutDashboard } from "lucide-react";
+
 import SyncCard from "@/components/dashboard/SyncCard";
 import SupplierMasterCard from "@/components/dashboard/SupplierMasterCard";
 import EmailMasterCard from "@/components/dashboard/EmailMasterCard";
@@ -13,10 +15,16 @@ import AIInsights from "@/components/dashboard/AIInsights";
 import OverdueDonut from "@/components/dashboard/OverdueDonut";
 import StatusDonut from "@/components/dashboard/StatusDonut";
 import MailEngineStatusCard from "@/components/dashboard/MailEngineStatusCard";
+import PageHeader from "@/components/layout/PageHeader";
 
 export default function DashboardPage() {
   return (
-    <div className="space-y-4">
+    <div className="page-stack">
+      <PageHeader
+        title="Dashboard"
+        description="Live procurement signals, mail status and supplier follow-up priorities."
+        icon={LayoutDashboard}
+      />
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <SyncCard />
         <SupplierMasterCard />

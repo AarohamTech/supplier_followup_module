@@ -22,6 +22,7 @@ import {
   ArrowUpCircle,
 } from "lucide-react";
 import { api } from "@/lib/api";
+import PageHeader from "@/components/layout/PageHeader";
 import type {
   CommunicationTask,
   TaskActivity,
@@ -264,14 +265,13 @@ export default function TasksPage() {
   };
 
   return (
-    <div className="space-y-4">
-      {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <ListChecks size={20} className="text-brand-dark" />
-          <h1 className="text-xl font-semibold">Task Manager</h1>
-        </div>
-        <div className="flex items-center gap-2">
+    <div className="page-stack">
+      <PageHeader
+        title="Task Manager"
+        description="Track supplier, customer, internal and escalation work in kanban or table view."
+        icon={ListChecks}
+        actions={
+          <>
           <div className="inline-flex border border-brand-border rounded-md overflow-hidden text-xs">
             <button
               type="button"
@@ -291,14 +291,14 @@ export default function TasksPage() {
           <button
             type="button"
             onClick={exportCsv}
-            className="text-xs px-3 py-1.5 rounded-md border border-brand-border bg-white hover:bg-gray-50"
+            className="btn-outline text-xs"
           >
             Export
           </button>
           <button
             type="button"
             onClick={() => setShowCreate(true)}
-            className="text-xs px-3 py-1.5 rounded-md bg-brand-dark text-white flex items-center gap-1"
+            className="btn-dark text-xs"
           >
             <Plus size={13} /> Create Task
           </button>
@@ -306,12 +306,13 @@ export default function TasksPage() {
             type="button"
             onClick={refresh}
             disabled={busy}
-            className="text-xs px-3 py-1.5 rounded-md border border-brand-border bg-white flex items-center gap-1"
+            className="btn-outline text-xs"
           >
             <RefreshCcw size={13} className={busy ? "animate-spin" : ""} /> Refresh
           </button>
-        </div>
-      </div>
+          </>
+        }
+      />
 
       {message && (
         <div className="card p-2.5 text-xs text-rose-700 bg-rose-50 flex items-center justify-between">

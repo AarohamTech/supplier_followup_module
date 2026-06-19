@@ -6,6 +6,7 @@ import { Loader2, Plus, RotateCcw, Trash2, ShieldCheck } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import type { AuthUser, Role } from "@/lib/types";
+import PageHeader from "@/components/layout/PageHeader";
 
 const ALL_ROLES: Role[] = ["viewer", "user", "manager", "admin"];
 
@@ -52,7 +53,7 @@ export default function UsersAdminPage() {
 
   if (!hasRole("admin")) {
     return (
-      <div className="rounded-xl border border-brand-border bg-white p-8 text-center text-sm text-brand-muted">
+      <div className="empty-state">
         <ShieldCheck className="mx-auto mb-2 h-6 w-6 text-brand-muted" />
         You need the <strong>admin</strong> role to manage users.
       </div>
@@ -120,16 +121,13 @@ export default function UsersAdminPage() {
   };
 
   return (
-    <div className="space-y-5">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-lg font-semibold text-brand-dark">User Management</h1>
-          <p className="text-xs text-brand-muted">Create users and assign roles (admin only).</p>
-        </div>
-        {toast && (
-          <span className="rounded-md bg-brand-dark px-3 py-1.5 text-xs text-white">{toast}</span>
-        )}
-      </div>
+    <div className="page-stack">
+      <PageHeader
+        title="User Management"
+        description="Create users, assign roles and manage account access."
+        icon={ShieldCheck}
+        actions={toast && <span className="rounded-md bg-brand-dark px-3 py-1.5 text-xs text-white">{toast}</span>}
+      />
 
       {error && (
         <div className="rounded-md bg-red-50 px-3 py-2 text-xs text-signal-red">{error}</div>

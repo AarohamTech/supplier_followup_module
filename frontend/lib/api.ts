@@ -50,6 +50,10 @@ import type {
   DelayRiskResponse,
   SupplierScorecard,
   AiMemoryStats,
+  BlackFollowupResponse,
+  BlackFollowupCommandResult,
+  AiPromptsMap,
+  AiFeedbackInput,
   AuthUser,
   LoginResponse,
   UserCreatePayload,
@@ -599,6 +603,28 @@ export const api = {
     ),
   getSupplierScorecard: (name: string) =>
     http<SupplierScorecard>(`/api/ai/insights/suppliers/${encodeURIComponent(name)}`),
+  getBlackFollowups: (limit = 100) =>
+    http<BlackFollowupResponse>(`/api/ai/insights/black-followups?limit=${limit}`),
+  // Editable system prompts (manager)
+  getAiPrompts: () => http<{ prompts: AiPromptsMap }>("/api/ai/prompts"),
+  saveAiPrompts: (prompts: Record<string, string | null>) =>
+    http<{ prompts: AiPromptsMap }>("/api/ai/prompts", {
+      method: "PUT",
+      body: JSON.stringify({ prompts }),
+    }),
+  // AI feedback capture (tuning dataset)
+  submitAiFeedback: (f: AiFeedbackInput) =>
+    http<{ ok: boolean; id: number }>("/api/ai/feedback", {
+      method: "POST",
+      body: JSON.stringify(f),
+    }),
+  // Tell the AI what to follow up on for a PO. send=false → preview only;
+  // send=true → queue + send to the supplier (manager only).
+  blackFollowupCommand: (supplier_po_no: string, instruction: string, send = false) =>
+    http<BlackFollowupCommandResult>("/api/ai/insights/black-followups/command", {
+      method: "POST",
+      body: JSON.stringify({ supplier_po_no, instruction, send }),
+    }),
 };
 
 export default api;

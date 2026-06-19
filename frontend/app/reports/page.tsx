@@ -1,5 +1,7 @@
 "use client";
 import { useStore } from "@/lib/store";
+import PageHeader from "@/components/layout/PageHeader";
+import { BarChart3 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid, Legend } from "recharts";
 
 export default function Page() {
@@ -23,8 +25,12 @@ export default function Page() {
   const statusData = Array.from(statusMap.entries()).map(([name, value]) => ({ name, value }));
 
   return (
-    <div className="space-y-4">
-      <h1 className="text-xl font-semibold">Reports & Analytics</h1>
+    <div className="page-stack">
+      <PageHeader
+        title="Reports & Analytics"
+        description="Visual signal mix, PO status lines and critical procurement follow-ups."
+        icon={BarChart3}
+      />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div className="card p-4">

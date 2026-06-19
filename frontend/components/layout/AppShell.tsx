@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 
 import { useAuth } from "@/lib/auth";
@@ -28,35 +28,44 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
   const pathname = usePathname();
   const router = useRouter();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const isPublic = PUBLIC_PATHS.includes(pathname);
 
-  // Redirect rules (run after render to keep hooks order stable).
+  // Redirect rules run after render to keep hooks order stable.
   useEffect(() => {
     if (loading) return;
     if (!user && !isPublic) router.replace("/login");
     if (user && isPublic) router.replace("/");
   }, [loading, user, isPublic, router]);
 
-  if (loading) return <FullScreen>Loading…</FullScreen>;
+  useEffect(() => {
+    setSidebarOpen(false);
+  }, [pathname]);
 
-  // Login (and any future public pages) render without the app chrome.
-  // If already authenticated, don't flash the login form while redirecting home.
+  if (loading) return <FullScreen>Loading...</FullScreen>;
+
+  // Login and any future public pages render without the app chrome.
   if (isPublic) {
-    if (user) return <FullScreen>Redirecting…</FullScreen>;
+    if (user) return <FullScreen>Redirecting...</FullScreen>;
     return <>{children}</>;
   }
 
-  // Not authenticated on a protected route → show nothing while redirecting.
-  if (!user) return <FullScreen>Redirecting to sign in…</FullScreen>;
+  // Not authenticated on a protected route - show a light state while redirecting.
+  if (!user) return <FullScreen>Redirecting to sign in...</FullScreen>;
 
   return (
     <>
       <StoreBootstrap />
-      <div className="min-h-screen flex flex-col">
-        <Topbar />
-        <div className="flex-1 flex">
-          <Sidebar />
-          <main className="flex-1 p-6 max-w-[1600px] w-full mx-auto">{children}</main>
+      <div className="min-h-screen flex flex-col bg-brand-surface">
+        <Topbar onMenuClick={() => setSidebarOpen(true)} />
+        <div className="flex-1 flex min-h-0">
+          <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+          <main
+            key={pathname}
+            className="page-enter flex-1 min-w-0 px-4 py-5 sm:px-6 lg:px-8 max-w-[1600px] w-full mx-auto"
+          >
+            {children}
+          </main>
         </div>
       </div>
       <MailDraftModal />

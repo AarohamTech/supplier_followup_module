@@ -6,7 +6,7 @@ import {
   useMemo,
   useState,
 } from "react";
-import { X, Sparkles, FileText, Loader2 } from "lucide-react";
+import { X, Sparkles, FileText, Loader2, Inbox } from "lucide-react";
 import { api } from "@/lib/api";
 import type {
   CommunicationTask,
@@ -25,6 +25,7 @@ import { TaskPanel } from "./TaskPanel";
 import CustomerTaskModal from "./CustomerTaskModal";
 import { useDebouncedValue, useRenderCount } from "./hooks";
 import { QUEUE_TABS, formatDate } from "./shared";
+import PageHeader from "@/components/layout/PageHeader";
 
 function fmtQty(value: number | null | undefined, uom?: string | null): string | null {
   if (value === null || value === undefined) return null;
@@ -446,15 +447,14 @@ export default function CustomerWorkspace() {
 
   return (
     <div className="flex h-[calc(100vh-128px)] flex-col">
-      {/* Header */}
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <div>
-          <h1 className="text-lg font-semibold text-brand-dark">Customer Response Workspace</h1>
-          <p className="text-xs text-brand-muted">
-            Manage customer communication, internal coordination and response preparation.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
+      <PageHeader
+        className="mb-3"
+        title="Customer Response Workspace"
+        description="Manage customer communication, internal coordination and response preparation."
+        icon={Inbox}
+        tone="blue"
+        actions={
+          <>
           {toast && (
             <span className="rounded-md bg-brand-dark px-3 py-1.5 text-xs text-white">{toast}</span>
           )}
@@ -464,7 +464,7 @@ export default function CustomerWorkspace() {
                 type="button"
                 onClick={handleTriage}
                 disabled={aiBusy !== null}
-                className="inline-flex items-center gap-1.5 rounded-md border border-brand-border px-2.5 py-1.5 text-xs font-medium text-brand-dark hover:bg-gray-50 disabled:opacity-50"
+                className="btn-outline text-xs"
                 title="Classify category / urgency / suggested action with AI"
               >
                 {aiBusy === "triage" ? (
@@ -478,7 +478,7 @@ export default function CustomerWorkspace() {
                 type="button"
                 onClick={handleSummarize}
                 disabled={aiBusy !== null}
-                className="inline-flex items-center gap-1.5 rounded-md border border-brand-border px-2.5 py-1.5 text-xs font-medium text-brand-dark hover:bg-gray-50 disabled:opacity-50"
+                className="btn-outline text-xs"
                 title="Summarize this mail + its replies"
               >
                 {aiBusy === "summary" ? (
@@ -490,8 +490,9 @@ export default function CustomerWorkspace() {
               </button>
             </>
           )}
-        </div>
-      </div>
+          </>
+        }
+      />
 
       {/* AI triage / summary banner for the selected mail */}
       {selected && (selected.ai_summary || selected.ai_urgency) && (

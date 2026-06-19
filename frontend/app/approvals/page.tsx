@@ -6,6 +6,7 @@ import { Check, Loader2, MailCheck, Trash2 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import type { OutboxDraft } from "@/lib/types";
+import PageHeader from "@/components/layout/PageHeader";
 
 export default function ApprovalsPage() {
   const { hasRole } = useAuth();
@@ -37,7 +38,7 @@ export default function ApprovalsPage() {
 
   if (!hasRole("manager")) {
     return (
-      <div className="rounded-xl border border-brand-border bg-white p-8 text-center text-sm text-brand-muted">
+      <div className="empty-state">
         <MailCheck className="mx-auto mb-2 h-6 w-6 text-brand-muted" />
         You need the <strong>manager</strong> role to review outbound approvals.
       </div>
@@ -57,29 +58,25 @@ export default function ApprovalsPage() {
   };
 
   return (
-    <div className="space-y-5">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-lg font-semibold text-brand-dark">Outbound Approvals</h1>
-          <p className="text-xs text-brand-muted">
-            Review system-drafted mails (e.g. auto-acknowledgements) before they are sent.
-          </p>
-        </div>
-        {toast && (
-          <span className="rounded-md bg-brand-dark px-3 py-1.5 text-xs text-white">{toast}</span>
-        )}
-      </div>
+    <div className="page-stack">
+      <PageHeader
+        title="Outbound Approvals"
+        description="Review system-drafted mails before they are sent."
+        icon={MailCheck}
+        tone="emerald"
+        actions={toast && <span className="rounded-md bg-brand-dark px-3 py-1.5 text-xs text-white">{toast}</span>}
+      />
 
       {error && (
         <div className="rounded-md bg-red-50 px-3 py-2 text-xs text-signal-red">{error}</div>
       )}
 
       {loading ? (
-        <div className="rounded-xl border border-brand-border bg-white p-8 text-center text-sm text-brand-muted">
+        <div className="empty-state">
           Loading…
         </div>
       ) : drafts.length === 0 ? (
-        <div className="rounded-xl border border-brand-border bg-white p-10 text-center text-sm text-brand-muted">
+        <div className="empty-state">
           <MailCheck className="mx-auto mb-2 h-6 w-6 text-emerald-500" />
           Nothing waiting for approval.
         </div>

@@ -10,6 +10,8 @@ import type {
   MailEngineSnapshot,
 } from "@/lib/types";
 import { signalClass } from "@/lib/format";
+import PageHeader from "@/components/layout/PageHeader";
+import { Settings } from "lucide-react";
 
 type TestResult = {
   ok?: boolean;
@@ -232,15 +234,18 @@ export default function SettingsPage() {
   }, [health]);
 
   return (
-    <div className="space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-xl font-semibold">Mail Engine Control</h1>
-        <div className="flex flex-wrap gap-2">
+    <div className="page-stack">
+      <PageHeader
+        title="Mail Engine Control"
+        description="Scheduler, mail connectivity, draft templates and engine health controls."
+        icon={Settings}
+        actions={
+          <>
           <button
             type="button"
             disabled={loading || busyKey === "engine-start"}
             onClick={() => handleEngineAction("start")}
-            className="text-sm px-3 py-1.5 rounded border border-brand-border bg-white text-brand-dark hover:bg-gray-50 disabled:opacity-50"
+            className="btn-outline"
           >
             Start
           </button>
@@ -248,7 +253,7 @@ export default function SettingsPage() {
             type="button"
             disabled={loading || busyKey === "engine-stop"}
             onClick={() => handleEngineAction("stop")}
-            className="text-sm px-3 py-1.5 rounded border border-brand-border bg-white text-brand-dark hover:bg-gray-50 disabled:opacity-50"
+            className="btn-outline"
           >
             Stop
           </button>
@@ -256,12 +261,13 @@ export default function SettingsPage() {
             type="button"
             disabled={loading || busyKey === "engine-restart"}
             onClick={() => handleEngineAction("restart")}
-            className="text-sm px-3 py-1.5 rounded bg-brand-fg text-white disabled:opacity-50"
+            className="btn-dark"
           >
             Restart Engine
           </button>
-        </div>
-      </div>
+          </>
+        }
+      />
 
       {message && (
         <div className="card p-3 text-xs text-brand-muted">{message}</div>
@@ -281,7 +287,7 @@ export default function SettingsPage() {
               type="button"
               disabled={busyKey === "test-smtp"}
               onClick={handleTestSmtp}
-              className="text-sm px-3 py-1.5 rounded bg-brand-fg text-white disabled:opacity-50"
+              className="btn-dark"
             >
               {busyKey === "test-smtp" ? "Testing…" : "Test Connection"}
             </button>
@@ -323,7 +329,7 @@ export default function SettingsPage() {
               type="button"
               disabled={busyKey === "test-imap"}
               onClick={handleTestImap}
-              className="text-sm px-3 py-1.5 rounded bg-brand-fg text-white disabled:opacity-50"
+              className="btn-dark"
             >
               {busyKey === "test-imap" ? "Testing…" : "Test Connection"}
             </button>
@@ -452,7 +458,7 @@ export default function SettingsPage() {
                       type="button"
                       onClick={() => handleRunJob(job)}
                       disabled={busyKey === `run-${job.job_name}`}
-                      className="text-xs px-2 py-1 rounded bg-brand-fg text-white disabled:opacity-50"
+                      className="btn-dark text-xs"
                     >
                       {busyKey === `run-${job.job_name}` ? "Running…" : "Run Now"}
                     </button>
@@ -543,7 +549,7 @@ export default function SettingsPage() {
                       type="button"
                       onClick={() => handleSaveDraftRule(rule)}
                       disabled={busyKey === `save-draft-${rule.id}`}
-                      className="text-xs px-3 py-1.5 rounded bg-brand-fg text-white disabled:opacity-50"
+                      className="btn-dark text-xs"
                     >
                       {busyKey === `save-draft-${rule.id}` ? "Saving..." : "Save Draft"}
                     </button>
@@ -616,7 +622,7 @@ export default function SettingsPage() {
             type="button"
             disabled={loading || busyKey === "save-scheduler"}
             onClick={handleSaveScheduler}
-            className="text-sm px-3 py-1.5 rounded bg-brand-fg text-white disabled:opacity-50"
+            className="btn-dark"
           >
             {busyKey === "save-scheduler" ? "Saving…" : "Save scheduler defaults"}
           </button>
@@ -648,7 +654,7 @@ export default function SettingsPage() {
             type="button"
             disabled={loading || busyKey === "save-followup"}
             onClick={handleSaveFollowup}
-            className="text-sm px-3 py-1.5 rounded bg-brand-fg text-white disabled:opacity-50"
+            className="btn-dark"
           >
             {busyKey === "save-followup" ? "Saving…" : "Save follow-up intervals"}
           </button>

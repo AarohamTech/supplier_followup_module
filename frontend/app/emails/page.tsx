@@ -4,7 +4,8 @@ import { useState } from "react";
 import { useStore } from "@/lib/store";
 import api from "@/lib/api";
 import type { SupplierEmail } from "@/lib/types";
-import { Pencil, Trash2, Plus, X, Save } from "lucide-react";
+import { Mail, Pencil, Trash2, Plus, X, Save } from "lucide-react";
+import PageHeader from "@/components/layout/PageHeader";
 
 const EMPTY: Partial<SupplierEmail> = {
   supplier_id: undefined,
@@ -79,13 +80,20 @@ export default function Page() {
   };
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">Email Master</h1>
-        <button onClick={() => { setError(null); setEditing({ ...EMPTY }); }} className="btn-primary">
-          <Plus size={14} /> Add Mapping
-        </button>
-      </div>
+    <div className="page-stack">
+      <PageHeader
+        title="Email Master"
+        description="Maintain supplier recipient, CC, BCC and escalation mappings."
+        icon={Mail}
+        actions={
+          <button onClick={() => { setError(null); setEditing({ ...EMPTY }); }} className="btn-primary">
+            <Plus size={14} /> Add Mapping
+          </button>
+        }
+      />
+      {error && !editing && (
+        <div className="rounded-md bg-red-50 px-3 py-2 text-xs text-signal-red">{error}</div>
+      )}
 
       <div className="card overflow-hidden">
         <table className="min-w-full text-sm">

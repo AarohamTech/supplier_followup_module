@@ -1,14 +1,21 @@
 "use client";
 
+import { Users } from "lucide-react";
+
 import { useStore } from "@/lib/store";
 import { signalClass } from "@/lib/format";
+import PageHeader from "@/components/layout/PageHeader";
 
 export default function Page() {
   const suppliers = useStore((s) => s.supplierMasters);
 
   return (
-    <div className="space-y-4">
-      <h1 className="text-xl font-semibold">Supplier Master</h1>
+    <div className="page-stack">
+      <PageHeader
+        title="Supplier Master"
+        description="Supplier signal, contact mapping and latest PO visibility in one place."
+        icon={Users}
+      />
       <div className="card overflow-hidden">
         <table className="min-w-full text-sm">
           <thead className="bg-gray-50">

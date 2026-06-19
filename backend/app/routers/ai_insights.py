@@ -10,11 +10,14 @@ Mounted separately from the chat router so analytics endpoints stay grouped:
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from ..core.deps import require_manager
+from ..core import roles as roles_mod
+from ..core.deps import get_current_user, require_manager
+from ..core.roles import Role
 from ..database import get_db
-from ..services import ai_insights_service
+from ..services import ai_insights_service, po_followup_mail_service
 
 router = APIRouter(prefix="/api/ai/insights", tags=["ai-insights"])
 
@@ -39,6 +42,49 @@ def rescore_delay_risk(
     _user=Depends(require_manager),
 ) -> dict:
     return ai_insights_service.rescore_all(db)
+
+
+@router.get("/black-followups")
+def black_followups(
+    db: Session = Depends(get_db),
+    limit: int = Query(default=100, ge=1, le=300),
+) -> dict:
+    """BLACK-signal POs with their AI conversation thread + commitment status."""
+    items = ai_insights_service.list_black_followups(db, limit=limit)
+    return {
+        "count": len(items),
+        "chasing": sum(1 for i in items if not i["commitment_captured"]),
+        "items": items,
+    }
+
+
+class FollowupCommand(BaseModel):
+    supplier_po_no: str = Field(min_length=1, max_length=64)
+    instruction: str = Field(min_length=1, max_length=2000)
+    send: bool = False
+
+
+@router.post("/black-followups/command")
+def black_followup_command(
+    payload: FollowupCommand,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+) -> dict:
+    """Tell the AI what to follow up on for a PO. Preview (default, user+) or
+    actually send it to the supplier (send=true, manager+)."""
+    if not roles_mod.role_at_least(user.role, Role.USER):
+        raise HTTPException(403, "Read-only role — commanding the AI requires 'user' or higher")
+    if payload.send and not roles_mod.role_at_least(user.role, Role.MANAGER):
+        raise HTTPException(403, "Sending a follow-up requires 'manager' or higher")
+    result = po_followup_mail_service.command_followup(
+        db,
+        supplier_po_no=payload.supplier_po_no,
+        instruction=payload.instruction,
+        send=payload.send,
+    )
+    if not result.get("found"):
+        raise HTTPException(404, result.get("error") or "PO not found")
+    return result
 
 
 @router.get("/suppliers")

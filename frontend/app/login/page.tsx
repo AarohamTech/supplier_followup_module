@@ -30,7 +30,7 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-brand-surface px-4">
-      <div className="w-full max-w-sm rounded-2xl border border-brand-border bg-white p-8 shadow-sm">
+      <div className="w-full max-w-sm rounded-lg border border-brand-border bg-white p-8 shadow-card">
         <div className="mb-6 text-center">
           <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-red-50 text-signal-red">
             <Lock size={20} />
@@ -48,7 +48,7 @@ export default function LoginPage() {
               autoFocus
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full rounded-md border border-brand-border px-3 py-2 text-sm outline-none focus:border-signal-red"
+              className="input"
               placeholder="you@example.com"
             />
           </div>
@@ -59,8 +59,8 @@ export default function LoginPage() {
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full rounded-md border border-brand-border px-3 py-2 text-sm outline-none focus:border-signal-red"
-              placeholder="••••••••"
+              className="input"
+              placeholder="Password"
             />
           </div>
 
@@ -71,10 +71,10 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={submitting}
-            className="flex w-full items-center justify-center gap-2 rounded-md bg-signal-red px-3 py-2 text-sm font-medium text-white transition hover:bg-red-700 disabled:opacity-60"
+            className="btn-primary w-full"
           >
             {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-            {submitting ? "Signing in…" : "Sign in"}
+            {submitting ? "Signing in..." : "Sign in"}
           </button>
         </form>
       </div>
