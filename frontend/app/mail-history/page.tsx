@@ -25,18 +25,14 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronRight,
-  Edit3,
-  Filter,
   Inbox,
   Loader2,
   Mail,
   MessagesSquare,
   MoreHorizontal,
   Package,
-  Paperclip,
   Plus,
   RefreshCcw,
-  Reply,
   Search,
   Send,
   Sparkles,
@@ -57,25 +53,21 @@ const ASSIGNEES = [
   "Admin User",
 ];
 
-const TEMPLATES: { label: string; tone: string; body: string }[] = [
+const TEMPLATES: { label: string; body: string }[] = [
   {
     label: "Professional",
-    tone: "border-gray-200 text-gray-700",
     body: "Dear Team,\n\nKindly share the latest status on the referenced PO at your earliest convenience.\n\nBest regards,",
   },
   {
     label: "Reminder",
-    tone: "border-amber-200 text-amber-700 bg-amber-50",
     body: "Dear Team,\n\nThis is a gentle reminder regarding the pending dispatch for the referenced PO. Please share an updated commitment.\n\nRegards,",
   },
   {
     label: "Strong Follow-up",
-    tone: "border-orange-200 text-orange-700 bg-orange-50",
     body: "Dear Team,\n\nWe have not received an update on the referenced PO despite multiple follow-ups. Please confirm dispatch status today.\n\nRegards,",
   },
   {
     label: "Escalation",
-    tone: "border-red-200 text-signal-red bg-red-50",
     body: "Dear Team,\n\nThe delay on the referenced PO is now critical and will impact our line. We are escalating this matter to leadership.\n\nRegards,",
   },
 ];
@@ -300,13 +292,11 @@ export default function Page() {
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [queueFilter, setQueueFilter] = useState<QueueFilter>("needs_reply");
-  const [showAiSummary, setShowAiSummary] = useState(true);
-  const [taskPanelOpen, setTaskPanelOpen] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const [composer, setComposer] = useState("");
   const [assignOpen, setAssignOpen] = useState(false);
   const [assignSeed, setAssignSeed] = useState<Partial<CommunicationTaskCreate>>({});
   const [toasts, setToasts] = useState<{ id: number; tone: "ok" | "err"; msg: string }[]>([]);
-  const [expandedPo, setExpandedPo] = useState<Set<string>>(new Set());
   const [commitments, setCommitments] = useState<SupplierMaterialCommitment[]>([]);
   const [showMaterials, setShowMaterials] = useState(false);
   const selectPoGroup = useStore((s) => s.selectPoGroup);
@@ -659,551 +649,212 @@ export default function Page() {
     }
   };
 
+  const onPoMail = () => {
+    if (!activePo) return;
+    selectPoGroup({ supplier_name: activePo.supplier_name, supplier_po_no: activePo.supplier_po_no });
+  };
+
+  const seedAssign = () =>
+    openAssign({
+      supplier_name: activeSupplier?.supplier_name ?? null,
+      supplier_po_no: activePo?.supplier_po_no ?? null,
+      procurement_record_id: activePo?.procurement_record_id ?? null,
+      linked_mail_id: lastMessageId,
+    });
+
+  const seedReminder = () => {
+    if (!activePo || !activeSupplier) return seedAssign();
+    openAssign({
+      title: `Reminder: PO ${activePo.supplier_po_no}`,
+      supplier_name: activeSupplier.supplier_name,
+      supplier_po_no: activePo.supplier_po_no,
+      procurement_record_id: activePo.procurement_record_id,
+      linked_mail_id: lastMessageId,
+      task_source: "SUPPLIER",
+      reminder_at: new Date(Date.now() + 86400000).toISOString(),
+    });
+  };
+
+  const noPo = !activePo || !activeSupplier;
+
   return (
     <div className="-m-5 flex h-[calc(100vh-65px)] flex-col bg-brand-surface sm:-m-6 lg:-m-8">
-      {/* Command header */}
-      <header className="border-b border-brand-border bg-white px-5 py-4">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="flex min-w-0 items-center gap-3">
-            <span className="icon-tile bg-red-50 text-signal-red">
-              <MessagesSquare size={17} />
-            </span>
-            <div className="min-w-0">
-          <h1 className="page-title truncate">
-            Supplier Communication Hub
-          </h1>
-              <p className="page-subtitle">
-                Triage supplier replies, PO risk, commitments and next actions from one cockpit.
-              </p>
-            </div>
-          </div>
-          <div className="flex flex-1 flex-wrap items-center justify-end gap-2">
-          <div className="relative min-w-[260px] flex-1 sm:max-w-md">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search supplier, subject…  (Ctrl+K)"
-              className="input h-9 pl-9"
-            />
-          </div>
-          <button onClick={loadAll} className="btn-outline h-9" disabled={loading}>
-            {loading ? (
-              <Loader2 size={14} className="animate-spin" />
-            ) : (
-              <RefreshCcw size={14} />
-            )}
-            <span>Refresh</span>
-          </button>
-          <button className="relative h-9 rounded-md border border-brand-border bg-white px-2.5 text-brand-muted hover:bg-red-50 hover:text-signal-red">
-            <Bell size={16} />
-            {kpis.openTasks > 0 && (
-              <span className="absolute -right-1 -top-1 rounded-full bg-signal-red px-1 text-[9px] font-bold text-white">
-                {kpis.openTasks}
-              </span>
-            )}
-          </button>
+      {/* ── Header ───────────────────────────────────────────────────────── */}
+      <header className="flex flex-wrap items-center gap-3 border-b border-brand-border bg-white px-6 py-3">
+        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-red-50 text-signal-red">
+          <MessagesSquare size={17} />
+        </span>
+        <div className="min-w-0">
+          <h1 className="truncate text-base font-semibold text-brand-dark">Communication Hub</h1>
+          <p className="hidden text-xs text-brand-muted sm:block">
+            Triage replies, PO risk and next actions in one place.
+          </p>
         </div>
+
+        <div className="relative ml-auto w-full min-w-[200px] max-w-sm flex-1">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search supplier or subject…"
+            className="input h-9 pl-9"
+          />
         </div>
+        <button onClick={loadAll} className="btn-outline h-9" disabled={loading}>
+          {loading ? <Loader2 size={14} className="animate-spin" /> : <RefreshCcw size={14} />}
+          <span className="hidden sm:inline">Refresh</span>
+        </button>
+        <button className="btn-primary h-9" onClick={seedAssign}>
+          <Plus size={14} />
+          <span className="hidden sm:inline">Compose Task</span>
+        </button>
       </header>
 
-      {/* Queue filters */}
-      <div className="flex flex-wrap items-center gap-2 border-b border-brand-border bg-white px-5 py-3">
-        {QUEUE_FILTERS.map((filter) => {
-          const value =
-            filter.key === "drafts"
+      {/* ── Filter tabs (slim) ───────────────────────────────────────────── */}
+      <div className="flex items-center gap-1 overflow-x-auto border-b border-brand-border bg-white px-6 py-2">
+        {QUEUE_FILTERS.map((f) => {
+          const count =
+            f.key === "drafts"
               ? kpis.drafts
-              : filter.key === "delayed"
+              : f.key === "delayed"
                 ? kpis.delayed
-                : filter.key === "tasks"
+                : f.key === "tasks"
                   ? kpis.openTasks
-                  : filter.key === "all"
+                  : f.key === "all"
                     ? supplierList.length
                     : kpis.drafts + kpis.delayed + kpis.openTasks;
-          const active = queueFilter === filter.key;
+          const active = queueFilter === f.key;
           return (
             <button
-              key={filter.key}
-              type="button"
-              onClick={() => setQueueFilter(filter.key)}
-              title={filter.description}
-              className={`min-w-[116px] rounded-lg border px-3 py-2 text-left transition ${
+              key={f.key}
+              onClick={() => setQueueFilter(f.key)}
+              title={f.description}
+              className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition ${
                 active
-                  ? "border-signal-red bg-red-50 text-signal-red shadow-sm"
-                  : "border-brand-border bg-white text-brand-dark hover:bg-gray-50"
+                  ? "bg-red-50 text-signal-red ring-1 ring-signal-red/30"
+                  : "text-brand-muted hover:bg-gray-100"
               }`}
             >
-              <span className="block text-[11px] font-semibold uppercase tracking-wide">{filter.label}</span>
-              <span className="mt-0.5 block text-lg font-bold leading-none">{value}</span>
+              {f.label}
+              <span
+                className={`rounded-full px-1.5 text-[10px] font-bold ${
+                  active ? "bg-signal-red text-white" : "bg-gray-100 text-brand-muted"
+                }`}
+              >
+                {count}
+              </span>
             </button>
           );
         })}
-        <button
-          className="btn-primary ml-auto h-10"
-          onClick={() =>
-            openAssign({
-              supplier_name: activeSupplier?.supplier_name ?? null,
-              supplier_po_no: activePo?.supplier_po_no ?? null,
-              procurement_record_id: activePo?.procurement_record_id ?? null,
-            })
-          }
-        >
-          <Edit3 size={14} />
-          Compose Task
-        </button>
       </div>
 
       {error && (
-        <div className="mx-6 mt-3 text-sm text-signal-red bg-red-50 border border-red-100 rounded-md px-3 py-2">
+        <div className="mx-6 mt-3 rounded-md border border-red-100 bg-red-50 px-3 py-2 text-sm text-signal-red">
           {error}
         </div>
       )}
 
-      {/* Workspace */}
-      <div className="flex-1 flex gap-3 overflow-hidden p-3">
-        {/* Suppliers panel */}
-        <section className="w-[420px] min-w-[340px] overflow-hidden rounded-lg border border-brand-border bg-white shadow-card flex flex-col">
-          <ColumnHeader
-            title="Work Queue"
-            right={
-              <span className="flex items-center gap-2 text-[11px] text-brand-muted">
-                {filteredSuppliers.length}
-                <Filter size={14} className="text-gray-400" />
-              </span>
-            }
-          />
-          <div className="max-h-[45%] overflow-y-auto border-b border-brand-border">
+      {/* ── Workspace ────────────────────────────────────────────────────── */}
+      <div className="flex flex-1 gap-4 overflow-hidden p-4">
+        {/* LEFT — conversation list */}
+        <aside className="flex w-[340px] min-w-[300px] shrink-0 flex-col overflow-hidden rounded-xl border border-brand-border bg-white shadow-sm">
+          <div className="flex items-center justify-between px-4 py-2.5">
+            <span className="text-xs font-semibold uppercase tracking-wide text-brand-muted">Suppliers</span>
+            <span className="text-[11px] text-brand-muted">{filteredSuppliers.length}</span>
+          </div>
+
+          <div className="max-h-[44%] overflow-y-auto border-y border-brand-border">
             {loading && supplierList.length === 0 ? (
-              <EmptyState icon={<Loader2 className="animate-spin" size={18} />}>
-                Loading…
-              </EmptyState>
+              <EmptyState icon={<Loader2 className="animate-spin" size={18} />}>Loading…</EmptyState>
             ) : filteredSuppliers.length === 0 ? (
-              <EmptyState icon={<Inbox size={20} />}>
-                No communication data found from existing pipeline.
-              </EmptyState>
+              <EmptyState icon={<Inbox size={20} />}>Nothing in this queue.</EmptyState>
             ) : (
-              filteredSuppliers.map((s) => {
-                const active = s.supplier_name === selectedSupplierName;
-                const sig = (s.highest_signal || "GREEN") as TaskSignal;
-                return (
-                  <button
-                    key={s.supplier_name}
-                    onClick={() => void handleSelectSupplier(s.supplier_name, s.supplier_id)}
-                    className={`w-full text-left px-4 py-3 border-b border-brand-border hover:bg-gray-50 transition-colors ${
-                      active
-                        ? "bg-red-50/40 border-l-2 border-l-signal-red"
-                        : "border-l-2 border-l-transparent"
-                    }`}
-                  >
-                    <div className="flex items-center gap-2 mb-1">
-                      <span
-                        className={`w-2 h-2 rounded-full ${SIGNAL_DOT[sig] ?? "bg-gray-300"}`}
-                        title={SIGNAL_LABEL[sig]}
-                      />
-                      <span
-                        className={`font-semibold text-sm truncate flex-1 ${
-                          active ? "text-brand-dark" : "text-gray-800"
-                        }`}
-                      >
-                        {s.supplier_name}
-                      </span>
-                      <span className="text-[10px] text-gray-400">
-                        {relTime(s.last_activity_at)}
-                      </span>
-                    </div>
-                    <p className="text-xs text-brand-muted truncate ml-4 mb-2">
-                      {s.last_subject ?? "No subject"}
-                    </p>
-                    <div className="flex justify-between items-center ml-4 gap-2">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <HealthChip pct={s.health_score} />
-                        {s.draft_mail_count > 0 && (
-                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-red-50 text-signal-red">
-                            {s.draft_mail_count} new
-                          </span>
-                        )}
-                        {s.task_count > 0 && (
-                          <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-gray-100 text-gray-700">
-                            {s.task_count} task{s.task_count === 1 ? "" : "s"}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </button>
-                );
-              })
+              filteredSuppliers.map((s) => (
+                <SupplierRow
+                  key={s.supplier_name}
+                  s={s}
+                  active={s.supplier_name === selectedSupplierName}
+                  onClick={() => void handleSelectSupplier(s.supplier_name, s.supplier_id)}
+                />
+              ))
             )}
           </div>
-          <div className="flex min-h-0 flex-1 flex-col">
-            <div className="flex items-center justify-between border-b border-brand-border px-4 py-2">
-              <div>
-                <div className="text-xs font-semibold text-brand-dark">Purchase Orders</div>
-                <div className="text-[10px] text-brand-muted">
-                  {activeSupplier ? activeSupplier.supplier_name : "Select a supplier"}
-                </div>
+
+          <div className="flex items-center justify-between px-4 py-2.5">
+            <div className="min-w-0">
+              <div className="text-xs font-semibold uppercase tracking-wide text-brand-muted">Purchase Orders</div>
+              <div className="truncate text-[11px] text-brand-muted">
+                {activeSupplier ? activeSupplier.supplier_name : "Select a supplier"}
               </div>
-              {activeSupplier && (
-                <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-semibold text-brand-muted">
-                  {poList.length} PO{poList.length === 1 ? "" : "s"}
-                </span>
-              )}
             </div>
-            <div className="flex-1 overflow-y-auto">
-              {activeSupplier && poList.length === 0 && !loading ? (
-                <EmptyState icon={<Inbox size={18} />}>No POs found for this supplier.</EmptyState>
-              ) : !activeSupplier ? (
-                <EmptyState icon={<Inbox size={18} />}>Select a supplier to see POs.</EmptyState>
-              ) : (
-                poList.map((p) => {
-                  const active = p.procurement_record_id === selectedProcurementId;
-                  const sig = (p.signal || "GREEN") as TaskSignal;
-                  const materialCount = p.material_count ?? p.materials?.length ?? 0;
-                  return (
-                    <button
-                      key={p.procurement_record_id}
-                      onClick={() => void handleSelectPo(p.procurement_record_id, p.supplier_name, p.supplier_po_no)}
-                      className={`w-full border-b border-brand-border px-4 py-3 text-left transition hover:bg-gray-50 ${
-                        active ? "bg-amber-50/70 shadow-[inset_3px_0_0_#F59E0B]" : ""
-                      }`}
-                    >
-                      <div className="mb-1 flex items-start justify-between gap-2">
-                        <div className="flex min-w-0 items-center gap-2">
-                          <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${SIGNAL_DOT[sig] ?? "bg-gray-300"}`} />
-                          <span className="truncate text-sm font-semibold text-brand-dark">#{p.supplier_po_no}</span>
-                          {(p.unread_inbound ?? 0) > 0 && (
-                            <span className="rounded-full bg-emerald-500 px-1.5 py-0.5 text-[10px] font-bold text-white">
-                              {(p.unread_inbound ?? 0) > 99 ? "99+" : p.unread_inbound}
-                            </span>
-                          )}
-                        </div>
-                        <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold uppercase ${SIGNAL_CHIP[sig] ?? ""}`}>
-                          {SIGNAL_LABEL[sig] ?? sig}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2 text-xs text-brand-muted">
-                        <Package size={12} className="text-gray-400" />
-                        <span>{materialCount} material{materialCount === 1 ? "" : "s"}</span>
-                        <span>{p.mail_count} mail{p.mail_count === 1 ? "" : "s"}</span>
-                        {p.task_count > 0 && <span>{p.task_count} task{p.task_count === 1 ? "" : "s"}</span>}
-                      </div>
-                      <div className="mt-2 flex items-center justify-between text-[10px] text-gray-500">
-                        <span>{recommendedAction(sig, p.mail_count, p.task_count)}</span>
-                        <span>{relTime(p.last_activity_at)}</span>
-                      </div>
-                    </button>
-                  );
-                })
-              )}
-            </div>
-          </div>
-        </section>
-
-        {/* PO panel */}
-        <section className="hidden">
-          <ColumnHeader title="Purchase Orders" />
-          <div className="flex-1 overflow-y-auto">
-            {activeSupplier && poList.length === 0 && !loading ? (
-              <EmptyState icon={<Inbox size={18} />}>No POs found for this supplier.</EmptyState>
-            ) : !activeSupplier ? (
-              <EmptyState icon={<Inbox size={18} />}>Select a supplier</EmptyState>
-            ) : (
-              poList.map((p) => {
-                const active = p.procurement_record_id === selectedProcurementId;
-                const sig = (p.signal || "GREEN") as TaskSignal;
-                const poKey = `${p.supplier_name}|${p.supplier_po_no}`;
-                const isExpanded = expandedPo.has(poKey);
-                const materials = p.materials ?? [];
-                const materialCount = p.material_count ?? materials.length;
-                return (
-                  <div
-                    key={p.procurement_record_id}
-                    className={`group relative w-full border-b border-brand-border hover:bg-gray-50 transition-colors ${
-                      active ? "bg-amber-50/50" : ""
-                    }`}
-                  >
-                    <button
-                      onClick={() =>
-                        void handleSelectPo(p.procurement_record_id, p.supplier_name, p.supplier_po_no)
-                      }
-                      className="w-full text-left px-4 py-3"
-                    >
-                      <div className="flex justify-between items-start mb-1">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span className={`w-2 h-2 rounded-full shrink-0 ${SIGNAL_DOT[sig] ?? "bg-gray-300"}`} />
-                          <span
-                            className={`font-semibold text-sm truncate ${
-                              active ? "text-brand-dark" : "text-gray-800"
-                            }`}
-                          >
-                            #{p.supplier_po_no}
-                          </span>
-                          {(p.unread_inbound ?? 0) > 0 && (
-                            <span
-                              className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-500 text-white min-w-[18px] text-center"
-                              title={`${p.unread_inbound} new supplier mail${
-                                p.unread_inbound === 1 ? "" : "s"
-                              }`}
-                            >
-                              {(p.unread_inbound ?? 0) > 99 ? "99+" : p.unread_inbound}
-                            </span>
-                          )}
-                        </div>
-                        <span
-                          className={`text-[10px] font-bold px-1.5 py-0.5 rounded uppercase ${SIGNAL_CHIP[sig] ?? ""}`}
-                        >
-                          {SIGNAL_LABEL[sig] ?? sig}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2 text-xs text-brand-muted mb-1">
-                        <Package size={12} className="text-gray-400" />
-                        <span className="font-semibold text-gray-700">{materialCount}</span>
-                        <span>material{materialCount === 1 ? "" : "s"} in this PO</span>
-                      </div>
-                      <div className="flex justify-between items-center text-[10px] text-gray-500">
-                        <span>
-                          {p.mail_count} mail{p.mail_count === 1 ? "" : "s"}
-                          {p.task_count > 0 && ` · ${p.task_count} task${p.task_count === 1 ? "" : "s"}`}
-                        </span>
-                        <span className="text-gray-400">{relTime(p.last_activity_at)}</span>
-                      </div>
-                    </button>
-                    <div className="px-4 pb-2 flex items-center gap-1 flex-wrap">
-                      {materials.length > 0 && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setExpandedPo((prev) => {
-                              const next = new Set(prev);
-                              if (next.has(poKey)) next.delete(poKey);
-                              else next.add(poKey);
-                              return next;
-                            });
-                          }}
-                          className="text-[10px] font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-700 hover:bg-slate-200 inline-flex items-center gap-1"
-                        >
-                          {isExpanded ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
-                          {isExpanded ? "Hide materials" : "View materials"}
-                        </button>
-                      )}
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          selectPoGroup({
-                            supplier_name: p.supplier_name,
-                            supplier_po_no: p.supplier_po_no,
-                          });
-                        }}
-                        className="text-[10px] font-semibold px-2 py-0.5 rounded bg-signal-red text-white hover:opacity-90 inline-flex items-center gap-1"
-                      >
-                        <Mail size={10} /> PO Mail
-                      </button>
-                    </div>
-                    {isExpanded && materials.length > 0 && (
-                      <div className="px-4 pb-3">
-                        <div className="overflow-x-auto border border-brand-border rounded bg-white">
-                          <table className="min-w-full text-[10px]">
-                            <thead className="bg-slate-100">
-                              <tr>
-                                {["CRM", "Material", "Qty", "Due", "Sig"].map((h, i) => (
-                                  <th key={i} className="text-left px-1.5 py-1 font-semibold text-slate-700 border-b border-brand-border whitespace-nowrap">
-                                    {h}
-                                  </th>
-                                ))}
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {materials.map((m: PoFollowupMaterial) => (
-                                <tr key={m.procurement_record_id} className="border-t border-brand-border">
-                                  <td className="px-1.5 py-1 whitespace-nowrap font-mono">{m.crm_no}</td>
-                                  <td className="px-1.5 py-1 max-w-[140px] truncate" title={m.material_name}>{m.material_name}</td>
-                                  <td className="px-1.5 py-1 whitespace-nowrap">{m.po_qty ?? "-"}</td>
-                                  <td className="px-1.5 py-1 whitespace-nowrap">{m.due_date ?? "-"}</td>
-                                  <td className="px-1.5 py-1 whitespace-nowrap">
-                                    <span className={`inline-block w-2 h-2 rounded-full ${SIGNAL_DOT[(m.signal || "GREEN") as string] ?? "bg-gray-300"}`} />
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      </div>
-                    )}
-                    {/* Hover assign */}
-                    <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
-                      <IconBtn
-                        title="Assign"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          openAssign({
-                            title: `Follow-up PO #${p.supplier_po_no}`,
-                            supplier_name: activeSupplier.supplier_name,
-                            supplier_po_no: p.supplier_po_no,
-                            procurement_record_id: p.procurement_record_id,
-                            signal: sig,
-                          });
-                        }}
-                      >
-                        <UserPlus size={12} />
-                      </IconBtn>
-                    </div>
-                  </div>
-                );
-              })
+            {activeSupplier && (
+              <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-semibold text-brand-muted">
+                {poList.length}
+              </span>
             )}
           </div>
-        </section>
 
-        {/* Conversation thread */}
-        <section className="min-w-0 flex-1 overflow-hidden rounded-lg border border-brand-border bg-[#FDFDFD] shadow-card flex flex-col">
+          <div className="flex-1 overflow-y-auto border-t border-brand-border">
+            {!activeSupplier ? (
+              <EmptyState icon={<Inbox size={18} />}>Pick a supplier to see its POs.</EmptyState>
+            ) : poList.length === 0 && !loading ? (
+              <EmptyState icon={<Inbox size={18} />}>No POs for this supplier.</EmptyState>
+            ) : (
+              poList.map((p) => (
+                <PoRow
+                  key={p.procurement_record_id}
+                  p={p}
+                  active={p.procurement_record_id === selectedProcurementId}
+                  onClick={() => void handleSelectPo(p.procurement_record_id, p.supplier_name, p.supplier_po_no)}
+                />
+              ))
+            )}
+          </div>
+        </aside>
+
+        {/* CENTER — conversation */}
+        <main className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-brand-border bg-white shadow-sm">
           {activePo && activeSupplier ? (
             <>
-              {/* Thread header — single compact row */}
-              <div className="px-4 py-2 border-b border-brand-border bg-white">
-                <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
-                  <span className={`w-2 h-2 shrink-0 rounded-full ${SIGNAL_DOT[threadSignal] ?? "bg-gray-300"}`} />
-                  <h3 className="font-semibold text-brand-dark truncate max-w-[38%] min-w-0">
-                    PO #{activePo.supplier_po_no} — {activeSupplier.supplier_name}
-                  </h3>
-                  <span
-                    className={`text-[10px] font-bold px-1.5 py-0.5 rounded uppercase ${SIGNAL_CHIP[threadSignal] ?? ""}`}
-                  >
-                    {SIGNAL_LABEL[threadSignal] ?? threadSignal}
-                  </span>
+              {/* Clean single-line thread header */}
+              <div className="flex items-center gap-2 border-b border-brand-border px-5 py-3">
+                <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${SIGNAL_DOT[threadSignal] ?? "bg-gray-300"}`} />
+                <h2 className="truncate font-semibold text-brand-dark">
+                  PO #{activePo.supplier_po_no}
+                  <span className="ml-2 font-normal text-brand-muted">{activeSupplier.supplier_name}</span>
+                </h2>
+                <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold uppercase ${SIGNAL_CHIP[threadSignal] ?? ""}`}>
+                  {SIGNAL_LABEL[threadSignal] ?? threadSignal}
+                </span>
+                <span className="ml-2 hidden text-xs text-brand-muted md:inline">
+                  {threadMessages.length} message{threadMessages.length === 1 ? "" : "s"}
+                </span>
 
-                  {/* AI summary toggle (compact) */}
+                <div className="ml-auto flex items-center gap-1">
                   <button
-                    onClick={() => setShowAiSummary((s) => !s)}
-                    title={`${threadMessages.length} messages · ${draftCount} draft · ${SIGNAL_LABEL[threadSignal] ?? threadSignal} risk`}
-                    className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-signal-red hover:bg-red-100"
+                    onClick={() => setDetailsOpen((v) => !v)}
+                    className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium ${
+                      detailsOpen
+                        ? "border-signal-red/30 bg-red-50 text-signal-red"
+                        : "border-brand-border text-brand-dark hover:bg-gray-50"
+                    }`}
                   >
-                    <ChevronDown size={12} className={`transition-transform ${showAiSummary ? "rotate-180" : ""}`} />
-                    AI · {threadMessages.length} msg{threadMessages.length === 1 ? "" : "s"}
+                    <Sparkles size={13} /> Details
                   </button>
-
-                  {/* Materials toggle (compact) */}
-                  {(activePo.materials?.length ?? 0) > 0 && (
-                    <button
-                      onClick={() => setShowMaterials((s) => !s)}
-                      className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-200"
-                    >
-                      <ChevronDown size={12} className={`transition-transform ${showMaterials ? "rotate-180" : ""}`} />
-                      Materials ({activePo.material_count ?? activePo.materials?.length})
-                      {commitments.length > 0 && (
-                        <span className="ml-0.5 rounded bg-emerald-100 px-1 text-[10px] text-emerald-700">
-                          {commitments.length} commit{commitments.length === 1 ? "" : "s"}
-                        </span>
-                      )}
-                    </button>
-                  )}
-
-                  {/* Right cluster */}
-                  <div className="ml-auto flex items-center gap-1">
-                    <button
-                      className="btn-ghost !py-1"
-                      onClick={() =>
-                        openAssign({
-                          title: `Assign PO #${activePo.supplier_po_no}`,
-                          supplier_name: activeSupplier.supplier_name,
-                          supplier_po_no: activePo.supplier_po_no,
-                          procurement_record_id: activePo.procurement_record_id,
-                          signal: threadSignal,
-                          linked_mail_id: lastMessageId,
-                        })
-                      }
-                    >
-                      <UserPlus size={14} />
-                      <span className="ml-1">Assign</span>
-                    </button>
-                    <button className="p-1 rounded hover:bg-gray-100 text-gray-400">
-                      <MoreHorizontal size={18} />
-                    </button>
-                  </div>
+                  <button
+                    onClick={seedAssign}
+                    className="p-1.5 text-gray-400 hover:text-brand-dark"
+                    title="More"
+                  >
+                    <MoreHorizontal size={18} />
+                  </button>
                 </div>
-                {showAiSummary && (
-                  <div className="mt-3 rounded-lg border border-red-100 bg-red-50/60 p-3 text-sm">
-                    <p className="text-gray-700">
-                      <strong className="text-signal-red">Summary:</strong>{" "}
-                      Conversation around {activePo.material_name || "this PO"} with{" "}
-                      {draftCount} draft / {sentCount} sent mails.
-                    </p>
-                    <p className="text-gray-700">
-                      <strong>Latest:</strong> {lastMessage?.subject ?? "—"}
-                    </p>
-                    <p className="text-gray-700">
-                      <strong>Suggested action:</strong>{" "}
-                      {threadSignal === "BLACK"
-                        ? "Escalate to leadership immediately."
-                        : threadSignal === "RED"
-                          ? "Send strong follow-up and create P0 task."
-                          : threadSignal === "YELLOW"
-                            ? "Send reminder and confirm commitment date."
-                            : "Monitor — no action required."}
-                    </p>
-                    <div className="mt-3 rounded-md border border-white bg-white/80 p-2">
-                      <div className="text-[10px] font-bold uppercase tracking-wide text-brand-muted">
-                        Recommended next move
-                      </div>
-                      <div className="mt-1 text-sm font-semibold text-brand-dark">
-                        {recommendedAction(threadSignal, draftCount, contextTasks.length)}
-                      </div>
-                      <p className="mt-1 text-xs leading-relaxed text-brand-muted">
-                        {actionDescription(threadSignal, lastMessage?.subject)}
-                      </p>
-                    </div>
-                  </div>
-                )}
-                {(activePo.materials?.length ?? 0) > 0 && showMaterials && (
-                  <div className="mt-2">
-                    {(
-                      <div className="mt-2 overflow-x-auto border border-brand-border rounded bg-white">
-                        <table className="min-w-full text-xs">
-                          <thead className="bg-slate-100">
-                            <tr>
-                              {["CRM", "Material Name", "Qty", "UOM", "Due", "Status", "Last Commit Date", "Remark"].map((h, i) => (
-                                <th key={i} className="text-left px-2 py-1.5 font-semibold text-slate-700 border-b border-brand-border whitespace-nowrap">
-                                  {h}
-                                </th>
-                              ))}
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {(activePo.materials ?? []).map((m: PoFollowupMaterial) => {
-                              const commit = commitments.find(
-                                (c) => c.material_name?.toUpperCase() === m.material_name?.toUpperCase(),
-                              ) ?? m.commitment ?? null;
-                              return (
-                                <tr key={m.procurement_record_id} className="border-t border-brand-border">
-                                  <td className="px-2 py-1.5 whitespace-nowrap font-mono">{m.crm_no}</td>
-                                  <td className="px-2 py-1.5 max-w-[260px] truncate" title={m.material_name}>{m.material_name}</td>
-                                  <td className="px-2 py-1.5 whitespace-nowrap">{m.po_qty ?? "-"}</td>
-                                  <td className="px-2 py-1.5 whitespace-nowrap">{m.uom ?? "-"}</td>
-                                  <td className="px-2 py-1.5 whitespace-nowrap">{m.due_date ?? "-"}</td>
-                                  <td className="px-2 py-1.5 whitespace-nowrap">
-                                    <span className={`chip ${SIGNAL_CHIP[(commit?.supplier_status || m.current_status || m.signal) as string] ?? "bg-gray-100 text-gray-700"}`}>
-                                      {commit?.supplier_status || m.current_status || m.signal}
-                                    </span>
-                                  </td>
-                                  <td className="px-2 py-1.5 whitespace-nowrap">{commit?.commitment_date ?? "-"}</td>
-                                  <td className="px-2 py-1.5 max-w-[220px] truncate" title={commit?.supplier_remark ?? ""}>
-                                    {commit?.supplier_remark ?? "-"}
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-                  </div>
-                )}
               </div>
 
-              {/* Mail thread */}
-              <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
+              {/* Thread — generous breathing room */}
+              <div className="flex-1 space-y-6 overflow-y-auto px-6 py-6 lg:px-10">
                 {threadMessages.length === 0 ? (
-                  <EmptyState icon={<MessagesSquare size={20} />}>
-                    No emails sent yet for this PO.
-                  </EmptyState>
+                  <EmptyState icon={<MessagesSquare size={22} />}>No emails for this PO yet.</EmptyState>
                 ) : (
                   threadMessages.map((m) => (
                     <MailBubble
@@ -1223,70 +874,15 @@ export default function Page() {
                 )}
               </div>
 
-              {/* Composer */}
-              <div className="p-4 border-t border-brand-border bg-white shadow-[0_-4px_20px_rgba(0,0,0,0.03)]">
-                <div className="flex gap-2 mb-3 items-center flex-wrap">
-                  <ToolButton icon={<Reply size={13} />}>Reply</ToolButton>
-                  <ToolButton
-                    icon={<UserPlus size={13} />}
-                    onClick={() =>
-                      openAssign({
-                        supplier_name: activeSupplier.supplier_name,
-                        supplier_po_no: activePo.supplier_po_no,
-                        procurement_record_id: activePo.procurement_record_id,
-                        linked_mail_id: lastMessageId,
-                      })
-                    }
-                  >
-                    Assign
-                  </ToolButton>
-                  <ToolButton icon={<Sparkles size={13} />} accent onClick={() => void handleAiReply()}>
-                    AI Reply
-                  </ToolButton>
-                  <ToolButton icon={<Send size={13} />} onClick={() => void handleSendMailNow()}>
-                    Send Mail
-                  </ToolButton>
-                  <ToolButton icon={<AlertTriangle size={13} />} onClick={() => void handleEscalate()}>
-                    Escalate
-                  </ToolButton>
-                  <ToolButton
-                    icon={<Plus size={13} />}
-                    onClick={() =>
-                      openAssign({
-                        title: `Follow-up: PO ${activePo.supplier_po_no}`,
-                        supplier_name: activeSupplier.supplier_name,
-                        supplier_po_no: activePo.supplier_po_no,
-                        procurement_record_id: activePo.procurement_record_id,
-                        linked_mail_id: lastMessageId,
-                        task_source: "SUPPLIER",
-                      })
-                    }
-                  >
-                    Create Task
-                  </ToolButton>
-                  <ToolButton
-                    icon={<Bell size={13} />}
-                    onClick={() =>
-                      openAssign({
-                        title: `Reminder: PO ${activePo.supplier_po_no}`,
-                        supplier_name: activeSupplier.supplier_name,
-                        supplier_po_no: activePo.supplier_po_no,
-                        procurement_record_id: activePo.procurement_record_id,
-                        linked_mail_id: lastMessageId,
-                        task_source: "SUPPLIER",
-                        reminder_at: new Date(Date.now() + 86400000).toISOString(),
-                      })
-                    }
-                  >
-                    Reminder
-                  </ToolButton>
-                </div>
-                <div className="flex gap-2 mb-3 flex-wrap">
+              {/* Composer — minimal */}
+              <div className="border-t border-brand-border px-5 py-3">
+                <div className="mb-2 flex flex-wrap items-center gap-1.5">
+                  <span className="text-[10px] font-semibold uppercase tracking-wide text-brand-muted">Templates</span>
                   {TEMPLATES.map((t) => (
                     <button
                       key={t.label}
                       onClick={() => setComposer(t.body)}
-                      className={`text-[11px] font-semibold px-2.5 py-1 rounded border ${t.tone} hover:opacity-80`}
+                      className="rounded-full border border-brand-border px-2.5 py-0.5 text-[11px] font-medium text-brand-muted hover:bg-gray-50 hover:text-brand-dark"
                     >
                       {t.label}
                     </button>
@@ -1297,60 +893,216 @@ export default function Page() {
                     value={composer}
                     onChange={(e) => setComposer(e.target.value)}
                     placeholder="Type your message…"
-                    className="w-full h-24 p-3 bg-gray-50 border border-transparent focus:border-brand-border focus:bg-white rounded-lg text-sm outline-none resize-none"
+                    className="h-24 w-full resize-none rounded-lg border border-brand-border bg-gray-50 p-3 pr-28 text-sm outline-none focus:border-signal-red/40 focus:bg-white"
                   />
-                  <button
-                    className="absolute bottom-3 right-3 bg-signal-red text-white p-2 rounded-md hover:opacity-90 shadow-sm disabled:opacity-50"
-                    disabled={!composer.trim()}
-                    onClick={() => {
-                      pushToast("ok", "Reply queued (demo)");
-                      setComposer("");
-                    }}
-                  >
-                    <Send size={16} />
-                  </button>
+                  <div className="absolute bottom-3 right-3 flex items-center gap-1.5">
+                    <button
+                      onClick={() => void handleAiReply()}
+                      className="inline-flex items-center gap-1 rounded-md border border-signal-red/30 bg-red-50 px-2.5 py-1.5 text-xs font-semibold text-signal-red hover:bg-red-100"
+                      title="Generate an AI reply"
+                    >
+                      <Sparkles size={13} /> AI
+                    </button>
+                    <button
+                      className="rounded-md bg-signal-red p-2 text-white shadow-sm hover:opacity-90 disabled:opacity-50"
+                      disabled={!composer.trim()}
+                      onClick={() => {
+                        pushToast("ok", "Reply queued (demo)");
+                        setComposer("");
+                      }}
+                      title="Send"
+                    >
+                      <Send size={16} />
+                    </button>
+                  </div>
                 </div>
               </div>
             </>
           ) : (
-            <div className="flex-1 grid place-items-center text-brand-muted">
+            <div className="grid flex-1 place-items-center text-brand-muted">
               <div className="text-center">
-                <MessagesSquare size={32} className="mx-auto mb-2 opacity-40" />
+                <MessagesSquare size={34} className="mx-auto mb-2 opacity-40" />
                 <p className="text-sm">Select a purchase order to view the conversation.</p>
               </div>
             </div>
           )}
-        </section>
+        </main>
 
-        {/* Action rail */}
-        <ActionRail
-          activePo={activePo}
-          activeSupplier={activeSupplier}
-          signal={threadSignal}
-          draftCount={draftCount}
-          tasks={contextTasks}
-          open={taskPanelOpen}
-          onToggle={() => setTaskPanelOpen((s) => !s)}
-          onAiReply={() => void handleAiReply()}
-          onSend={() => void handleSendMailNow()}
-          onEscalate={() => void handleEscalate()}
-          onPoMail={() => {
-            if (!activePo) return;
-            selectPoGroup({
-              supplier_name: activePo.supplier_name,
-              supplier_po_no: activePo.supplier_po_no,
-            });
-          }}
-          onCreate={() =>
-            openAssign({
-              supplier_name: activeSupplier?.supplier_name ?? null,
-              supplier_po_no: activePo?.supplier_po_no ?? null,
-              procurement_record_id: activePo?.procurement_record_id ?? null,
-              linked_mail_id: lastMessageId,
-            })
-          }
-          onToggleDone={handleToggleDone}
-        />
+        {/* RIGHT — details + actions (collapsible) */}
+        {detailsOpen ? (
+          <aside className="flex w-[330px] shrink-0 flex-col overflow-hidden rounded-xl border border-brand-border bg-white shadow-sm">
+            <div className="flex items-center justify-between border-b border-brand-border px-4 py-3">
+              <div className="min-w-0">
+                <div className="text-sm font-semibold text-brand-dark">Details &amp; Actions</div>
+                <div className="truncate text-[11px] text-brand-muted">
+                  {activePo ? `PO #${activePo.supplier_po_no}` : activeSupplier?.supplier_name || "No PO selected"}
+                </div>
+              </div>
+              <button
+                onClick={() => setDetailsOpen(false)}
+                className="rounded-md p-1.5 text-brand-muted hover:bg-gray-100"
+                title="Collapse"
+              >
+                <ChevronRight size={16} />
+              </button>
+            </div>
+
+            <div className="flex-1 space-y-4 overflow-y-auto p-4">
+              {/* Recommended */}
+              <div className="rounded-lg border border-red-100 bg-red-50/60 p-3">
+                <div className="text-[10px] font-bold uppercase tracking-wide text-signal-red">Recommended</div>
+                <div className="mt-1 text-sm font-semibold text-brand-dark">
+                  {noPo ? "Select a PO" : recommendedAction(threadSignal, draftCount, contextTasks.filter((t) => t.status !== "DONE").length)}
+                </div>
+                <p className="mt-1 text-xs leading-relaxed text-brand-muted">
+                  {noPo ? "Choose a supplier and PO to unlock actions." : actionDescription(threadSignal, lastMessage?.subject)}
+                </p>
+              </div>
+
+              {/* Quick actions */}
+              <div>
+                <SectionTitle>Quick actions</SectionTitle>
+                <div className="grid grid-cols-2 gap-2">
+                  <QuickAction icon={<Sparkles size={14} />} label="AI Reply" onClick={() => void handleAiReply()} disabled={noPo} accent />
+                  <QuickAction icon={<Send size={14} />} label="Send Draft" onClick={() => void handleSendMailNow()} disabled={noPo} />
+                  <QuickAction icon={<AlertTriangle size={14} />} label="Escalate" onClick={() => void handleEscalate()} disabled={noPo} danger />
+                  <QuickAction icon={<UserPlus size={14} />} label="Assign" onClick={seedAssign} disabled={!activeSupplier} />
+                  <QuickAction icon={<Bell size={14} />} label="Reminder" onClick={seedReminder} disabled={!activeSupplier} />
+                  <QuickAction icon={<Mail size={14} />} label="PO Mail" onClick={onPoMail} disabled={noPo} />
+                </div>
+              </div>
+
+              {/* AI summary */}
+              {activePo && (
+                <div>
+                  <SectionTitle>AI summary</SectionTitle>
+                  <div className="space-y-1.5 rounded-lg border border-brand-border bg-gray-50/60 p-3 text-xs leading-relaxed text-gray-700">
+                    <p>
+                      Conversation around {activePo.material_name || "this PO"} — {draftCount} draft / {sentCount} sent.
+                    </p>
+                    <p>
+                      <span className="font-semibold text-brand-dark">Latest:</span> {lastMessage?.subject ?? "—"}
+                    </p>
+                    <p>
+                      <span className="font-semibold text-brand-dark">Suggested:</span>{" "}
+                      {threadSignal === "BLACK"
+                        ? "Escalate to leadership immediately."
+                        : threadSignal === "RED"
+                          ? "Send strong follow-up and create P0 task."
+                          : threadSignal === "YELLOW"
+                            ? "Send reminder and confirm commitment date."
+                            : "Monitor — no action required."}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Materials */}
+              {activePo && (activePo.materials?.length ?? 0) > 0 && (
+                <div>
+                  <button
+                    onClick={() => setShowMaterials((v) => !v)}
+                    className="flex w-full items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-brand-muted hover:text-brand-dark"
+                  >
+                    <ChevronDown size={13} className={`transition-transform ${showMaterials ? "rotate-180" : ""}`} />
+                    Materials ({activePo.material_count ?? activePo.materials?.length})
+                    {commitments.length > 0 && (
+                      <span className="ml-auto rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">
+                        {commitments.length} commit{commitments.length === 1 ? "" : "s"}
+                      </span>
+                    )}
+                  </button>
+                  {showMaterials && (
+                    <div className="mt-2 overflow-x-auto rounded border border-brand-border">
+                      <table className="min-w-full text-[11px]">
+                        <thead className="bg-slate-50">
+                          <tr>
+                            {["CRM", "Material", "Qty", "Due", "Status", "Commit"].map((h, i) => (
+                              <th key={i} className="whitespace-nowrap px-2 py-1.5 text-left font-semibold text-slate-600">
+                                {h}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(activePo.materials ?? []).map((m: PoFollowupMaterial) => {
+                            const commit =
+                              commitments.find(
+                                (c) => c.material_name?.toUpperCase() === m.material_name?.toUpperCase(),
+                              ) ?? m.commitment ?? null;
+                            return (
+                              <tr key={m.procurement_record_id} className="border-t border-brand-border">
+                                <td className="whitespace-nowrap px-2 py-1.5 font-mono">{m.crm_no}</td>
+                                <td className="max-w-[120px] truncate px-2 py-1.5" title={m.material_name}>{m.material_name}</td>
+                                <td className="whitespace-nowrap px-2 py-1.5">{m.po_qty ?? "-"}</td>
+                                <td className="whitespace-nowrap px-2 py-1.5">{m.due_date ?? "-"}</td>
+                                <td className="whitespace-nowrap px-2 py-1.5">
+                                  <span className={`rounded px-1.5 py-0.5 text-[10px] ${SIGNAL_CHIP[(commit?.supplier_status || m.current_status || m.signal) as string] ?? "bg-gray-100 text-gray-700"}`}>
+                                    {commit?.supplier_status || m.current_status || m.signal}
+                                  </span>
+                                </td>
+                                <td className="whitespace-nowrap px-2 py-1.5">{commit?.commitment_date ?? "-"}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Open tasks */}
+              <div>
+                <div className="mb-2 flex items-center justify-between">
+                  <SectionTitle className="mb-0">
+                    Open tasks ({contextTasks.filter((t) => t.status !== "DONE").length})
+                  </SectionTitle>
+                  <button onClick={seedAssign} className="rounded-md p-1 text-signal-red hover:bg-red-50" title="New task">
+                    <Plus size={15} />
+                  </button>
+                </div>
+                {contextTasks.length === 0 ? (
+                  <EmptyState icon={<CheckCircle2 size={18} />}>No tasks yet.</EmptyState>
+                ) : (
+                  <div className="space-y-2">
+                    {contextTasks.map((task) => (
+                      <TaskCard key={task.id} task={task} onToggleDone={() => void handleToggleDone(task)} />
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </aside>
+        ) : (
+          <aside className="flex w-12 shrink-0 flex-col items-center gap-2 rounded-xl border border-brand-border bg-white py-3 shadow-sm">
+            <RailIcon title="Details & actions" onClick={() => setDetailsOpen(true)}>
+              <Sparkles size={18} />
+            </RailIcon>
+            <RailIcon title="AI Reply" onClick={() => void handleAiReply()} disabled={noPo}>
+              <Sparkles size={18} />
+            </RailIcon>
+            <RailIcon title="Send Draft" onClick={() => void handleSendMailNow()} disabled={noPo}>
+              <Send size={18} />
+            </RailIcon>
+            <RailIcon title="Escalate" onClick={() => void handleEscalate()} disabled={noPo}>
+              <AlertTriangle size={18} />
+            </RailIcon>
+            <RailIcon title="Assign" onClick={seedAssign} disabled={!activeSupplier}>
+              <UserPlus size={18} />
+            </RailIcon>
+            <div className="relative">
+              <RailIcon title="Open tasks" onClick={() => setDetailsOpen(true)}>
+                <CheckCircle2 size={18} />
+              </RailIcon>
+              {contextTasks.filter((t) => t.status !== "DONE").length > 0 && (
+                <span className="absolute -right-0.5 -top-0.5 rounded-full bg-signal-red px-1 text-[9px] font-bold text-white">
+                  {contextTasks.filter((t) => t.status !== "DONE").length}
+                </span>
+              )}
+            </div>
+          </aside>
+        )}
       </div>
 
       {/* Assign Modal */}
@@ -1368,7 +1120,7 @@ export default function Page() {
         {toasts.map((t) => (
           <div
             key={t.id}
-            className={`px-4 py-2 rounded-md shadow-lg text-sm text-white ${
+            className={`rounded-md px-4 py-2 text-sm text-white shadow-lg ${
               t.tone === "ok" ? "bg-emerald-600" : "bg-signal-red"
             }`}
           >
@@ -1381,319 +1133,86 @@ export default function Page() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Sub-components (UI unchanged)
+// List rows
 // ─────────────────────────────────────────────────────────────────────────────
-function ColumnHeader({ title, right }: { title: string; right?: React.ReactNode }) {
-  return (
-    <div className="px-4 h-12 flex items-center justify-between border-b border-brand-border">
-      <span className="font-semibold text-sm text-brand-dark">{title}</span>
-      {right}
-    </div>
-  );
-}
-
-function KpiPill({ label, value, tone }: { label: string; value: number; tone: string }) {
-  return (
-    <div className="bg-gray-50 border border-brand-border rounded-lg px-4 py-2 flex justify-between items-center">
-      <span className="text-[11px] font-semibold uppercase tracking-wider text-brand-muted">
-        {label}
-      </span>
-      <span className={`text-lg font-bold ${tone}`}>{value}</span>
-    </div>
-  );
-}
-
-function HealthChip({ pct }: { pct: number }) {
-  const cls =
-    pct >= 80
-      ? "bg-emerald-50 text-emerald-700"
-      : pct >= 50
-        ? "bg-amber-50 text-amber-700"
-        : "bg-red-50 text-signal-red";
-  return (
-    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${cls}`}>
-      {pct}% Health
-    </span>
-  );
-}
-
-function EmptyState({ children, icon }: { children: React.ReactNode; icon?: React.ReactNode }) {
-  return (
-    <div className="px-4 py-10 text-center text-brand-muted text-sm flex flex-col items-center gap-2">
-      {icon}
-      <div>{children}</div>
-    </div>
-  );
-}
-
-function ToolButton({
-  children,
-  icon,
-  accent,
-  onClick,
-}: {
-  children: React.ReactNode;
-  icon: React.ReactNode;
-  accent?: boolean;
-  onClick?: () => void;
-}) {
+function SupplierRow({ s, active, onClick }: { s: CommHubSupplier; active: boolean; onClick: () => void }) {
+  const sig = (s.highest_signal || "GREEN") as TaskSignal;
   return (
     <button
       onClick={onClick}
-      className={`px-3 py-1.5 border rounded-md text-[11px] font-semibold flex items-center gap-1 transition-colors ${
-        accent
-          ? "border-signal-red/30 text-signal-red hover:bg-red-50"
-          : "border-brand-border text-brand-dark hover:bg-gray-50"
+      className={`w-full border-b border-brand-border px-4 py-3 text-left transition-colors hover:bg-gray-50 ${
+        active ? "bg-red-50/40 shadow-[inset_3px_0_0_#E11D2E]" : ""
       }`}
     >
-      {icon}
-      {children}
+      <div className="flex items-center gap-2">
+        <span className={`h-2 w-2 shrink-0 rounded-full ${SIGNAL_DOT[sig] ?? "bg-gray-300"}`} title={SIGNAL_LABEL[sig]} />
+        <span className="flex-1 truncate text-sm font-semibold text-brand-dark">{s.supplier_name}</span>
+        <span className="text-[10px] text-gray-400">{relTime(s.last_activity_at)}</span>
+      </div>
+      <p className="mt-1 truncate pl-4 text-xs text-brand-muted">{s.last_subject ?? "No subject"}</p>
+      {(s.draft_mail_count > 0 || s.task_count > 0) && (
+        <div className="mt-1.5 flex items-center gap-1.5 pl-4">
+          {s.draft_mail_count > 0 && (
+            <span className="rounded bg-red-50 px-1.5 py-0.5 text-[10px] font-bold text-signal-red">
+              {s.draft_mail_count} new
+            </span>
+          )}
+          {s.task_count > 0 && (
+            <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-semibold text-gray-700">
+              {s.task_count} task{s.task_count === 1 ? "" : "s"}
+            </span>
+          )}
+        </div>
+      )}
     </button>
   );
 }
 
-function IconBtn({
-  children,
-  onClick,
-  title,
-}: {
-  children: React.ReactNode;
-  onClick?: (e: React.MouseEvent) => void;
-  title?: string;
-}) {
+function PoRow({ p, active, onClick }: { p: CommHubPO; active: boolean; onClick: () => void }) {
+  const sig = (p.signal || "GREEN") as TaskSignal;
+  const materialCount = p.material_count ?? p.materials?.length ?? 0;
   return (
     <button
       onClick={onClick}
-      title={title}
-      className="p-1 rounded border border-brand-border bg-white text-gray-500 hover:text-brand-dark shadow-sm"
+      className={`w-full border-b border-brand-border px-4 py-3 text-left transition hover:bg-gray-50 ${
+        active ? "bg-amber-50/60 shadow-[inset_3px_0_0_#F59E0B]" : ""
+      }`}
     >
-      {children}
+      <div className="flex items-center gap-2">
+        <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${SIGNAL_DOT[sig] ?? "bg-gray-300"}`} />
+        <span className="truncate text-sm font-semibold text-brand-dark">#{p.supplier_po_no}</span>
+        {(p.unread_inbound ?? 0) > 0 && (
+          <span className="rounded-full bg-emerald-500 px-1.5 py-0.5 text-[10px] font-bold text-white">
+            {(p.unread_inbound ?? 0) > 99 ? "99+" : p.unread_inbound}
+          </span>
+        )}
+        <span className={`ml-auto rounded px-1.5 py-0.5 text-[10px] font-bold uppercase ${SIGNAL_CHIP[sig] ?? ""}`}>
+          {SIGNAL_LABEL[sig] ?? sig}
+        </span>
+      </div>
+      <div className="mt-1.5 flex items-center gap-2 pl-4 text-[11px] text-brand-muted">
+        <Package size={12} className="text-gray-400" />
+        <span>{materialCount} mat{materialCount === 1 ? "" : "s"}</span>
+        <span>· {p.mail_count} mail{p.mail_count === 1 ? "" : "s"}</span>
+        {p.task_count > 0 && <span>· {p.task_count} task{p.task_count === 1 ? "" : "s"}</span>}
+        <span className="ml-auto text-gray-400">{relTime(p.last_activity_at)}</span>
+      </div>
     </button>
   );
 }
 
-function MailBubble({ mail, onAssign }: { mail: CommHubMessage; onAssign: () => void }) {
-  const isIncoming = mail.direction === "INCOMING";
-  const tableRows = mail.table_rows ?? [];
-  const bodyText = stripTableText(mail.body);
-
+// ─────────────────────────────────────────────────────────────────────────────
+// Shared bits
+// ─────────────────────────────────────────────────────────────────────────────
+function SectionTitle({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return (
-    <div className={`flex flex-col ${isIncoming ? "items-start" : "items-end"}`}>
-      <div
-        className={`group max-w-[88%] p-4 rounded-lg border shadow-sm relative ${
-          isIncoming ? "bg-white border-brand-border" : "bg-amber-50 border-amber-100"
-        }`}
-      >
-        <div className="flex items-center justify-between gap-3 mb-1">
-          <span className="text-xs font-semibold text-gray-700 truncate">{mail.subject || "(no subject)"}</span>
-          <span className="text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded bg-gray-100 text-gray-600">
-            {mail.sent_status}
-          </span>
-        </div>
-        {mail.table_format && (
-          <div className="mb-2">
-            <span className="text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded bg-slate-100 text-slate-700">
-              {mail.table_format === "PO_MATERIALS" ? "PO Material Table" : "Supplier Reply Table"}
-            </span>
-          </div>
-        )}
-        {bodyText && (
-          <p className="text-sm text-gray-800 leading-relaxed whitespace-pre-wrap">
-            {truncate(bodyText, tableRows.length > 0 ? 1200 : 600)}
-          </p>
-        )}
-        {tableRows.length > 0 && <ThreadMessageTable rows={tableRows} />}
-        <div className="mt-2 flex items-center gap-2 text-[10px] text-gray-400 flex-wrap">
-          <span>{fmtTime(mail.sent_at ?? mail.received_at ?? mail.created_at)}</span>
-          <span>·</span>
-          <span>{mail.mail_type || mail.source || "MAIL"}</span>
-          <span>·</span>
-          <span>{isIncoming ? (mail.sender_email || mail.supplier_name || "Supplier") : (mail.supplier_name ?? "You")}</span>
-        </div>
-        <button
-          onClick={onAssign}
-          className="absolute -left-9 top-2 opacity-0 group-hover:opacity-100 p-1.5 rounded-full bg-white border border-brand-border text-gray-500 hover:text-signal-red shadow"
-          title="Assign task from this mail"
-        >
-          <UserPlus size={12} />
-        </button>
-      </div>
+    <div className={`mb-2 text-[11px] font-semibold uppercase tracking-wide text-brand-muted ${className}`}>
+      {children}
     </div>
   );
 }
 
-function ThreadMessageTable({ rows }: { rows: ThreadTableRow[] }) {
-  return (
-    <div className="mt-3 overflow-x-auto border border-brand-border rounded bg-white">
-      <table className="min-w-full text-xs">
-        <thead className="bg-slate-100">
-          <tr>
-            {["CRM No", "Material Name", "Qty", "UOM", "Due Date", "Status", "Commitment Date", "Remark"].map((header) => (
-              <th
-                key={header}
-                className="text-left px-2 py-1.5 font-semibold text-slate-700 border-b border-brand-border whitespace-nowrap"
-              >
-                {header}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row, index) => (
-            <tr key={`${row.crm_no || row.material_name || "row"}-${index}`} className="border-t border-brand-border">
-              <td className="px-2 py-1.5 whitespace-nowrap font-mono">{row.crm_no || "-"}</td>
-              <td className="px-2 py-1.5 max-w-[280px] truncate" title={row.material_name || ""}>
-                {row.material_name || "-"}
-              </td>
-              <td className="px-2 py-1.5 whitespace-nowrap">{fmtTableQty(row.qty)}</td>
-              <td className="px-2 py-1.5 whitespace-nowrap">{row.uom || "-"}</td>
-              <td className="px-2 py-1.5 whitespace-nowrap">{fmtTableDate(row.due_date)}</td>
-              <td className="px-2 py-1.5 whitespace-nowrap">{row.status || "-"}</td>
-              <td className="px-2 py-1.5 whitespace-nowrap">{fmtTableDate(row.commitment_date)}</td>
-              <td className="px-2 py-1.5 max-w-[220px] truncate" title={row.remark || ""}>
-                {row.remark || "-"}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Task Panel
-// ─────────────────────────────────────────────────────────────────────────────
-function ActionRail({
-  activePo,
-  activeSupplier,
-  signal,
-  draftCount,
-  tasks,
-  open,
-  onToggle,
-  onAiReply,
-  onSend,
-  onEscalate,
-  onPoMail,
-  onCreate,
-  onToggleDone,
-}: {
-  activePo: CommHubPO | null;
-  activeSupplier: CommHubSupplier | null;
-  signal: TaskSignal;
-  draftCount: number;
-  tasks: CommunicationTask[];
-  open: boolean;
-  onToggle: () => void;
-  onAiReply: () => void;
-  onSend: () => void;
-  onEscalate: () => void;
-  onPoMail: () => void;
-  onCreate: () => void;
-  onToggleDone: (t: CommunicationTask) => void;
-}) {
-  const openTasks = tasks.filter((t) => t.status !== "DONE");
-  const overdueCount = openTasks.filter((t) => t.due_date && new Date(t.due_date).getTime() < Date.now()).length;
-  const action = recommendedAction(signal, draftCount, openTasks.length);
-  const disabled = !activePo || !activeSupplier;
-
-  if (!open) {
-    return (
-      <aside className="flex w-12 shrink-0 flex-col items-center rounded-lg border border-brand-border bg-white py-3 shadow-card transition-all">
-        <button
-          onClick={onToggle}
-          className="relative rounded-md p-2 text-brand-muted hover:bg-gray-100 hover:text-brand-dark"
-          title="Open Action Center"
-          aria-label="Open Action Center"
-          aria-expanded={false}
-        >
-          <CheckCircle2 size={22} />
-          {openTasks.length > 0 && (
-            <span className="absolute -right-0.5 -top-0.5 rounded-full bg-signal-red px-1 text-[9px] font-bold text-white">
-              {openTasks.length}
-            </span>
-          )}
-        </button>
-        <span
-          className="mt-3 text-[10px] font-bold uppercase tracking-widest text-brand-muted [writing-mode:vertical-lr]"
-          style={{ transform: "rotate(180deg)" }}
-        >
-          Actions
-        </span>
-      </aside>
-    );
-  }
-
-  return (
-    <aside className="flex w-[330px] shrink-0 flex-col overflow-hidden rounded-lg border border-brand-border bg-white shadow-card transition-all">
-      <div className="border-b border-brand-border px-4 py-3">
-        <div className="flex items-start justify-between gap-2">
-          <div>
-            <div className="text-sm font-semibold text-brand-dark">Action Center</div>
-            <div className="text-[11px] text-brand-muted">
-              {activePo ? `PO #${activePo.supplier_po_no}` : activeSupplier?.supplier_name || "No PO selected"}
-            </div>
-          </div>
-          <button
-            onClick={onToggle}
-            className="rounded-md p-1.5 text-brand-muted hover:bg-gray-100"
-            title="Collapse Action Center"
-            aria-label="Collapse Action Center"
-            aria-expanded={true}
-          >
-            <ChevronRight size={16} />
-          </button>
-        </div>
-        <div className="mt-3 rounded-lg border border-red-100 bg-red-50/70 p-3">
-          <div className="text-[10px] font-bold uppercase tracking-wide text-signal-red">Recommended</div>
-          <div className="mt-1 text-sm font-semibold text-brand-dark">{disabled ? "Select a PO" : action}</div>
-          <p className="mt-1 text-xs leading-relaxed text-brand-muted">
-            {disabled ? "Choose a supplier and PO to unlock communication actions." : actionDescription(signal, activePo?.material_name)}
-          </p>
-        </div>
-      </div>
-
-      <div className="border-b border-brand-border p-3">
-        <div className="grid grid-cols-2 gap-2">
-          <ActionButton icon={<Sparkles size={14} />} label="AI Reply" onClick={onAiReply} disabled={disabled} accent />
-          <ActionButton icon={<Send size={14} />} label="Send Draft" onClick={onSend} disabled={disabled} />
-          <ActionButton icon={<AlertTriangle size={14} />} label="Escalate" onClick={onEscalate} disabled={disabled} danger />
-          <ActionButton icon={<UserPlus size={14} />} label="Assign" onClick={onCreate} disabled={disabled && !activeSupplier} />
-          <ActionButton icon={<Bell size={14} />} label="Reminder" onClick={onCreate} disabled={disabled && !activeSupplier} />
-          <ActionButton icon={<Mail size={14} />} label="PO Mail" onClick={onPoMail} disabled={disabled} />
-        </div>
-      </div>
-
-      <div className="flex min-h-0 flex-1 flex-col">
-        <div className="flex items-center justify-between border-b border-brand-border px-4 py-2">
-          <div>
-            <div className="text-xs font-semibold text-brand-dark">Open Tasks ({openTasks.length})</div>
-            <div className="text-[10px] text-brand-muted">
-              {overdueCount > 0 ? `${overdueCount} overdue` : "No overdue actions"}
-            </div>
-          </div>
-          <button onClick={onCreate} className="rounded-md p-1.5 text-signal-red hover:bg-red-50" title="New task">
-            <Plus size={16} />
-          </button>
-        </div>
-        <div className="flex-1 overflow-y-auto px-3 py-3">
-          {tasks.length === 0 ? (
-            <EmptyState icon={<CheckCircle2 size={20} />}>No tasks yet. Assign one when follow-up is needed.</EmptyState>
-          ) : (
-            <div className="space-y-2">
-              {tasks.map((task) => (
-                <TaskCard key={task.id} task={task} onToggleDone={() => onToggleDone(task)} />
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-    </aside>
-  );
-}
-
-function ActionButton({
+function QuickAction({
   icon,
   label,
   onClick,
@@ -1727,158 +1246,180 @@ function ActionButton({
   );
 }
 
-function TaskPanel({
-  open,
-  onToggle,
-  tasks,
-  contextLabel,
-  onCreate,
-  onToggleDone,
+function RailIcon({
+  children,
+  onClick,
+  title,
+  disabled,
 }: {
-  open: boolean;
-  onToggle: () => void;
-  tasks: CommunicationTask[];
-  contextLabel: string;
-  onCreate: () => void;
-  onToggleDone: (t: CommunicationTask) => void;
+  children: React.ReactNode;
+  onClick: () => void;
+  title: string;
+  disabled?: boolean;
 }) {
-  const openCount = tasks.filter((t) => t.status !== "DONE").length;
-  const overdueCount = tasks.filter(
-    (t) => t.status !== "DONE" && t.due_date && new Date(t.due_date).getTime() < Date.now(),
-  ).length;
-  const highestSignal: TaskSignal = tasks.reduce<TaskSignal>(
-    (acc, t) => (signalRank(t.signal) > signalRank(acc) ? (t.signal as TaskSignal) : acc),
-    "GREEN",
-  );
-
-  if (!open) {
-    return (
-      <aside className="w-[72px] border-l border-brand-border bg-white flex flex-col items-center py-4 relative">
-        <button
-          onClick={onToggle}
-          className="p-2 rounded hover:bg-gray-100 text-gray-500 relative"
-          title="Open task panel"
-        >
-          <CheckCircle2 size={22} />
-          {overdueCount > 0 && (
-            <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-signal-red border-2 border-white" />
-          )}
-        </button>
-        <div className="my-3 h-px w-8 bg-gray-100" />
-        <span
-          className="[writing-mode:vertical-lr] text-[11px] font-bold text-brand-muted uppercase tracking-widest py-4"
-          style={{ transform: "rotate(180deg)" }}
-        >
-          Tasks ({openCount})
-        </span>
-        <div className="mt-auto flex flex-col items-center gap-3">
-          <button
-            onClick={onCreate}
-            className="w-10 h-10 bg-signal-red text-white rounded-full shadow-md hover:opacity-90 flex items-center justify-center"
-            title="New task"
-          >
-            <Plus size={18} />
-          </button>
-          <div className={`px-2 py-1 rounded text-[9px] font-bold uppercase ${SIGNAL_CHIP[highestSignal] ?? ""}`}>
-            {SIGNAL_LABEL[highestSignal] ?? highestSignal}
-          </div>
-        </div>
-      </aside>
-    );
-  }
-
   return (
-    <aside className="w-[320px] border-l border-brand-border bg-white flex flex-col">
-      <div className="px-4 h-12 flex items-center justify-between border-b border-brand-border">
-        <div className="flex flex-col">
-          <span className="font-semibold text-sm text-brand-dark">Task Center ({openCount})</span>
-          <span className="text-[10px] text-brand-muted truncate max-w-[200px]">{contextLabel}</span>
-        </div>
-        <div className="flex items-center gap-1">
-          <button onClick={onCreate} className="p-1.5 rounded hover:bg-gray-100 text-signal-red" title="New task">
-            <Plus size={16} />
-          </button>
-          <button onClick={onToggle} className="p-1.5 rounded hover:bg-gray-100 text-gray-500" title="Collapse">
-            <ChevronRight size={16} />
-          </button>
-        </div>
-      </div>
-      <div className="flex-1 overflow-y-auto px-3 py-3 space-y-4">
-        {tasks.length === 0 ? (
-          <EmptyState icon={<CheckCircle2 size={20} />}>
-            No tasks yet. Use Assign to create one.
-          </EmptyState>
-        ) : (
-          STATUS_GROUPS.map((g) => {
-            const groupTasks = tasks.filter((t) => t.status === g.key);
-            if (!groupTasks.length) return null;
-            return (
-              <div key={g.key}>
-                <div className="text-[10px] font-bold uppercase tracking-wider text-brand-muted px-1 mb-2">
-                  {g.label} · {groupTasks.length}
-                </div>
-                <div className="space-y-2">
-                  {groupTasks.map((t) => (
-                    <TaskCard key={t.id} task={t} onToggleDone={() => onToggleDone(t)} />
-                  ))}
-                </div>
-              </div>
-            );
-          })
-        )}
-      </div>
-    </aside>
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      title={title}
+      aria-label={title}
+      className="rounded-md p-2 text-brand-muted hover:bg-gray-100 hover:text-brand-dark disabled:pointer-events-none disabled:opacity-30"
+    >
+      {children}
+    </button>
   );
 }
 
+function EmptyState({ children, icon }: { children: React.ReactNode; icon?: React.ReactNode }) {
+  return (
+    <div className="flex flex-col items-center gap-2 px-4 py-10 text-center text-sm text-brand-muted">
+      {icon}
+      <div>{children}</div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Mail bubble
+// ─────────────────────────────────────────────────────────────────────────────
+function MailBubble({ mail, onAssign }: { mail: CommHubMessage; onAssign: () => void }) {
+  const isIncoming = mail.direction === "INCOMING";
+  const tableRows = mail.table_rows ?? [];
+  const bodyText = stripTableText(mail.body);
+
+  return (
+    <div className={`flex flex-col ${isIncoming ? "items-start" : "items-end"}`}>
+      <div
+        className={`group relative max-w-[82%] rounded-2xl border p-4 shadow-sm ${
+          isIncoming ? "border-brand-border bg-white" : "border-amber-100 bg-amber-50"
+        }`}
+      >
+        <div className="mb-1 flex items-center justify-between gap-3">
+          <span className="truncate text-xs font-semibold text-gray-700">{mail.subject || "(no subject)"}</span>
+          <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-gray-600">
+            {mail.sent_status}
+          </span>
+        </div>
+        {mail.table_format && (
+          <div className="mb-2">
+            <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-slate-700">
+              {mail.table_format === "PO_MATERIALS" ? "PO Material Table" : "Supplier Reply Table"}
+            </span>
+          </div>
+        )}
+        {bodyText && (
+          <p className="whitespace-pre-wrap text-sm leading-relaxed text-gray-800">
+            {truncate(bodyText, tableRows.length > 0 ? 1200 : 600)}
+          </p>
+        )}
+        {tableRows.length > 0 && <ThreadMessageTable rows={tableRows} />}
+        <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] text-gray-400">
+          <span>{fmtTime(mail.sent_at ?? mail.received_at ?? mail.created_at)}</span>
+          <span>·</span>
+          <span>{mail.mail_type || mail.source || "MAIL"}</span>
+          <span>·</span>
+          <span>{isIncoming ? (mail.sender_email || mail.supplier_name || "Supplier") : (mail.supplier_name ?? "You")}</span>
+        </div>
+        <button
+          onClick={onAssign}
+          className="absolute -left-9 top-2 rounded-full border border-brand-border bg-white p-1.5 text-gray-500 opacity-0 shadow transition-opacity hover:text-signal-red group-hover:opacity-100"
+          title="Assign task from this mail"
+        >
+          <UserPlus size={12} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ThreadMessageTable({ rows }: { rows: ThreadTableRow[] }) {
+  return (
+    <div className="mt-3 overflow-x-auto rounded border border-brand-border bg-white">
+      <table className="min-w-full text-xs">
+        <thead className="bg-slate-100">
+          <tr>
+            {["CRM No", "Material Name", "Qty", "UOM", "Due Date", "Status", "Commitment Date", "Remark"].map((header) => (
+              <th
+                key={header}
+                className="whitespace-nowrap border-b border-brand-border px-2 py-1.5 text-left font-semibold text-slate-700"
+              >
+                {header}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, index) => (
+            <tr key={`${row.crm_no || row.material_name || "row"}-${index}`} className="border-t border-brand-border">
+              <td className="whitespace-nowrap px-2 py-1.5 font-mono">{row.crm_no || "-"}</td>
+              <td className="max-w-[280px] truncate px-2 py-1.5" title={row.material_name || ""}>
+                {row.material_name || "-"}
+              </td>
+              <td className="whitespace-nowrap px-2 py-1.5">{fmtTableQty(row.qty)}</td>
+              <td className="whitespace-nowrap px-2 py-1.5">{row.uom || "-"}</td>
+              <td className="whitespace-nowrap px-2 py-1.5">{fmtTableDate(row.due_date)}</td>
+              <td className="whitespace-nowrap px-2 py-1.5">{row.status || "-"}</td>
+              <td className="whitespace-nowrap px-2 py-1.5">{fmtTableDate(row.commitment_date)}</td>
+              <td className="max-w-[220px] truncate px-2 py-1.5" title={row.remark || ""}>
+                {row.remark || "-"}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Task card
+// ─────────────────────────────────────────────────────────────────────────────
 function TaskCard({ task, onToggleDone }: { task: CommunicationTask; onToggleDone: () => void }) {
   const due = fmtDueDate(task.due_date);
   const done = task.status === "DONE";
   const sig = (task.signal || "YELLOW") as TaskSignal;
   return (
     <div
-      className={`p-3 rounded-lg border bg-white hover:border-signal-red/30 transition-colors ${done ? "opacity-60" : ""} ${
+      className={`rounded-lg border bg-white p-3 transition-colors hover:border-signal-red/30 ${done ? "opacity-60" : ""} ${
         sig === "BLACK" ? "border-gray-900/40" : sig === "RED" ? "border-red-200" : "border-brand-border"
       }`}
     >
-      <div className="flex items-start gap-2 mb-2">
+      <div className="mb-2 flex items-start gap-2">
         <button
           onClick={onToggleDone}
-          className={`mt-0.5 w-4 h-4 rounded-full border-2 grid place-items-center shrink-0 ${
-            done ? "bg-emerald-500 border-emerald-500" : "border-gray-300 hover:border-signal-red"
+          className={`mt-0.5 grid h-4 w-4 shrink-0 place-items-center rounded-full border-2 ${
+            done ? "border-emerald-500 bg-emerald-500" : "border-gray-300 hover:border-signal-red"
           }`}
           title={done ? "Reopen" : "Mark done"}
         >
           {done && <CheckCircle2 size={10} className="text-white" />}
         </button>
-        <div className="flex-1 min-w-0">
-          <p className={`text-xs font-semibold leading-snug ${done ? "line-through text-brand-muted" : "text-brand-dark"}`}>
+        <div className="min-w-0 flex-1">
+          <p className={`text-xs font-semibold leading-snug ${done ? "text-brand-muted line-through" : "text-brand-dark"}`}>
             {task.title}
           </p>
           {(task.supplier_po_no || task.supplier_name) && (
-            <p className="text-[10px] text-brand-muted truncate mt-0.5">
+            <p className="mt-0.5 truncate text-[10px] text-brand-muted">
               {task.supplier_po_no && <>#{task.supplier_po_no} · </>}
               {task.supplier_name}
             </p>
           )}
         </div>
-        <span className={`w-2 h-2 rounded-full shrink-0 mt-1.5 ${SIGNAL_DOT[sig] ?? "bg-gray-300"}`} />
+        <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${SIGNAL_DOT[sig] ?? "bg-gray-300"}`} />
       </div>
-      <div className="flex items-center justify-between gap-2 flex-wrap">
-        <div className="flex items-center gap-1.5 flex-wrap">
-          <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${PRIORITY_CHIP[task.priority as TaskPriority] ?? "bg-gray-100 text-gray-600"}`}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className={`rounded px-1.5 py-0.5 text-[9px] font-bold ${PRIORITY_CHIP[task.priority as TaskPriority] ?? "bg-gray-100 text-gray-600"}`}>
             {task.priority}
           </span>
           {task.assigned_to && (
-            <span className="text-[10px] text-brand-muted truncate max-w-[100px]">
-              @{task.assigned_to}
-            </span>
+            <span className="max-w-[100px] truncate text-[10px] text-brand-muted">@{task.assigned_to}</span>
           )}
         </div>
         <div className="flex items-center gap-2 text-[10px] text-brand-muted">
           {task.linked_mail_id && <MessagesSquare size={11} />}
           {task.comments_count > 0 && <span>{task.comments_count}c</span>}
-          <span className={due.overdue && !done ? "text-signal-red font-semibold" : ""}>{due.text}</span>
+          <span className={due.overdue && !done ? "font-semibold text-signal-red" : ""}>{due.text}</span>
         </div>
       </div>
     </div>
@@ -1937,7 +1478,7 @@ function AssignModal({
     reminder_at: reminder ? new Date(reminder).toISOString() : null,
   });
 
-  const submit = async (notify: boolean) => {
+  const submit = async () => {
     if (!title.trim()) return;
     setSubmitting(true);
     try {
@@ -1948,18 +1489,18 @@ function AssignModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/40 grid place-items-center p-4" onClick={onCancel}>
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl" onClick={(e) => e.stopPropagation()}>
-        <div className="px-5 py-3 border-b border-brand-border flex items-center justify-between">
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" onClick={onCancel}>
+      <div className="w-full max-w-2xl rounded-xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between border-b border-brand-border px-5 py-3">
           <div className="flex items-center gap-2">
             <UserPlus size={16} className="text-signal-red" />
             <span className="font-semibold">Assign Action</span>
           </div>
-          <button className="p-1 rounded hover:bg-gray-100" onClick={onCancel}>
+          <button className="rounded p-1 hover:bg-gray-100" onClick={onCancel}>
             <X size={18} />
           </button>
         </div>
-        <div className="p-5 grid grid-cols-2 gap-4 max-h-[70vh] overflow-y-auto">
+        <div className="grid max-h-[70vh] grid-cols-2 gap-4 overflow-y-auto p-5">
           <Field label="Task title" full>
             <input
               autoFocus
@@ -1980,12 +1521,7 @@ function AssignModal({
           </Field>
 
           <Field label="Supplier">
-            <input
-              list="supplier-list"
-              value={supplierName}
-              onChange={(e) => setSupplierName(e.target.value)}
-              className="input"
-            />
+            <input list="supplier-list" value={supplierName} onChange={(e) => setSupplierName(e.target.value)} className="input" />
             <datalist id="supplier-list">
               {supplierOptions.map((s) => (
                 <option key={s} value={s} />
@@ -2042,13 +1578,9 @@ function AssignModal({
                   <button
                     key={a}
                     type="button"
-                    onClick={() =>
-                      setWatchers((prev) => (on ? prev.filter((x) => x !== a) : [...prev, a]))
-                    }
-                    className={`text-[11px] px-2 py-1 rounded-full border ${
-                      on
-                        ? "bg-red-50 border-signal-red/30 text-signal-red"
-                        : "border-brand-border text-brand-muted hover:bg-gray-50"
+                    onClick={() => setWatchers((prev) => (on ? prev.filter((x) => x !== a) : [...prev, a]))}
+                    className={`rounded-full border px-2 py-1 text-[11px] ${
+                      on ? "border-signal-red/30 bg-red-50 text-signal-red" : "border-brand-border text-brand-muted hover:bg-gray-50"
                     }`}
                   >
                     {on ? "✓ " : "+ "}
@@ -2059,22 +1591,14 @@ function AssignModal({
             </div>
           </Field>
         </div>
-        <div className="px-5 py-3 border-t border-brand-border flex justify-end gap-2">
+        <div className="flex justify-end gap-2 border-t border-brand-border px-5 py-3">
           <button className="btn-ghost" onClick={onCancel} disabled={submitting}>
             Cancel
           </button>
-          <button
-            className="btn-ghost border border-brand-border"
-            onClick={() => void submit(false)}
-            disabled={submitting || !title.trim()}
-          >
+          <button className="btn-ghost border border-brand-border" onClick={() => void submit()} disabled={submitting || !title.trim()}>
             Save Task
           </button>
-          <button
-            className="btn-primary"
-            onClick={() => void submit(true)}
-            disabled={submitting || !title.trim()}
-          >
+          <button className="btn-primary" onClick={() => void submit()} disabled={submitting || !title.trim()}>
             {submitting ? <Loader2 size={14} className="animate-spin" /> : <Bell size={14} />}
             <span className="ml-1.5">Save &amp; Notify</span>
           </button>
@@ -2101,9 +1625,7 @@ function AssignModal({
 function Field({ label, children, full }: { label: string; children: React.ReactNode; full?: boolean }) {
   return (
     <div className={full ? "col-span-2" : ""}>
-      <div className="text-[10px] uppercase tracking-wider text-brand-muted font-semibold mb-1">
-        {label}
-      </div>
+      <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-brand-muted">{label}</div>
       {children}
     </div>
   );
