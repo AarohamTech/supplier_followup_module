@@ -79,27 +79,28 @@ function ReplyComposerBase({
   }
 
   return (
-    <div className="border-t border-brand-border bg-white p-3">
+    <div className="border-t border-brand-border bg-white px-5 py-3">
       <textarea
         value={text}
         onChange={(e) => handleChange(e.target.value)}
         placeholder={`Type your response to ${recipientName}…`}
+        aria-label={`Reply to ${recipientName}`}
         rows={3}
-        className="w-full resize-none rounded-lg border border-brand-border bg-brand-surface px-3 py-2 text-sm outline-none focus:border-signal-red"
+        className="w-full resize-none rounded-lg border border-brand-border bg-gray-50 px-3 py-2.5 text-sm outline-none focus:border-signal-red/40 focus:bg-white"
       />
       <div className="mt-2 flex items-center justify-between">
-        <div className="flex items-center gap-1 text-brand-muted">
-          <button type="button" className="rounded p-1.5 hover:bg-gray-100" title="Bold">
+        <div className="flex items-center gap-0.5 text-gray-400">
+          <button type="button" className="rounded p-1.5 hover:bg-gray-100 hover:text-brand-dark" title="Bold">
             <Bold className="h-4 w-4" />
           </button>
-          <button type="button" className="rounded p-1.5 hover:bg-gray-100" title="Attach">
+          <button type="button" className="rounded p-1.5 hover:bg-gray-100 hover:text-brand-dark" title="Attach">
             <Paperclip className="h-4 w-4" />
           </button>
-          <button type="button" className="rounded p-1.5 hover:bg-gray-100" title="Image">
+          <button type="button" className="rounded p-1.5 hover:bg-gray-100 hover:text-brand-dark" title="Image">
             <ImageIcon className="h-4 w-4" />
           </button>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2.5">
           <span className="text-[11px] text-brand-muted">Draft autosaved</span>
           <button
             type="button"

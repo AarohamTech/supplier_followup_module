@@ -44,105 +44,98 @@ function ConversationPanelBase({
 
   return (
     <div className="flex h-full flex-col">
-      {/* Header */}
-      <div className="shrink-0 border-b border-brand-border px-4 py-3">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <h2 className="truncate text-base font-semibold text-brand-dark">
-              {mail.subject || "(no subject)"}
-            </h2>
-            <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-brand-muted">
-              <span className="font-medium text-brand-dark">
-                {mail.from_name || mail.customer_name || "Unknown"}
-              </span>
-              <span className="truncate">{mail.from_email}</span>
-              {mail.linked_supplier_po_no && (
-                <span className="text-signal-red">· Ref {mail.linked_supplier_po_no}</span>
-              )}
-            </div>
-          </div>
-          <div className="flex shrink-0 items-center gap-1.5">
-            <span
-              className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
-                PRIORITY_TONE[mail.priority] || "bg-gray-200 text-brand-dark"
-              }`}
-            >
-              {mail.priority}
-            </span>
-            <button
-              type="button"
-              className="rounded-md border border-brand-border p-1.5 text-brand-muted hover:bg-gray-50"
-              title="Schedule"
-            >
-              <Calendar className="h-4 w-4" />
-            </button>
-            <button
-              type="button"
-              className="rounded-md border border-brand-border p-1.5 text-brand-muted hover:bg-gray-50"
-              title="History"
-            >
-              <Clock className="h-4 w-4" />
-            </button>
-            <button
-              type="button"
-              onClick={onOpenContext}
-              className="rounded-md border border-brand-border p-1.5 text-brand-muted hover:bg-gray-50 xl:hidden"
-              title="Procurement context"
-            >
-              <PanelRightOpen className="h-4 w-4" />
-            </button>
-          </div>
+      {/* Header — clean single line */}
+      <div className="shrink-0 border-b border-brand-border px-5 py-3">
+        <div className="flex items-center gap-2">
+          <h2 className="min-w-0 flex-1 truncate text-base font-semibold text-brand-dark">
+            {mail.subject || "(no subject)"}
+          </h2>
+          <span
+            className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+              PRIORITY_TONE[mail.priority] || "bg-gray-200 text-brand-dark"
+            }`}
+          >
+            {mail.priority}
+          </span>
+          <button
+            type="button"
+            className="rounded-md p-1.5 text-gray-400 hover:bg-gray-100 hover:text-brand-dark"
+            title="Schedule"
+          >
+            <Calendar className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            className="rounded-md p-1.5 text-gray-400 hover:bg-gray-100 hover:text-brand-dark"
+            title="History"
+          >
+            <Clock className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={onOpenContext}
+            className="rounded-md p-1.5 text-gray-400 hover:bg-gray-100 hover:text-brand-dark xl:hidden"
+            title="Procurement context"
+          >
+            <PanelRightOpen className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-brand-muted">
+          <span className="font-medium text-brand-dark">
+            {mail.from_name || mail.customer_name || "Unknown"}
+          </span>
+          <span className="truncate">{mail.from_email}</span>
+          {mail.linked_supplier_po_no && (
+            <span className="text-signal-red">· Ref {mail.linked_supplier_po_no}</span>
+          )}
         </div>
       </div>
 
-      {/* Messages (scrolls) */}
-      <div className="flex-1 space-y-3 overflow-y-auto bg-brand-surface px-4 py-4">
-        <article className="rounded-xl border border-brand-border bg-white p-4">
-          <div className="mb-2 flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <span className="flex h-7 w-7 items-center justify-center rounded-md bg-signal-red text-[11px] font-semibold text-white">
-                {(mail.from_name || mail.from_email || "?").slice(0, 2).toUpperCase()}
-              </span>
-              <div className="leading-tight">
-                <div className="text-sm font-semibold text-brand-dark">
-                  {mail.from_name || mail.customer_name || "Unknown"}
-                </div>
-                <div className="text-[11px] text-brand-muted">
-                  to ProcureDirect Support
-                </div>
-              </div>
-            </div>
-            <span className="text-[11px] text-brand-muted">
-              {formatDateTime(mail.received_at)} · {timeAgo(mail.received_at)}
-            </span>
-          </div>
-          <p className="whitespace-pre-wrap text-sm leading-relaxed text-brand-dark">
-            {mail.body || "(empty body)"}
-          </p>
-        </article>
-
-        {localReplies.map((reply) => (
-          <article
-            key={reply.id}
-            className="ml-8 rounded-xl border border-red-200 bg-red-50/60 p-4"
-          >
-            <div className="mb-1.5 flex items-center justify-between">
+      {/* Messages (scrolls) — chat bubbles with breathing room */}
+      <div className="flex-1 space-y-5 overflow-y-auto bg-brand-surface/40 px-6 py-6">
+        {/* Incoming customer mail — left */}
+        <div className="flex justify-start">
+          <article className="max-w-[82%] rounded-2xl border border-brand-border bg-white p-4 shadow-sm">
+            <div className="mb-2 flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">
-                <span className="text-sm font-semibold text-signal-red">You replied</span>
-                {replyStatusLabel(reply.status) && (
-                  <span className="rounded-full border border-brand-border bg-white px-1.5 py-0.5 text-[10px] font-medium text-brand-muted">
-                    {replyStatusLabel(reply.status)}
-                  </span>
-                )}
+                <span className="flex h-7 w-7 items-center justify-center rounded-md bg-signal-red text-[11px] font-semibold text-white">
+                  {(mail.from_name || mail.from_email || "?").slice(0, 2).toUpperCase()}
+                </span>
+                <div className="leading-tight">
+                  <div className="text-sm font-semibold text-brand-dark">
+                    {mail.from_name || mail.customer_name || "Unknown"}
+                  </div>
+                  <div className="text-[11px] text-brand-muted">to ProcureDirect Support</div>
+                </div>
               </div>
-              <span className="text-[11px] text-brand-muted">
-                {formatDateTime(reply.at)}
+              <span className="shrink-0 text-[11px] text-brand-muted">
+                {formatDateTime(mail.received_at)} · {timeAgo(mail.received_at)}
               </span>
             </div>
             <p className="whitespace-pre-wrap text-sm leading-relaxed text-brand-dark">
-              {reply.text}
+              {mail.body || "(empty body)"}
             </p>
           </article>
+        </div>
+
+        {/* Outgoing replies — right */}
+        {localReplies.map((reply) => (
+          <div key={reply.id} className="flex justify-end">
+            <article className="max-w-[82%] rounded-2xl border border-amber-100 bg-amber-50 p-4 shadow-sm">
+              <div className="mb-1.5 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-semibold text-brand-dark">You replied</span>
+                  {replyStatusLabel(reply.status) && (
+                    <span className="rounded-full border border-brand-border bg-white px-1.5 py-0.5 text-[10px] font-medium text-brand-muted">
+                      {replyStatusLabel(reply.status)}
+                    </span>
+                  )}
+                </div>
+                <span className="shrink-0 text-[11px] text-brand-muted">{formatDateTime(reply.at)}</span>
+              </div>
+              <p className="whitespace-pre-wrap text-sm leading-relaxed text-brand-dark">{reply.text}</p>
+            </article>
+          </div>
         ))}
       </div>
 

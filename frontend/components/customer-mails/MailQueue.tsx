@@ -47,17 +47,18 @@ function MailQueueBase({
     <div className="flex h-full flex-col">
       <div className="px-3 pt-3">
         <div className="relative">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-brand-muted" />
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
           <input
             value={searchInput}
             onChange={(e) => onSearchChange(e.target.value)}
             placeholder="Search subject or sender…"
-            className="w-full rounded-lg border border-brand-border bg-white py-2 pl-8 pr-3 text-sm outline-none focus:border-signal-red"
+            aria-label="Search mails by subject or sender"
+            className="w-full rounded-lg border border-brand-border bg-white py-2 pl-8 pr-3 text-sm outline-none focus:border-signal-red/40"
           />
         </div>
       </div>
 
-      <div className="flex gap-1.5 overflow-x-auto px-3 py-2.5 scrollbar-thin">
+      <div className="flex gap-1 overflow-x-auto border-b border-brand-border px-3 py-2.5 scrollbar-thin">
         {tabs.map((t) => {
           const active = t.key === activeTab;
           return (
@@ -66,19 +67,26 @@ function MailQueueBase({
               type="button"
               onClick={() => onTabChange(t.key)}
               className={[
-                "shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors",
+                "inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition",
                 active
-                  ? "border-signal-red bg-red-50 text-signal-red"
-                  : "border-brand-border bg-white text-brand-muted hover:bg-gray-50",
+                  ? "bg-red-50 text-signal-red ring-1 ring-signal-red/30"
+                  : "text-brand-muted hover:bg-gray-100",
               ].join(" ")}
             >
-              {t.label} ({counts[t.key] ?? 0})
+              {t.label}
+              <span
+                className={`rounded-full px-1.5 text-[10px] font-bold ${
+                  active ? "bg-signal-red text-white" : "bg-gray-100 text-brand-muted"
+                }`}
+              >
+                {counts[t.key] ?? 0}
+              </span>
             </button>
           );
         })}
       </div>
 
-      <div className="flex-1 space-y-2 overflow-y-auto px-3 pb-3">
+      <div className="flex-1 overflow-y-auto">
         {loading && mails.length === 0 ? (
           <div className="py-8 text-center text-xs text-brand-muted">Loading…</div>
         ) : mails.length === 0 ? (
@@ -99,7 +107,7 @@ function MailQueueBase({
               <button
                 type="button"
                 onClick={() => setVisible((v) => v + PAGE)}
-                className="w-full rounded-lg border border-brand-border bg-white py-2 text-xs text-brand-muted hover:bg-gray-50"
+                className="w-full border-b border-brand-border py-2.5 text-xs text-brand-muted hover:bg-gray-50"
               >
                 Load more ({mails.length - visible} remaining)
               </button>

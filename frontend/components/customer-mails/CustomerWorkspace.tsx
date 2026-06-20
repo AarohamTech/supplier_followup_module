@@ -452,7 +452,7 @@ export default function CustomerWorkspace() {
         title="Customer Response Workspace"
         description="Manage customer communication, internal coordination and response preparation."
         icon={Inbox}
-        tone="blue"
+        tone="red"
         actions={
           <>
           {toast && (
@@ -514,7 +514,7 @@ export default function CustomerWorkspace() {
             <span className="rounded bg-gray-100 px-1.5 py-0.5 text-brand-dark">{selected.ai_category}</span>
           )}
           {selected.ai_action && (
-            <span className="rounded bg-violet-100 px-1.5 py-0.5 text-violet-700">→ {selected.ai_action}</span>
+            <span className="rounded bg-red-50 px-1.5 py-0.5 text-signal-red">→ {selected.ai_action}</span>
           )}
           {selected.ai_summary && (
             <span className="min-w-0 flex-1 text-brand-muted">{selected.ai_summary}</span>
@@ -525,7 +525,7 @@ export default function CustomerWorkspace() {
       {/* Workspace grid */}
       <div className="flex min-h-0 flex-1 flex-col gap-3 md:flex-row">
         {/* Left queue */}
-        <aside className="max-h-64 w-full shrink-0 overflow-hidden rounded-xl border border-brand-border bg-white md:max-h-none md:w-72">
+        <aside className="max-h-[60vh] w-full shrink-0 overflow-hidden rounded-xl border border-brand-border bg-white shadow-sm md:max-h-none md:w-80">
           <MailQueue
             tabs={QUEUE_TABS}
             activeTab={activeTab}
@@ -541,7 +541,7 @@ export default function CustomerWorkspace() {
         </aside>
 
         {/* Center conversation */}
-        <section className="flex min-w-0 flex-1 overflow-hidden rounded-xl border border-brand-border bg-white">
+        <section className="flex min-w-0 flex-1 overflow-hidden rounded-xl border border-brand-border bg-white shadow-sm">
           {selected ? (
             <div className="flex h-full w-full flex-col">
               <ConversationPanel
@@ -561,7 +561,7 @@ export default function CustomerWorkspace() {
         </section>
 
         {/* Right context (fixed on xl, drawer below) */}
-        <aside className="hidden w-80 shrink-0 overflow-hidden rounded-xl border border-brand-border bg-white xl:block">
+        <aside className="hidden w-80 shrink-0 overflow-hidden rounded-xl border border-brand-border bg-white shadow-sm xl:block">
           {rightPanel}
         </aside>
       </div>
@@ -574,12 +574,18 @@ export default function CustomerWorkspace() {
             onClick={closeContext}
             aria-hidden
           />
-          <div className="absolute right-0 top-0 flex h-full w-[90%] max-w-sm flex-col bg-white shadow-xl">
+          <div
+            className="absolute right-0 top-0 flex h-full w-[90%] max-w-sm flex-col bg-white shadow-xl"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Procurement context"
+          >
             <div className="flex items-center justify-between border-b border-brand-border px-4 py-3">
               <span className="text-sm font-semibold">Procurement Context</span>
               <button
                 type="button"
                 onClick={closeContext}
+                aria-label="Close procurement context"
                 className="rounded-md p-1 text-brand-muted hover:bg-gray-100"
               >
                 <X className="h-4 w-4" />

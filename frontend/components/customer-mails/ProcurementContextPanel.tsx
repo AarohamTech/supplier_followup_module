@@ -30,7 +30,7 @@ interface ProcurementContextPanelProps {
 
 function DataCard({ label, value, tone }: { label: string; value: string | null; tone?: string }) {
   return (
-    <div className="rounded-lg border border-brand-border bg-white p-2.5">
+    <div className="rounded-lg border border-brand-border bg-gray-50/60 p-2.5">
       <div className="text-[10px] font-medium uppercase tracking-wide text-brand-muted">
         {label}
       </div>
@@ -61,14 +61,14 @@ function ProcurementContextPanelBase({
   const riskTone = c?.risk ? RISK_TONE[c.risk] || "" : "";
 
   return (
-    <div className="space-y-3 p-3">
+    <div className="space-y-3 p-4">
       <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-signal-red">
         <Sparkles className="h-3.5 w-3.5" />
         Auto Procurement Summary
       </div>
 
       {/* Primary material */}
-      <div className="rounded-xl border border-red-200 bg-red-50/50 p-3">
+      <div className="rounded-xl border border-red-100 bg-red-50/40 p-3">
         <div className="flex items-center justify-between gap-2">
           <div className="text-[10px] font-medium uppercase tracking-wide text-brand-muted">
             Primary Material
@@ -96,7 +96,7 @@ function ProcurementContextPanelBase({
 
       <DataCard label="Supplier Commitment Date" value={formatDate(c?.commitmentDate)} />
 
-      <div className="rounded-lg border border-brand-border bg-white p-2.5">
+      <div className="rounded-lg border border-brand-border bg-gray-50/60 p-2.5">
         <div className="text-[10px] font-medium uppercase tracking-wide text-brand-muted">
           Latest Supplier Update
         </div>
@@ -107,13 +107,13 @@ function ProcurementContextPanelBase({
 
       {/* Linked materials */}
       {c && c.materials.length > 0 && (
-        <div className="rounded-lg border border-brand-border bg-white p-2.5">
+        <div className="rounded-lg border border-brand-border bg-gray-50/60 p-2.5">
           <div className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-brand-muted">
             Linked Materials (PO Items)
           </div>
           <div className="space-y-1">
             {c.materials.map((m, i) => (
-              <div key={i} className="flex items-center justify-between gap-2 text-xs">
+              <div key={`${m.name}-${i}`} className="flex items-center justify-between gap-2 text-xs">
                 <span className="truncate text-brand-dark">{m.name}</span>
                 <span className="shrink-0 text-brand-muted">{m.stock}</span>
                 <span className="shrink-0 font-medium text-signal-red">{m.status}</span>
@@ -124,8 +124,8 @@ function ProcurementContextPanelBase({
       )}
 
       {/* AI Suggested Reply */}
-      <div className="rounded-xl border border-violet-200 bg-violet-50/60 p-3">
-        <div className="flex items-center gap-1.5 text-[11px] font-semibold text-violet-700">
+      <div className="rounded-xl border border-signal-red/30 bg-red-50/60 p-3">
+        <div className="flex items-center gap-1.5 text-[11px] font-semibold text-signal-red">
           <Sparkles className="h-3.5 w-3.5" />
           AI Suggested Reply
         </div>
@@ -134,7 +134,7 @@ function ProcurementContextPanelBase({
           <button
             type="button"
             onClick={onUseSuggestion}
-            className="flex-1 rounded-md border border-violet-300 bg-white py-1.5 text-xs font-medium text-violet-700 hover:bg-violet-50"
+            className="flex-1 rounded-md border border-brand-border bg-white py-1.5 text-xs font-medium text-brand-dark hover:bg-gray-50"
           >
             Use this reply
           </button>
@@ -143,7 +143,7 @@ function ProcurementContextPanelBase({
             onClick={onAiDraft}
             disabled={aiLoading}
             title="Rewrite with AI (uses the LLM)"
-            className="inline-flex items-center justify-center gap-1 rounded-md bg-violet-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-violet-700 disabled:opacity-50"
+            className="inline-flex items-center justify-center gap-1 rounded-md bg-signal-red px-2.5 py-1.5 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50"
           >
             {aiLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
             {aiLoading ? "Writing…" : "Improve with AI"}
