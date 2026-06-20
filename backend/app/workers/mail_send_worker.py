@@ -6,6 +6,7 @@ SMTP setting is missing, the worker returns a no-op result without raising.
 """
 from __future__ import annotations
 
+import concurrent.futures
 import logging
 import smtplib
 import re
@@ -201,60 +202,114 @@ def test_smtp_connection() -> dict[str, Any]:
         }
 
 
-def send_ready_messages(limit: int = 25) -> dict[str, Any]:
+def _send_bucket(message_ids: list[int]) -> list[dict[str, Any]]:
+    """Send a disjoint slice of messages over a SINGLE reused SMTP connection.
+
+    Runs in its own thread with its own DB session. Reusing one connection for the
+    whole slice (instead of reconnecting per message) is the main throughput win;
+    several buckets run in parallel for additional speed.
+    """
+    results: list[dict[str, Any]] = []
+    db: Session = SessionLocal()
+    client: smtplib.SMTP | None = None
+    try:
+        for mid in message_ids:
+            msg = db.get(CommunicationMessage, mid)
+            # Re-check status: a user-initiated immediate send may have claimed it.
+            if msg is None or msg.direction != "OUTGOING" or msg.status != "READY":
+                continue
+            try:
+                if client is None:
+                    client = _open_client()
+                em = _build_email(msg)
+                client.send_message(em)
+                _sync_delivery_state(db, msg, status="SENT")
+                db.commit()
+                results.append({"message_id": mid, "status": "SENT"})
+            except Exception as exc:  # noqa: BLE001
+                log.exception("Failed to send message id=%s", mid)
+                db.rollback()
+                # The connection may be dead — drop it so the next message reconnects.
+                if client is not None:
+                    try:
+                        client.quit()
+                    except Exception:  # noqa: BLE001
+                        pass
+                    client = None
+                msg = db.get(CommunicationMessage, mid)
+                if msg is None:
+                    continue
+                retries = _bump_retry(msg, str(exc))
+                if retries >= MAX_SEND_RETRIES:
+                    _sync_delivery_state(db, msg, status="FAILED", error=str(exc))
+                    results.append(
+                        {"message_id": mid, "status": "FAILED", "retries": retries, "error": str(exc)}
+                    )
+                else:
+                    msg.error_message = str(exc)
+                    results.append(
+                        {"message_id": mid, "status": "RETRY", "retries": retries, "error": str(exc)}
+                    )
+                db.commit()
+    finally:
+        if client is not None:
+            try:
+                client.quit()
+            except Exception:  # noqa: BLE001
+                pass
+        db.close()
+    return results
+
+
+def send_ready_messages(limit: int | None = None) -> dict[str, Any]:
     ready, reason = _config_ready()
     if not ready:
         log.info("Mail send worker disabled: %s", reason)
         return {"enabled": False, "reason": reason, "attempted": 0, "results": []}
 
+    if limit is None:
+        limit = int(getattr(settings, "MAIL_SEND_BATCH_LIMIT", 50) or 50)
+
     db: Session = SessionLocal()
-    results: list[dict[str, Any]] = []
     try:
-        rows = db.scalars(
-            select(CommunicationMessage)
-            .where(
-                CommunicationMessage.direction == "OUTGOING",
-                CommunicationMessage.status == "READY",
-            )
-            .order_by(CommunicationMessage.created_at.asc())
-            .limit(limit)
-        ).all()
-
-        for msg in rows:
-            try:
-                em = _build_email(msg)
-                _send_one(em)
-                _sync_delivery_state(db, msg, status="SENT")
-                db.commit()
-                results.append({"message_id": msg.id, "status": "SENT"})
-            except Exception as exc:  # noqa: BLE001
-                log.exception("Failed to send message id=%s", msg.id)
-                retries = _bump_retry(msg, str(exc))
-                if retries >= MAX_SEND_RETRIES:
-                    _sync_delivery_state(db, msg, status="FAILED", error=str(exc))
-                    results.append(
-                        {
-                            "message_id": msg.id,
-                            "status": "FAILED",
-                            "retries": retries,
-                            "error": str(exc),
-                        }
-                    )
-                else:
-                    msg.error_message = str(exc)
-                    results.append(
-                        {
-                            "message_id": msg.id,
-                            "status": "RETRY",
-                            "retries": retries,
-                            "error": str(exc),
-                        }
-                    )
-                db.commit()
-
-        return {"enabled": True, "attempted": len(rows), "results": results, "ran_at": datetime.utcnow().isoformat()}
+        ids = list(
+            db.scalars(
+                select(CommunicationMessage.id)
+                .where(
+                    CommunicationMessage.direction == "OUTGOING",
+                    CommunicationMessage.status == "READY",
+                )
+                .order_by(CommunicationMessage.created_at.asc())
+                .limit(limit)
+            ).all()
+        )
     finally:
         db.close()
+
+    if not ids:
+        return {"enabled": True, "attempted": 0, "sent": 0, "results": [], "ran_at": datetime.utcnow().isoformat()}
+
+    # Partition into disjoint round-robin buckets so no two workers touch the same
+    # message (no double-send), then send buckets in parallel.
+    workers = max(1, min(int(getattr(settings, "SMTP_SEND_WORKERS", 4) or 4), len(ids)))
+    results: list[dict[str, Any]] = []
+    if workers == 1:
+        results = _send_bucket(ids)
+    else:
+        buckets = [b for b in (ids[i::workers] for i in range(workers)) if b]
+        with concurrent.futures.ThreadPoolExecutor(max_workers=len(buckets)) as ex:
+            for res in ex.map(_send_bucket, buckets):
+                results.extend(res)
+
+    sent = sum(1 for r in results if r.get("status") == "SENT")
+    return {
+        "enabled": True,
+        "attempted": len(ids),
+        "sent": sent,
+        "workers": workers,
+        "results": results,
+        "ran_at": datetime.utcnow().isoformat(),
+    }
 
 
 def send_message_now(db: Session, message_id: int) -> dict[str, Any]:

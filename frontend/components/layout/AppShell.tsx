@@ -8,6 +8,7 @@ import Sidebar from "@/components/layout/Sidebar";
 import Topbar from "@/components/layout/Topbar";
 import StoreBootstrap from "@/components/StoreBootstrap";
 import MailDraftModal from "@/components/MailDraftModal";
+import SendToaster from "@/components/SendToaster";
 
 const PUBLIC_PATHS = ["/login"];
 
@@ -69,6 +70,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </div>
       <MailDraftModal />
+      <SendToaster />
     </>
   );
 }

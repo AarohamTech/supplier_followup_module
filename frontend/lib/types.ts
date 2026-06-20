@@ -1,5 +1,14 @@
 export type Signal = "GREEN" | "YELLOW" | "RED" | "BLACK";
 
+export interface SentFeedItem {
+  id: number;
+  subject: string | null;
+  supplier_name: string | null;
+  to: string | null;
+  mail_type: string | null;
+  sent_at: string | null;
+}
+
 export interface ProcurementRecord {
   id: number;
   crm_no: string;

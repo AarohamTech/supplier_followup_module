@@ -114,6 +114,12 @@ class Settings(BaseSettings):
     AUTO_REPLY_INTERVAL_MINUTES: int = Field(...)
     MAIL_SEND_INTERVAL_MINUTES: int = Field(...)
 
+    # Outbound send throughput: how many parallel SMTP connections the send
+    # worker uses, and the max messages drained per run. Safe defaults; override
+    # in .env for heavier traffic.
+    SMTP_SEND_WORKERS: int = Field(default=4)
+    MAIL_SEND_BATCH_LIMIT: int = Field(default=50)
+
     @property
     def embed_api_key(self) -> str | None:
         """Embedding key, falling back to the chat LLM key (same NVIDIA account)."""

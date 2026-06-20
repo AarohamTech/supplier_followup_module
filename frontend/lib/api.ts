@@ -1,6 +1,7 @@
 // Centralized API client and typed helpers.
 // Calls go through Next.js rewrites (/api/* → backend /api/*).
 import type {
+  SentFeedItem,
   ProcurementRecord,
   ProcurementListResponse,
   DashboardKpis,
@@ -242,6 +243,12 @@ export const api = {
   // ─── Communication Hub (real-data aggregation layer) ──────────────────────
   hubDashboard: () =>
     http<CommHubDashboard>("/api/communication-hub/dashboard"),
+
+  // Recently-sent feed — powers the global "mail sent" toasts.
+  sentFeed: (since?: string) =>
+    http<{ items: SentFeedItem[]; server_time: string }>(
+      `/api/communication-hub/sent-feed${since ? `?since=${encodeURIComponent(since)}` : ""}`,
+    ),
 
   hubSuppliers: () =>
     http<CommHubSupplier[]>("/api/communication-hub/suppliers"),

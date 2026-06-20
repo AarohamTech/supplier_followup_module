@@ -46,6 +46,47 @@ log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/communication-hub", tags=["communication-hub"])
 
+
+@router.get("/sent-feed")
+def sent_feed(
+    since: Optional[str] = Query(None, description="ISO timestamp; only sends after this"),
+    limit: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Recently SENT outbound messages — drives the live 'mail sent' toasts.
+
+    Returns `server_time` (naive UTC) so the client can poll back with it as
+    `since` and receive only newly-sent items.
+    """
+    stmt = select(CommunicationMessage).where(
+        CommunicationMessage.direction == "OUTGOING",
+        CommunicationMessage.status == "SENT",
+        CommunicationMessage.sent_at.isnot(None),
+    )
+    if since:
+        try:
+            ts = datetime.fromisoformat(since.replace("Z", ""))
+            if ts.tzinfo is not None:
+                ts = ts.replace(tzinfo=None)
+            stmt = stmt.where(CommunicationMessage.sent_at > ts)
+        except ValueError:
+            pass
+    rows = db.scalars(
+        stmt.order_by(CommunicationMessage.sent_at.desc()).limit(limit)
+    ).all()
+    items = [
+        {
+            "id": m.id,
+            "subject": m.subject,
+            "supplier_name": m.supplier_name,
+            "to": (m.to_emails[0] if m.to_emails else m.receiver_email),
+            "mail_type": m.mail_type,
+            "sent_at": m.sent_at.isoformat() if m.sent_at else None,
+        }
+        for m in rows
+    ]
+    return {"items": items, "server_time": datetime.utcnow().isoformat()}
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Signal display helpers (read-only mapping, no business logic)
 # ─────────────────────────────────────────────────────────────────────────────
