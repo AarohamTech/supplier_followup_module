@@ -19,6 +19,7 @@ from ..models.customer_mail import (
 )
 from ..models.procurement import ProcurementRecord
 from . import ai_service
+from . import brand_email
 from . import communication_message_service as msg_service
 from . import po_followup_service
 
@@ -176,19 +177,14 @@ def _reply_html(body: str) -> str:
         .replace("\r", "\n")
         .replace("\n", "<br/>")
     )
-    return (
-        '<div style="background:#f1f5f9;padding:18px;font-family:Arial,Helvetica,sans-serif;">'
-        '<div style="max-width:640px;margin:0 auto;background:#ffffff;border:1px solid #e2e8f0;'
-        'border-radius:10px;overflow:hidden;">'
-        '<div style="background:#0f172a;padding:14px 20px;">'
-        '<span style="color:#ffffff;font-size:16px;font-weight:700;">ProcureDirect</span></div>'
-        '<div style="padding:20px;color:#1e293b;font-size:14px;line-height:1.6;">'
-        f"{safe}"
-        "</div>"
-        '<div style="background:#f8fafc;border-top:1px solid #e2e8f0;padding:10px 20px;'
-        'font-size:11px;color:#94a3b8;">Sent from the Supplier Follow-up Agent.</div>'
-        "</div></div>"
+    inner = (
+        brand_email.header_html("Customer Support")
+        + '<div style="padding:20px;color:#1f2937;font-size:14px;line-height:1.6;">'
+        + f"{safe}"
+        + "</div>"
+        + brand_email.footer_html("Sent from Harmony × Hariom.")
     )
+    return brand_email.shell(inner, max_width=640)
 
 
 def _humanize_date(value: Any) -> str | None:

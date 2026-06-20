@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from ..core.config import settings
 from ..models.mail_history import MailHistory
 from ..models.procurement import ProcurementRecord
-from . import ai_service, communication_message_service as msg_service
+from . import ai_service, brand_email, communication_message_service as msg_service
 from . import embeddings_service, po_followup_service, vector_store
 from .followup_engine import apply_followup_logic
 
@@ -128,22 +128,16 @@ def _po_body_html(
     reply_block = ""
     if reply_table_html:
         reply_block = (
-            "<p style=\"margin:16px 0 4px;font-weight:600;color:#0f172a;\">"
+            "<p style=\"margin:16px 0 4px;font-weight:600;color:#B01624;\">"
             "Please reply using this table (one row per material):</p>"
             f"{reply_table_html}"
             "<p style=\"font-size:12px;color:#475569;margin:6px 0 0;\">"
             "Allowed status values: CONFIRMED, DELAYED, PARTIAL, DISPATCHED, ON_HOLD, CANCELLED.</p>"
         )
 
-    return (
-        "<div style=\"background:#f1f5f9;padding:18px;font-family:Arial,Helvetica,sans-serif;\">"
-        "<div style=\"max-width:760px;margin:0 auto;background:#ffffff;border:1px solid #e2e8f0;"
-        "border-radius:10px;overflow:hidden;\">"
-        # Header bar
-        "<div style=\"background:#0f172a;padding:14px 20px;\">"
-        "<span style=\"color:#ffffff;font-size:16px;font-weight:700;\">Procurement Follow-up</span>"
-        "</div>"
-        "<div style=\"padding:20px;color:#1e293b;font-size:13px;line-height:1.5;\">"
+    inner = (
+        brand_email.header_html("Procurement Follow-up")
+        + "<div style=\"padding:20px;color:#1f2937;font-size:13px;line-height:1.5;\">"
         + (
             intro_html
             or (
@@ -156,34 +150,35 @@ def _po_body_html(
         # PO summary card
         "<table role=\"presentation\" style=\"border-collapse:collapse;width:100%;margin:0 0 16px;\">"
         "<tr>"
-        "<td style=\"background:#f8fafc;border:1px solid #e2e8f0;padding:10px 12px;font-size:12px;\">"
-        f"<div style=\"color:#64748b;\">PO Number</div><div style=\"font-weight:700;font-size:14px;\">{po_no}</div>"
+        "<td style=\"background:#fff5f6;border:1px solid #f4d6da;padding:10px 12px;font-size:12px;\">"
+        f"<div style=\"color:#9b6b70;\">PO Number</div><div style=\"font-weight:700;font-size:14px;color:#1f2937;\">{po_no}</div>"
         "</td>"
-        "<td style=\"background:#f8fafc;border:1px solid #e2e8f0;padding:10px 12px;font-size:12px;\">"
-        f"<div style=\"color:#64748b;\">Materials</div><div style=\"font-weight:700;font-size:14px;\">{count}</div>"
+        "<td style=\"background:#fff5f6;border:1px solid #f4d6da;padding:10px 12px;font-size:12px;\">"
+        f"<div style=\"color:#9b6b70;\">Materials</div><div style=\"font-weight:700;font-size:14px;color:#1f2937;\">{count}</div>"
         "</td>"
-        "<td style=\"background:#f8fafc;border:1px solid #e2e8f0;padding:10px 12px;font-size:12px;\">"
-        f"<div style=\"color:#64748b;\">Earliest Due</div><div style=\"font-weight:700;font-size:14px;\">{due}</div>"
+        "<td style=\"background:#fff5f6;border:1px solid #f4d6da;padding:10px 12px;font-size:12px;\">"
+        f"<div style=\"color:#9b6b70;\">Earliest Due</div><div style=\"font-weight:700;font-size:14px;color:#1f2937;\">{due}</div>"
         "</td>"
-        "<td style=\"background:#f8fafc;border:1px solid #e2e8f0;padding:10px 12px;font-size:12px;\">"
-        f"<div style=\"color:#64748b;\">Risk Signal</div>"
+        "<td style=\"background:#fff5f6;border:1px solid #f4d6da;padding:10px 12px;font-size:12px;\">"
+        f"<div style=\"color:#9b6b70;\">Risk Signal</div>"
         f"<div><span style=\"display:inline-block;padding:2px 10px;border-radius:9999px;"
         f"background:{signal_bg};color:{signal_fg};font-weight:700;font-size:12px;\">{signal}</span></div>"
         "</td>"
         "</tr></table>"
         # Material summary table
-        "<p style=\"margin:0 0 4px;font-weight:600;color:#0f172a;\">Material-wise summary</p>"
+        "<p style=\"margin:0 0 4px;font-weight:600;color:#B01624;\">Material-wise summary</p>"
         f"{table_html}"
         # Reply table
         f"{reply_block}"
         # Footer
         "<p style=\"margin:18px 0 0;\">Regards,<br/><strong>Procurement Team</strong></p>"
         "</div>"
-        "<div style=\"background:#f8fafc;border-top:1px solid #e2e8f0;padding:10px 20px;"
-        "font-size:11px;color:#94a3b8;\">This is an automated follow-up from the Supplier "
-        "Follow-up Agent. Please reply keeping the table format intact.</div>"
-        "</div></div>"
+        + brand_email.footer_html(
+            "This is an automated follow-up from Harmony × Hariom. "
+            "Please reply keeping the table format intact."
+        )
     )
+    return brand_email.shell(inner, max_width=760)
 
 
 def _ai_intro_html(text: str) -> str:

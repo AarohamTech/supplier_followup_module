@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Wand2, Loader2, RotateCcw, Save } from "lucide-react";
 
+import { LogoLoader } from "@/components/brand/Logo";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import type { AiPromptsMap } from "@/lib/types";
@@ -98,7 +99,7 @@ export default function AiPromptsPage() {
 
       {loading ? (
         <div className="empty-state">
-          <Loader2 className="mx-auto mb-2 h-5 w-5 animate-spin" /> Loading…
+          <LogoLoader size={56} label="Loading prompts…" />
         </div>
       ) : (
         <div className="space-y-4">

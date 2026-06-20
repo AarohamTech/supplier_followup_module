@@ -4,6 +4,7 @@ import { Bell, LogOut, Menu } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
+import { Logo } from "@/components/brand/Logo";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 
@@ -51,12 +52,17 @@ export default function Topbar({ onMenuClick }: { onMenuClick?: () => void }) {
         >
           <Menu size={18} />
         </button>
-        <div className="flex flex-col">
-          <span className="text-signal-red font-bold text-lg leading-tight">Supplier Follow-up Agent</span>
-          <span className="hidden text-xs text-brand-muted leading-tight sm:block">
-            PO-wise and Material-wise Automated Follow-up System
+        <Link href="/" className="flex items-center gap-3" aria-label="Home">
+          <span className="text-signal-red">
+            <Logo size={34} />
           </span>
-        </div>
+          <div className="flex flex-col">
+            <span className="text-signal-red font-bold text-lg leading-tight">Supplier Follow-up Agent</span>
+            <span className="hidden text-xs text-brand-muted leading-tight sm:block">
+              Harmony × Hariom · Automated PO &amp; Material Follow-up
+            </span>
+          </div>
+        </Link>
         <div className="flex-1" />
         <Link
           href="/mail-history"

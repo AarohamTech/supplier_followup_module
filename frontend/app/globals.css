@@ -78,6 +78,16 @@
 .animate-pulse-ring { animation: pulseRing 2s ease-out infinite; }
 .page-enter         { animation: fadeInUp .35s ease-out both; }
 
+/* Harmony logo "draw" loop — used for loaders and AI-generating states. */
+@keyframes logoDraw {
+  0%   { stroke-dashoffset: 1; }
+  45%  { stroke-dashoffset: 0; }
+  55%  { stroke-dashoffset: 0; }
+  100% { stroke-dashoffset: -1; }
+}
+.logo-anim rect, .logo-anim path { stroke-dasharray: 1; animation: logoDraw 2.1s ease-in-out infinite; }
+.logo-anim path { animation-delay: .18s; }
+
 /* Smooth, consistent micro-interactions across the whole app. */
 button, a, .card, .chip, .badge, input, select, textarea {
   transition: background-color .15s ease, color .15s ease, box-shadow .15s ease,
