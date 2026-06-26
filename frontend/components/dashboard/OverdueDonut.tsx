@@ -8,7 +8,7 @@ export default function OverdueDonut() {
     { name: "Total", value: k?.total_records ?? 0 },
     { name: "Overdue", value: k?.overdue_count ?? 0 },
     { name: "Due Today", value: k?.due_today_count ?? 0 },
-    { name: "AI Req.", value: k?.ai_required_count ?? 0 },
+    { name: "HI Req.", value: k?.ai_required_count ?? 0 },
   ];
   return (
     <div className="card p-4">

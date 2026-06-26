@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowLeft, MessageSquare, Send } from "lucide-react";
 
 import { api } from "@/lib/api";
@@ -37,28 +37,43 @@ export default function PoChatPanel({
   const [sending, setSending] = useState(false);
   const endRef = useRef<HTMLDivElement | null>(null);
 
-  useEffect(() => {
-    if (!po) {
-      setMessages([]);
-      return;
-    }
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-    (async () => {
-      try {
-        const m = await api.portalPoMessages(po.supplier_po_no);
-        if (!cancelled) setMessages(m);
-      } catch (e) {
-        if (!cancelled) setError((e as Error).message);
-      } finally {
-        if (!cancelled) setLoading(false);
+  const poNo = po?.supplier_po_no;
+
+  // Fetch the thread. `silent` polls in the background (no spinner) and only
+  // updates state when the newest message changes — so live updates don't
+  // disturb scrolling or re-render needlessly.
+  const load = useCallback(
+    async (silent: boolean) => {
+      if (!poNo) {
+        setMessages([]);
+        return;
       }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [po?.supplier_po_no]); // eslint-disable-line react-hooks/exhaustive-deps
+      if (!silent) setLoading(true);
+      try {
+        const m = await api.portalPoMessages(poNo);
+        setMessages((prev) =>
+          prev.length === m.length && prev[prev.length - 1]?.id === m[m.length - 1]?.id ? prev : m,
+        );
+        setError(null);
+      } catch (e) {
+        if (!silent) setError((e as Error).message);
+      } finally {
+        if (!silent) setLoading(false);
+      }
+    },
+    [poNo],
+  );
+
+  useEffect(() => {
+    void load(false);
+  }, [load]);
+
+  // Live polling: pick up the buyer's replies without a manual refresh.
+  useEffect(() => {
+    if (!poNo) return;
+    const t = setInterval(() => void load(true), 8000);
+    return () => clearInterval(t);
+  }, [poNo, load]);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });

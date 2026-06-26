@@ -257,7 +257,7 @@ function supplierMatchesFilter(s: CommHubSupplier, filter: QueueFilter): boolean
 
 function recommendedAction(signal: TaskSignal, draftCount: number, openTasks: number): string {
   if (signal === "BLACK") return "Escalate now";
-  if (signal === "RED") return draftCount > 0 ? "Send strong follow-up" : "Generate AI reply";
+  if (signal === "RED") return draftCount > 0 ? "Send strong follow-up" : "Generate HI reply";
   if (draftCount > 0) return "Review and send draft";
   if (openTasks > 0) return "Close open actions";
   if (signal === "YELLOW") return "Send reminder";
@@ -651,9 +651,9 @@ export default function Page() {
     try {
       const result = await api.hubAiReply(activePo.procurement_record_id);
       setComposer(result.body);
-      pushToast("ok", "AI reply generated");
+      pushToast("ok", "HI reply generated");
     } catch (e: unknown) {
-      pushToast("err", e instanceof Error ? e.message : "AI reply failed");
+      pushToast("err", e instanceof Error ? e.message : "HI reply failed");
     }
   };
 
@@ -937,9 +937,9 @@ export default function Page() {
                     <button
                       onClick={() => void handleAiReply()}
                       className="inline-flex items-center gap-1 rounded-md border border-signal-red/30 bg-red-50 px-2.5 py-1.5 text-xs font-semibold text-signal-red hover:bg-red-100"
-                      title="Generate an AI reply"
+                      title="Generate a Harmony Intelligent reply"
                     >
-                      <Sparkles size={13} /> AI
+                      <Sparkles size={13} /> HI
                     </button>
                     <button
                       className="rounded-md bg-signal-red p-2 text-white shadow-sm hover:opacity-90 disabled:opacity-50"
@@ -1010,7 +1010,7 @@ export default function Page() {
               <div>
                 <SectionTitle>Quick actions</SectionTitle>
                 <div className="grid grid-cols-2 gap-2">
-                  <QuickAction icon={<Sparkles size={14} />} label="AI Reply" onClick={() => void handleAiReply()} disabled={noPo} accent />
+                  <QuickAction icon={<Sparkles size={14} />} label="HI Reply" onClick={() => void handleAiReply()} disabled={noPo} accent />
                   <QuickAction icon={<Send size={14} />} label="Send Draft" onClick={() => void handleSendMailNow()} disabled={noPo} />
                   <QuickAction icon={<AlertTriangle size={14} />} label="Escalate" onClick={() => void handleEscalate()} disabled={noPo} danger />
                   <QuickAction icon={<UserPlus size={14} />} label="Assign" onClick={seedAssign} disabled={!activeSupplier} />
@@ -1022,7 +1022,7 @@ export default function Page() {
               {/* AI summary */}
               {activePo && (
                 <div>
-                  <SectionTitle>AI summary</SectionTitle>
+                  <SectionTitle>Harmony Intelligent summary</SectionTitle>
                   <div className="space-y-1.5 rounded-lg border border-brand-border bg-gray-50/60 p-3 text-xs leading-relaxed text-gray-700">
                     <p>
                       Conversation around {activePo.material_name || "this PO"} — {draftCount} draft / {sentCount} sent.
@@ -1126,7 +1126,7 @@ export default function Page() {
             <RailIcon title="Details & actions" onClick={() => setDetailsOpen(true)}>
               <Sparkles size={18} />
             </RailIcon>
-            <RailIcon title="AI Reply" onClick={() => void handleAiReply()} disabled={noPo}>
+            <RailIcon title="HI Reply" onClick={() => void handleAiReply()} disabled={noPo}>
               <Sparkles size={18} />
             </RailIcon>
             <RailIcon title="Send Draft" onClick={() => void handleSendMailNow()} disabled={noPo}>

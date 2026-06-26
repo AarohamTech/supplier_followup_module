@@ -1109,6 +1109,19 @@ def escalate(
         watchers=["Sourcing Head"],
     )
     db.add(task)
+
+    # Flag every line of this PO as escalated so it floats to the top of the
+    # supplier's PO list (and is visible as escalated on both sides).
+    po_records = db.scalars(
+        select(ProcurementRecord).where(
+            ProcurementRecord.supplier_po_no == rec.supplier_po_no,
+            ProcurementRecord.supplier_name == rec.supplier_name,
+        )
+    ).all()
+    for r in po_records or [rec]:
+        if (r.escalation_level or "NONE").upper() == "NONE":
+            r.escalation_level = "ESCALATED"
+
     db.commit()
     db.refresh(history)
     db.refresh(task)

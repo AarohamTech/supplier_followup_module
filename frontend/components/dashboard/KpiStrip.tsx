@@ -10,7 +10,7 @@ export default function KpiStrip() {
     { icon: AlertCircle, label: "OVERDUE", value: k?.overdue_count ?? 0, tint: "bg-red-50 text-signal-red", strong: true },
     { icon: Zap, label: "BLACK / CRITICAL", value: k?.black_count ?? 0, tint: "bg-gray-100 text-gray-900", strong: true },
     { icon: MessageSquare, label: "RED", value: k?.red_count ?? 0, tint: "bg-red-50 text-signal-red" },
-    { icon: Sparkles, label: "AI REQUIRED", value: k?.ai_required_count ?? 0, tint: "bg-purple-50 text-purple-600" },
+    { icon: Sparkles, label: "HI REQUIRED", value: k?.ai_required_count ?? 0, tint: "bg-purple-50 text-purple-600" },
   ];
   return (
     <div className="card grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 divide-x divide-brand-border">

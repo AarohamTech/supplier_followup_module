@@ -182,7 +182,7 @@ export default function BlackFollowupsPage() {
           <div>
             <h1 className="page-title">Black Follow-ups</h1>
             <p className="page-subtitle">
-              How the AI is auto-chasing the most critical POs — it keeps following up until a
+              How Harmony Intelligent is auto-chasing the most critical POs — it keeps following up until a
               commitment date is secured.
             </p>
           </div>
@@ -355,7 +355,7 @@ function DetailDrawer({
                 </span>
               ) : (
                 <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-semibold text-signal-red">
-                  <Clock className="h-3 w-3" /> AI chasing for commitment
+                  <Clock className="h-3 w-3" /> HI chasing for commitment
                 </span>
               )}
             </div>
@@ -430,7 +430,7 @@ function DetailDrawer({
                 <Logo size={28} animated />
               </span>
               <span className="text-xs font-medium tracking-wide text-violet-700">
-                AI is drafting the follow-up…
+                Harmony Intelligent is drafting the follow-up…
               </span>
             </div>
           )}
@@ -439,7 +439,7 @@ function DetailDrawer({
               <div className="mx-auto max-w-3xl rounded-lg border border-violet-200 bg-white p-3">
                 <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
                   <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-violet-700">
-                    <Bot className="h-3.5 w-3.5" /> AI draft{preview.source === "ai" ? "" : " (template)"} · sent as HTML
+                    <Bot className="h-3.5 w-3.5" /> HI draft{preview.source === "ai" ? "" : " (template)"} · sent as HTML
                   </span>
                   <div className="flex items-center gap-2">
                     <div className="flex overflow-hidden rounded-md border border-violet-200 text-[10px]">
@@ -519,7 +519,7 @@ function DetailDrawer({
           {/* Composer */}
           <div className="mx-auto max-w-3xl px-5 py-3">
             <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-violet-700">
-              <Sparkles className="h-3.5 w-3.5" /> Command the AI
+              <Sparkles className="h-3.5 w-3.5" /> Command Harmony Intelligent
             </div>
             <div className="flex flex-col gap-2 sm:flex-row">
               <input

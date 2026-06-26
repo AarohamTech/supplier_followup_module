@@ -63,7 +63,7 @@ function MailCardBase({ mail, selected, onSelect }: MailCardProps) {
             className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${
               URGENCY_TONE[mail.ai_urgency] || "bg-gray-100 text-brand-muted"
             }`}
-            title={`AI triage${mail.ai_category ? ` · ${mail.ai_category}` : ""}${
+            title={`Harmony Intelligent triage${mail.ai_category ? ` · ${mail.ai_category}` : ""}${
               mail.ai_action ? ` · ${mail.ai_action}` : ""
             }`}
           >

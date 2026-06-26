@@ -145,9 +145,12 @@ def list_pos(user: User = Depends(get_current_supplier), db: Session = Depends(g
             "po_status": r.po_status,
             "earliest": None,
             "count": 0,
+            "escalated": False,
         })
         g["count"] += 1
         g["signals"].append(r.signal)
+        if (r.escalation_level or "NONE").upper() != "NONE":
+            g["escalated"] = True
         if r.shipment_date and (g["earliest"] is None or r.shipment_date < g["earliest"]):
             g["earliest"] = r.shipment_date
 
@@ -162,9 +165,18 @@ def list_pos(user: User = Depends(get_current_supplier), db: Session = Depends(g
             completed=po in completed,
             asn_count=asn_counts.get(po, 0),
             message_count=msg_counts.get(po, 0),
+            escalated=g["escalated"],
         )
         for po, g in sorted(groups.items())
     ]
+    # Escalated POs first; then worst signal; then by PO number (stable).
+    items.sort(
+        key=lambda p: (
+            0 if p.escalated else 1,
+            -_SIGNAL_RANK.get((p.overall_signal or "").upper(), 0),
+            p.supplier_po_no,
+        )
+    )
     return PortalPoListResponse(count=len(items), items=items)
 
 

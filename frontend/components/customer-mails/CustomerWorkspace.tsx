@@ -349,7 +349,7 @@ export default function CustomerWorkspace() {
       .then((d) => {
         setServerDraft({ subject: d.subject, body: d.body });
         setSeed((prev) => ({ text: d.body, nonce: (prev?.nonce ?? 0) + 1 }));
-        setToast(d.source === "ai" ? "AI draft ready." : "AI was busy — used a data template.");
+        setToast(d.source === "ai" ? "HI draft ready." : "Harmony Intelligent was busy — used a data template.");
       })
       .catch((err) => setToast((err as Error).message))
       .finally(() => setAiDraftLoading(false));
@@ -465,7 +465,7 @@ export default function CustomerWorkspace() {
                 onClick={handleTriage}
                 disabled={aiBusy !== null}
                 className="btn-outline text-xs"
-                title="Classify category / urgency / suggested action with AI"
+                title="Classify category / urgency / suggested action with Harmony Intelligent"
               >
                 {aiBusy === "triage" ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />

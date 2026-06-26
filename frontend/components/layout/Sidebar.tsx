@@ -35,8 +35,8 @@ type NavItem = {
 
 const items: NavItem[] = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/assistant", label: "AI Assistant", icon: Sparkles },
-  { href: "/insights", label: "AI Insights", icon: Gauge },
+  { href: "/assistant", label: "HI Assistant", icon: Sparkles },
+  { href: "/insights", label: "HI Insights", icon: Gauge },
   { href: "/black-followups", label: "Black Follow-ups", icon: ShieldAlert },
   { href: "/po-followups", label: "PO Follow-ups", icon: FileSpreadsheet },
   { href: "/suppliers", label: "Supplier Master", icon: Users },
@@ -47,7 +47,7 @@ const items: NavItem[] = [
   { href: "/approvals", label: "Approvals", icon: MailCheck, minRole: "manager" },
   { href: "/tasks", label: "Tasks", icon: ListChecks },
   { href: "/reports", label: "Reports", icon: BarChart3 },
-  { href: "/ai-prompts", label: "AI Prompts", icon: Wand2, minRole: "manager" },
+  { href: "/ai-prompts", label: "HI Prompts", icon: Wand2, minRole: "manager" },
   { href: "/settings", label: "Settings", icon: Settings, minRole: "manager" },
   { href: "/admin/users", label: "Users", icon: ShieldCheck, minRole: "admin" },
 ];

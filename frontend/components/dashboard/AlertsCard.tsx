@@ -15,7 +15,7 @@ export default function AlertsCard() {
       <div className="mt-3 space-y-1">
         <Row label="Black (Critical)" value={k?.black_count ?? 0} tone="red" />
         <Row label="Red (Overdue)" value={k?.red_count ?? 0} tone="red" />
-        <Row label="AI Follow-up Required" value={k?.ai_required_count ?? 0} />
+        <Row label="HI Follow-up Required" value={k?.ai_required_count ?? 0} />
       </div>
       <button className="mt-3 w-full bg-red-50 text-signal-red text-sm font-medium py-2 rounded-md">
         View Alerts

@@ -119,7 +119,7 @@ export default function InsightsPage() {
   return (
     <div className="page-stack">
       <PageHeader
-        title="AI Insights"
+        title="Harmony Intelligent Insights"
         description="Predictive delivery risk, supplier performance and the assistant's semantic memory."
         icon={Gauge}
         actions={

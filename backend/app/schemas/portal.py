@@ -28,6 +28,8 @@ class PortalPo(BaseModel):
     completed: bool
     asn_count: int
     message_count: int = 0
+    # True when a buyer has escalated this PO (manual or rule-based).
+    escalated: bool = False
 
 
 class PortalMessage(BaseModel):

@@ -1053,6 +1053,7 @@ export interface PortalPo {
   completed: boolean;
   asn_count: number;
   message_count: number;
+  escalated: boolean;
 }
 
 export interface PortalMessage {

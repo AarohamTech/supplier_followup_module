@@ -30,7 +30,7 @@ export default function AIInsights() {
     <div className="card p-4">
       <div className="flex items-center gap-2 mb-3">
         <Sparkles size={14} className="text-signal-red" />
-        <div className="font-semibold text-sm">AI Insights</div>
+        <div className="font-semibold text-sm">Harmony Intelligent</div>
       </div>
       <ul className="space-y-2">
         {items.map((t, i) => (

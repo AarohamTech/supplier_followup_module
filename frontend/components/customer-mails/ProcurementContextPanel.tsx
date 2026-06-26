@@ -127,7 +127,7 @@ function ProcurementContextPanelBase({
       <div className="rounded-xl border border-signal-red/30 bg-red-50/60 p-3">
         <div className="flex items-center gap-1.5 text-[11px] font-semibold text-signal-red">
           <Sparkles className="h-3.5 w-3.5" />
-          AI Suggested Reply
+          Harmony Intelligent Suggested Reply
         </div>
         <p className="mt-1.5 whitespace-pre-wrap text-xs leading-relaxed text-brand-dark">{aiSuggestion}</p>
         <div className="mt-2 flex gap-2">
@@ -142,11 +142,11 @@ function ProcurementContextPanelBase({
             type="button"
             onClick={onAiDraft}
             disabled={aiLoading}
-            title="Rewrite with AI (uses the LLM)"
+            title="Rewrite with Harmony Intelligent (uses the LLM)"
             className="inline-flex items-center justify-center gap-1 rounded-md bg-signal-red px-2.5 py-1.5 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50"
           >
             {aiLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
-            {aiLoading ? "Writing…" : "Improve with AI"}
+            {aiLoading ? "Writing…" : "Improve with HI"}
           </button>
         </div>
       </div>

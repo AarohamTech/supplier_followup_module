@@ -60,7 +60,7 @@ export default function AiPromptsPage() {
       .saveAiPrompts(payload)
       .then((r) => {
         hydrate(r.prompts);
-        setToast("Prompts saved. New AI output uses them immediately.");
+        setToast("Prompts saved. New Harmony Intelligent output uses them immediately.");
       })
       .catch((e) => setError((e as Error).message))
       .finally(() => setSaving(false));
@@ -68,7 +68,7 @@ export default function AiPromptsPage() {
 
   if (!isManager) {
     return (
-      <div className="empty-state">Manager access required to edit AI prompts.</div>
+      <div className="empty-state">Manager access required to edit Harmony Intelligent prompts.</div>
     );
   }
 
@@ -80,9 +80,9 @@ export default function AiPromptsPage() {
             <Wand2 size={16} />
           </span>
           <div>
-            <h1 className="page-title">AI Prompts</h1>
+            <h1 className="page-title">Harmony Intelligent Prompts</h1>
             <p className="page-subtitle">
-              Tune how the AI writes — changes apply to new output instantly, no deploy needed.
+              Tune how Harmony Intelligent writes — changes apply to new output instantly, no deploy needed.
             </p>
           </div>
         </div>

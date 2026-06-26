@@ -64,13 +64,13 @@ export default function AssistantPage() {
     <div className="mx-auto flex h-[calc(100vh-128px)] max-w-3xl flex-col">
       <PageHeader
         className="mb-3"
-        title="AI Assistant"
+        title="Harmony Intelligent Assistant"
         description="Agentic assistant that reads live POs, suppliers, mail threads and past-mail memory."
         icon={Sparkles}
         actions={
           enabled === false && (
             <span className="rounded-md bg-amber-50 px-2 py-1 text-xs text-amber-700">
-              AI is disabled (set LLM_ENABLED)
+              Harmony Intelligent is disabled (set LLM_ENABLED)
             </span>
           )
         }

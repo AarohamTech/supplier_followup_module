@@ -13,7 +13,7 @@ const groupHeaders = [
   "Overall Signal",
   "Earliest Shipment",
   "Follow-ups",
-  "AI Required",
+  "HI Required",
   "Action",
 ];
 
