@@ -294,6 +294,8 @@ export default function Page() {
   const [queueFilter, setQueueFilter] = useState<QueueFilter>("needs_reply");
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [composer, setComposer] = useState("");
+  const [sendAsEmail, setSendAsEmail] = useState(true);
+  const [replying, setReplying] = useState(false);
   const [assignOpen, setAssignOpen] = useState(false);
   const [assignSeed, setAssignSeed] = useState<Partial<CommunicationTaskCreate>>({});
   const [toasts, setToasts] = useState<{ id: number; tone: "ok" | "err"; msg: string }[]>([]);
@@ -649,6 +651,35 @@ export default function Page() {
     }
   };
 
+  const handleSendReply = async () => {
+    const text = composer.trim();
+    if (!text || !activePo || replying) return;
+    setReplying(true);
+    try {
+      const res = await api.hubReply({
+        procurement_record_id: activePo.procurement_record_id,
+        supplier_po_no: activePo.supplier_po_no,
+        supplier_id: activePo.supplier_id,
+        supplier_name: activePo.supplier_name,
+        body: text,
+        send_email: sendAsEmail,
+      });
+      setComposer("");
+      if (res.no_email_on_file) {
+        pushToast("ok", "Posted to supplier portal (no email on file — add one in Email Master)");
+      } else if (res.channel === "email") {
+        pushToast("ok", res.sent ? "Sent by email + portal" : "Queued for email + posted to portal");
+      } else {
+        pushToast("ok", "Posted to supplier portal");
+      }
+      await loadThread(activePo.procurement_record_id);
+    } catch (e: unknown) {
+      pushToast("err", e instanceof Error ? e.message : "Send failed");
+    } finally {
+      setReplying(false);
+    }
+  };
+
   const onPoMail = () => {
     if (!activePo) return;
     selectPoGroup({ supplier_name: activePo.supplier_name, supplier_po_no: activePo.supplier_po_no });
@@ -905,17 +936,26 @@ export default function Page() {
                     </button>
                     <button
                       className="rounded-md bg-signal-red p-2 text-white shadow-sm hover:opacity-90 disabled:opacity-50"
-                      disabled={!composer.trim()}
-                      onClick={() => {
-                        pushToast("ok", "Reply queued (demo)");
-                        setComposer("");
-                      }}
-                      title="Send"
+                      disabled={!composer.trim() || replying}
+                      onClick={() => void handleSendReply()}
+                      title={sendAsEmail ? "Send by email + post to portal" : "Post to supplier portal only"}
                     >
                       <Send size={16} />
                     </button>
                   </div>
                 </div>
+                <label className="mt-2 flex items-center gap-2 text-xs text-brand-muted">
+                  <input
+                    type="checkbox"
+                    checked={sendAsEmail}
+                    onChange={(e) => setSendAsEmail(e.target.checked)}
+                    className="accent-signal-red"
+                  />
+                  Send as email to the supplier
+                  <span className="text-brand-muted/70">
+                    {sendAsEmail ? "(emails them + shows in their portal)" : "(portal only — they read & reply in their portal)"}
+                  </span>
+                </label>
               </div>
             </>
           ) : (

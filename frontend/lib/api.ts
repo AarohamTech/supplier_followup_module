@@ -318,6 +318,20 @@ export const api = {
       { method: "POST" },
     ),
 
+  hubReply: (body: {
+    procurement_record_id?: number | null;
+    supplier_po_no?: string | null;
+    supplier_id?: number | null;
+    supplier_name?: string | null;
+    subject?: string;
+    body: string;
+    send_email: boolean;
+  }) =>
+    http<{ ok: boolean; message_id: number; channel: "email" | "portal"; sent: boolean; emailed_to: string[]; no_email_on_file: boolean }>(
+      "/api/communication-hub/reply",
+      { method: "POST", body: JSON.stringify(body) },
+    ),
+
   hubEscalate: (procurementRecordId: number) =>
     http<{ message: string; mail_draft_id: number; task_id: number; subject: string }>(
       `/api/communication-hub/escalate?procurement_record_id=${procurementRecordId}`,

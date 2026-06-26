@@ -12,6 +12,7 @@ from datetime import datetime
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
@@ -1176,6 +1177,106 @@ def send_mail_now(
     return {
         "mail_history_id": mail_history_id,
         "send_result": result,
+    }
+
+
+class HubReplyIn(BaseModel):
+    procurement_record_id: int | None = None
+    supplier_po_no: str | None = None
+    supplier_id: int | None = None
+    supplier_name: str | None = None
+    subject: str | None = None
+    body: str
+    # True → also email the supplier (and show in their portal); False → portal-only.
+    send_email: bool = True
+
+
+@router.post("/reply", dependencies=[Depends(require_manager)])
+def reply_now(payload: HubReplyIn, db: Session = Depends(get_db)) -> dict[str, Any]:
+    """Staff reply on a PO thread. Always lands in the supplier's portal thread;
+    `send_email` additionally delivers it over SMTP. Both appear here in the Hub.
+    """
+    body = (payload.body or "").strip()
+    if not body:
+        raise HTTPException(422, "Message body is required")
+
+    rec = (
+        db.get(ProcurementRecord, payload.procurement_record_id)
+        if payload.procurement_record_id
+        else None
+    )
+    supplier_po_no = payload.supplier_po_no or (rec.supplier_po_no if rec else None)
+    supplier_name = payload.supplier_name or (rec.supplier_name if rec else None)
+    supplier_id = payload.supplier_id
+    if supplier_id is None and supplier_name:
+        supplier_id = msg_service.resolve_supplier_id_by_name(db, supplier_name)
+
+    to_emails: list[str] = []
+    cc_emails: list[str] = []
+    if supplier_id is not None:
+        mapping = db.scalar(
+            select(SupplierEmail).where(
+                SupplierEmail.supplier_id == supplier_id,
+                SupplierEmail.is_active.is_(True),
+            )
+        )
+        if mapping:
+            to_emails = [e for e in (mapping.to_emails or []) if e]
+            cc_emails = [e for e in (mapping.cc_emails or []) if e]
+
+    subject = (payload.subject or "").strip() or (
+        f"Re: PO {supplier_po_no}" if supplier_po_no else "Message from Procurement"
+    )
+
+    want_email = bool(payload.send_email and to_emails)
+
+    if want_email:
+        msg = msg_service.queue_outgoing_message(
+            db,
+            supplier_id=supplier_id,
+            supplier_name=supplier_name,
+            procurement_record_id=rec.id if rec else None,
+            supplier_po_no=supplier_po_no,
+            subject=subject,
+            body=body,
+            to_emails=to_emails,
+            cc_emails=cc_emails,
+            mail_type="HUB_REPLY",
+            commit=True,
+        )
+        from ..workers import mail_send_worker
+
+        send_result = mail_send_worker.send_message_now(db, msg.id)
+        sent = bool(send_result.get("sent"))
+    else:
+        # Portal-only: store as already-delivered with a status the SMTP send
+        # worker ignores (it only picks READY), so the supplier sees it in their
+        # portal thread but no email is sent.
+        msg = msg_service.create_message(
+            db,
+            direction="OUTGOING",
+            status="SENT_MANUALLY",
+            supplier_id=supplier_id,
+            supplier_name=supplier_name,
+            procurement_record_id=rec.id if rec else None,
+            supplier_po_no=supplier_po_no,
+            subject=subject,
+            body=body,
+            to_emails=to_emails,
+            cc_emails=cc_emails,
+            mail_type="HUB_PORTAL_MESSAGE",
+            sent_at=datetime.utcnow(),
+            commit=True,
+        )
+        sent = False
+
+    return {
+        "ok": True,
+        "message_id": msg.id,
+        "channel": "email" if want_email else "portal",
+        "sent": sent,
+        "emailed_to": to_emails if want_email else [],
+        "no_email_on_file": bool(payload.send_email and not to_emails),
     }
 
 

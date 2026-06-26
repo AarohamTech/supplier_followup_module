@@ -34,8 +34,9 @@ from ..services import communication_message_service as msg_service
 router = APIRouter(prefix="/api/portal", tags=["portal"])
 
 # Outgoing (buyer→supplier) statuses the supplier is allowed to see — i.e. mails
-# that actually left the building. Internal drafts/queued items stay hidden.
-_VISIBLE_OUTGOING = {"SENT", "SENT_MANUALLY", "COPIED", "MAILTO_OPENED"}
+# sent or in-flight to them (incl. READY = queued/portal-posted). Only internal
+# DRAFTs awaiting approval stay hidden.
+_VISIBLE_OUTGOING = {"SENT", "SENT_MANUALLY", "READY", "COPIED", "MAILTO_OPENED"}
 _TAG_RE = re.compile(r"<[^>]+>")
 
 
