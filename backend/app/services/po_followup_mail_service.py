@@ -93,6 +93,29 @@ def _po_subject(mail_type: str, supplier_name: str | None, po_no: str, count: in
     return f"{label} | PO No. {po_no} | {count} material(s) | {supplier_name or ''}".strip()
 
 
+def _portal_po_url(po_no: str | None) -> str | None:
+    """Deep link to the supplier portal PO page (commitment form)."""
+    base = (settings.APP_BASE_URL or "").strip().rstrip("/")
+    if not base or not po_no:
+        return None
+    from urllib.parse import quote
+
+    return f"{base}/portal/pos/{quote(str(po_no))}"
+
+
+def _commitment_instruction_text(po_no: str | None) -> str:
+    url = _portal_po_url(po_no)
+    if url:
+        return (
+            "Please provide a committed dispatch date for each material in the "
+            f"supplier portal:\n{url}"
+        )
+    return (
+        "Please log in to the supplier portal and provide a committed dispatch "
+        "date for each material."
+    )
+
+
 def _po_fallback_body(group: dict[str, Any], table_text: str) -> str:
     return (
         f"Dear {group.get('supplier_name') or 'Supplier'},\n\n"
@@ -101,7 +124,7 @@ def _po_fallback_body(group: dict[str, Any], table_text: str) -> str:
         f"Earliest required dispatch: {group.get('earliest_due_date') or '-'}.\n\n"
         "Material-wise summary:\n"
         f"{table_text}\n\n"
-        f"{PO_REPLY_INSTRUCTIONS}\n\n"
+        f"{_commitment_instruction_text(group.get('supplier_po_no'))}\n\n"
         "Regards,\nProcurement"
     )
 
@@ -125,14 +148,24 @@ def _po_body_html(
     }.get(signal.upper(), "#e2e8f0")
     signal_fg = "#f9fafb" if signal.upper() == "BLACK" else "#0f172a"
 
-    reply_block = ""
-    if reply_table_html:
+    # New flow: instead of asking the supplier to reply with a table, send them
+    # to the portal commitment form via a clear call-to-action button.
+    commit_url = _portal_po_url(group.get("supplier_po_no"))
+    if commit_url:
+        reply_block = (
+            "<div style=\"margin:18px 0 4px;text-align:center;\">"
+            f"<a href=\"{escape(commit_url)}\" style=\"display:inline-block;background:#E11D2E;"
+            "color:#ffffff;text-decoration:none;padding:11px 22px;border-radius:8px;"
+            "font-weight:700;font-size:14px;\">Provide / update commitment dates</a>"
+            "<p style=\"font-size:12px;color:#475569;margin:8px 0 0;\">"
+            "Open the secure supplier portal to enter a committed dispatch date for "
+            "each material on this PO.</p></div>"
+        )
+    else:
         reply_block = (
             "<p style=\"margin:16px 0 4px;font-weight:600;color:#B01624;\">"
-            "Please reply using this table (one row per material):</p>"
-            f"{reply_table_html}"
-            "<p style=\"font-size:12px;color:#475569;margin:6px 0 0;\">"
-            "Allowed status values: CONFIRMED, DELAYED, PARTIAL, DISPATCHED, ON_HOLD, CANCELLED.</p>"
+            "Please log in to the supplier portal to provide a committed dispatch "
+            "date for each material.</p>"
         )
 
     inner = (
@@ -143,7 +176,8 @@ def _po_body_html(
             or (
                 f"<p style=\"margin:0 0 12px;\">Dear {supplier},</p>"
                 "<p style=\"margin:0 0 14px;\">We request a material-wise status update for the "
-                "following purchase order. Kindly review the summary and reply using the table provided.</p>"
+                "following purchase order. Kindly review the summary below and enter a committed "
+                "dispatch date for each material using the button provided.</p>"
             )
         )
         +
@@ -175,7 +209,7 @@ def _po_body_html(
         "</div>"
         + brand_email.footer_html(
             "This is an automated follow-up from Harmony × Hariom. "
-            "Please reply keeping the table format intact."
+            "Please use the button above to provide your commitment dates in the portal."
         )
     )
     return brand_email.shell(inner, max_width=760)
@@ -263,7 +297,7 @@ def _maybe_ai_polish(
     narrative = _ai_followup_narrative(db, group, anchor_rec, table_text, instruction)
     if not narrative:
         return None
-    plain = f"{narrative}\n\n{table_text}\n\n{PO_REPLY_INSTRUCTIONS}"
+    plain = f"{narrative}\n\n{table_text}\n\n{_commitment_instruction_text(group.get('supplier_po_no'))}"
     return plain, _ai_intro_html(narrative)
 
 
@@ -739,7 +773,8 @@ def command_followup(
         narrative = (
             f"Dear {group.get('supplier_name') or 'Supplier'},\n\n"
             f"We require an urgent dispatch status update for PO No. {group['supplier_po_no']}. "
-            "Kindly review the material summary below and reply using the table provided.\n\n"
+            "Kindly review the material summary below and provide your committed dispatch "
+            "dates in the supplier portal.\n\n"
             "Regards,\nProcurement Team"
         )
     body_html = _po_body_html(group, table_html, reply_table_html, intro_html=_ai_intro_html(narrative))

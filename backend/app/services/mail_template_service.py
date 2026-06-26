@@ -6,11 +6,29 @@ from jinja2 import Template
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from ..core.config import settings
 from ..models.mail_template import MailTemplate
 from ..models.supplier_email import SupplierEmail
 from ..models.supplier import SupplierMaster
 from ..models.procurement import ProcurementRecord
 from .followup_engine import get_followup_rule, red_day_index
+
+
+def commitment_instructions(supplier_po_no: str | None) -> str:
+    """Instruction text driving the supplier to the portal commitment form."""
+    base = (settings.APP_BASE_URL or "").strip().rstrip("/")
+    if base and supplier_po_no:
+        from urllib.parse import quote
+
+        link = f"{base}/portal/pos/{quote(str(supplier_po_no))}"
+        return (
+            "Please provide a committed dispatch date for each material in the "
+            f"supplier portal:\n{link}"
+        )
+    return (
+        "Please log in to the supplier portal and provide a committed dispatch "
+        "date for each material."
+    )
 
 
 _PO_MATERIAL_COLUMNS: list[tuple[str, str]] = [
@@ -230,7 +248,7 @@ def build_po_group_context(group: dict[str, Any]) -> dict[str, Any]:
         "materials_table_html": render_po_materials_table_html(group.get("materials") or []),
         "materials_table_text": render_po_materials_table_text(group.get("materials") or []),
         "reply_table_html": render_po_reply_table_html(group.get("materials") or []),
-        "reply_instructions": PO_REPLY_INSTRUCTIONS,
+        "reply_instructions": commitment_instructions(group.get("supplier_po_no")),
     }
 
 

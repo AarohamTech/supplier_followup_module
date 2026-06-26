@@ -1079,9 +1079,22 @@ export interface PortalPoMaterial {
   material_name: string;
   uom?: string | null;
   qty?: number | null;
+  po_date?: string | null;
   shipment_date?: string | null;
   signal?: string | null;
   po_status?: string | null;
+  commitment_date?: string | null;
+  commitment_qty?: number | null;
+  commitment_status?: string | null;
+  commitment_remark?: string | null;
+}
+
+export interface PortalCommitmentItem {
+  procurement_record_id: number;
+  commitment_date?: string | null; // YYYY-MM-DD
+  commitment_qty?: number | null;
+  supplier_status?: string | null;
+  supplier_remark?: string | null;
 }
 
 export interface PortalMe {

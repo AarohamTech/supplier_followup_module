@@ -95,6 +95,10 @@ class Settings(BaseSettings):
     MAIL_INBOX_ENABLED: bool = Field(...)
     SMTP_ENABLED: bool = Field(...)
     AUTO_PO_FOLLOWUP_ENABLED: bool = Field(default=False)
+    # Legacy: capture supplier commitments by parsing email reply tables.
+    # Default OFF — commitments are now captured via the portal commitment form
+    # (a link is sent in the follow-up mail). Flip on only to restore the old flow.
+    COMMITMENT_VIA_EMAIL_ENABLED: bool = Field(default=False)
     MAIL_FETCH_PROTOCOL: str = Field(...)
     MAIL_INBOX_USE_SSL: bool = Field(...)
 

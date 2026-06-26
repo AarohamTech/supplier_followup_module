@@ -68,6 +68,7 @@ import type {
   PortalSummary,
   PortalPoListResponse,
   PortalPoMaterial,
+  PortalCommitmentItem,
   PortalMessage,
   PortalMe,
   AppNotification,
@@ -696,6 +697,11 @@ export const api = {
   portalPos: () => http<PortalPoListResponse>("/api/portal/pos"),
   portalPoMaterials: (supplierPoNo: string) =>
     http<PortalPoMaterial[]>(`/api/portal/pos/${encodeURIComponent(supplierPoNo)}/materials`),
+  submitPortalCommitments: (supplierPoNo: string, items: PortalCommitmentItem[]) =>
+    http<PortalPoMaterial[]>(`/api/portal/pos/${encodeURIComponent(supplierPoNo)}/commitments`, {
+      method: "POST",
+      body: JSON.stringify({ items }),
+    }),
   portalPoMessages: (supplierPoNo: string) =>
     http<PortalMessage[]>(`/api/portal/pos/${encodeURIComponent(supplierPoNo)}/messages`),
   sendPortalPoMessage: (supplierPoNo: string, body: string, subject?: string) =>

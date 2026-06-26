@@ -218,6 +218,13 @@ def apply_material_reply_table(
 
     Returns the list of upserted commitment ids.
     """
+    # Commitments are now captured via the portal commitment form, not by parsing
+    # supplier email replies. The legacy parse-from-reply path is disabled unless
+    # explicitly re-enabled via COMMITMENT_VIA_EMAIL_ENABLED.
+    from ..core.config import settings as _settings
+
+    if not getattr(_settings, "COMMITMENT_VIA_EMAIL_ENABLED", False):
+        return []
     if not message or not message.supplier_po_no:
         return []
     text = body if body is not None else (message.body or "")

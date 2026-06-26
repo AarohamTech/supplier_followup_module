@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import datetime
+from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
@@ -21,9 +21,11 @@ from ..models.asn import Asn
 from ..models.communication_message import CommunicationMessage
 from ..models.procurement import ProcurementRecord
 from ..models.supplier import SupplierMaster
+from ..models.supplier_material_commitment import SupplierMaterialCommitment
 from ..models.user import User
 from ..schemas.asn import AsnCreate, AsnEventIn, AsnListOut, AsnOut, AsnSummaryOut, AsnUpdate
 from ..schemas.portal import (
+    PortalCommitmentSubmit,
     PortalMessage,
     PortalMessageCreate,
     PortalPo,
@@ -36,6 +38,7 @@ from ..services import ai_tools_service
 from ..services import asn_service
 from ..services import communication_message_service as msg_service
 from ..services import notification_service as notif
+from ..services import po_followup_service
 from ..services.ai_service import AIDisabledError
 
 log = logging.getLogger(__name__)
@@ -203,19 +206,115 @@ def po_materials(
             ProcurementRecord.supplier_po_no == supplier_po_no,
         )
     ).all()
-    return [
-        PortalPoMaterial(
-            procurement_record_id=r.id,
-            crm_no=r.crm_no,
-            material_name=r.material_name,
-            uom=r.uom,
-            qty=float(r.qty) if r.qty is not None else None,
-            shipment_date=r.shipment_date,
-            signal=r.signal,
-            po_status=r.po_status,
+    commits = _commitments_by_material(db, supplier_po_no)
+    return [_material_out(r, commits.get((r.material_name or "").strip().upper())) for r in rows]
+
+
+def _as_dt(d) -> datetime | None:
+    if d is None:
+        return None
+    return d if isinstance(d, datetime) else datetime.combine(d, datetime.min.time())
+
+
+def _commitments_by_material(db: Session, supplier_po_no: str) -> dict[str, SupplierMaterialCommitment]:
+    rows = db.scalars(
+        select(SupplierMaterialCommitment)
+        .where(SupplierMaterialCommitment.supplier_po_no == supplier_po_no)
+        .order_by(SupplierMaterialCommitment.updated_at.desc())
+    ).all()
+    out: dict[str, SupplierMaterialCommitment] = {}
+    for c in rows:
+        key = (c.material_name or "").strip().upper()
+        if key and key not in out:
+            out[key] = c
+    return out
+
+
+def _material_out(r: ProcurementRecord, c: SupplierMaterialCommitment | None) -> PortalPoMaterial:
+    return PortalPoMaterial(
+        procurement_record_id=r.id,
+        crm_no=r.crm_no,
+        material_name=r.material_name,
+        uom=r.uom,
+        qty=float(r.qty) if r.qty is not None else None,
+        po_date=_as_dt(r.supplier_date or r.po_date),
+        shipment_date=r.shipment_date,
+        signal=r.signal,
+        po_status=r.po_status,
+        commitment_date=_as_dt(c.commitment_date) if c else None,
+        commitment_qty=float(c.commitment_qty) if c and c.commitment_qty is not None else None,
+        commitment_status=c.supplier_status if c else None,
+        commitment_remark=c.supplier_remark if c else None,
+    )
+
+
+@router.post("/pos/{supplier_po_no}/commitments", response_model=list[PortalPoMaterial])
+def submit_commitments(
+    supplier_po_no: str,
+    payload: PortalCommitmentSubmit,
+    user: User = Depends(get_current_supplier),
+    db: Session = Depends(get_db),
+) -> list[PortalPoMaterial]:
+    name = _supplier_name(db, user)
+    if not _po_is_owned(db, name, supplier_po_no):
+        raise HTTPException(404, "PO not found for your account")
+
+    saved = 0
+    for item in payload.items:
+        rec = db.get(ProcurementRecord, item.procurement_record_id)
+        # Only accept rows that actually belong to this supplier's PO.
+        if (
+            rec is None
+            or rec.supplier_po_no != supplier_po_no
+            or (rec.supplier_name or "").upper() != (name or "").upper()
+        ):
+            continue
+        cdate: date | None = None
+        if item.commitment_date:
+            try:
+                cdate = date.fromisoformat(item.commitment_date)
+            except ValueError:
+                cdate = None
+        if cdate is None:
+            continue  # a commitment requires a committed dispatch date
+        po_followup_service.upsert_commitment(
+            db,
+            supplier_po_no=supplier_po_no,
+            material_name=rec.material_name,
+            procurement_record_id=rec.id,
+            supplier_id=user.supplier_id,
+            supplier_name=name,
+            material_code=rec.crm_no,
+            commitment_qty=item.commitment_qty,
+            commitment_date_value=cdate,
+            supplier_status=item.supplier_status or "CONFIRMED",
+            supplier_remark=item.supplier_remark,
+            reply_mail_id=None,
+            commit=False,
         )
-        for r in rows
-    ]
+        if cdate is not None:
+            rec.commitment_date = cdate
+        saved += 1
+
+    db.commit()
+    if saved:
+        notif.safe(
+            notif.notify_staff, db,
+            type="COMMITMENT_RECEIVED",
+            title=f"Commitment received from {name or 'a supplier'}",
+            body=f"PO {supplier_po_no}: {saved} material(s) committed",
+            link="/mail-history",
+            supplier_id=user.supplier_id,
+            supplier_po_no=supplier_po_no,
+        )
+    commits = _commitments_by_material(db, supplier_po_no)
+    rows = db.scalars(
+        select(ProcurementRecord).where(
+            func.upper(ProcurementRecord.supplier_name) == (name or "").upper(),
+            ProcurementRecord.supplier_po_no == supplier_po_no,
+        )
+    ).all()
+    return [_material_out(r, commits.get((r.material_name or "").strip().upper())) for r in rows]
 
 
 # ── PO messaging (shared thread with the staff Communication Hub) ─────────────

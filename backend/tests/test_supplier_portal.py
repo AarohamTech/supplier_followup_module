@@ -230,5 +230,44 @@ class AiToolScopeTests(unittest.TestCase):
             self.assertTrue(staff("get_po_status", {"supplier_po_no": "BETA-1"})["found"])
 
 
+class CommitmentFlowTests(unittest.TestCase):
+    def test_email_reply_commitment_parsing_discarded_by_default(self):
+        from app.services import status_change_service
+        with _temp_db() as db:
+            msg = CommunicationMessage(
+                direction="INCOMING", status="RECEIVED", channel="EMAIL",
+                supplier_po_no="P1",
+                body="| CRM | Material | Qty | Commitment Date |\n| C1 | Widget | 5 | 2026-07-01 |")
+            db.add(msg)
+            db.commit()
+            db.refresh(msg)
+            # Email-reply parsing is off by default → no commitments created.
+            self.assertEqual(status_change_service.apply_material_reply_table(db, msg, body=msg.body), [])
+
+    def test_commitment_instructions_point_at_portal_form(self):
+        from app.services.mail_template_service import commitment_instructions
+        self.assertIn("/portal/pos/PO-9", commitment_instructions("PO-9"))
+
+    def test_upsert_then_load_commitment(self):
+        from datetime import date as _date
+        from app.services import po_followup_service
+        with _temp_db() as db:
+            s = _supplier(db)
+            db.add(ProcurementRecord(
+                crm_no="C1", material_name="Widget", supplier_po_no="PO-7",
+                supplier_name=s.supplier_name, signal="RED"))
+            db.commit()
+            po_followup_service.upsert_commitment(
+                db, supplier_po_no="PO-7", material_name="Widget",
+                procurement_record_id=None, supplier_id=s.id, supplier_name=s.supplier_name,
+                material_code="C1", commitment_qty=5, commitment_date_value=_date(2026, 7, 1),
+                supplier_status="DELAYED", supplier_remark="late", reply_mail_id=None)
+            loaded = po_followup_service._load_commitments(db, "PO-7")
+            self.assertEqual(len(loaded), 1)
+            c = next(iter(loaded.values()))
+            self.assertEqual(c.commitment_date, _date(2026, 7, 1))
+            self.assertEqual(c.supplier_status, "DELAYED")
+
+
 if __name__ == "__main__":
     unittest.main()

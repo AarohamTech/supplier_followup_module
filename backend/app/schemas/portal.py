@@ -55,9 +55,27 @@ class PortalPoMaterial(BaseModel):
     material_name: str
     uom: Optional[str] = None
     qty: Optional[float] = None
+    po_date: Optional[datetime] = None
     shipment_date: Optional[datetime] = None
     signal: Optional[str] = None
     po_status: Optional[str] = None
+    # Current supplier commitment (if any) for this material.
+    commitment_date: Optional[datetime] = None
+    commitment_qty: Optional[float] = None
+    commitment_status: Optional[str] = None
+    commitment_remark: Optional[str] = None
+
+
+class PortalCommitmentItem(BaseModel):
+    procurement_record_id: int
+    commitment_date: Optional[str] = None      # YYYY-MM-DD
+    commitment_qty: Optional[float] = None
+    supplier_status: Optional[str] = None       # CONFIRMED / DELAYED / PARTIAL / …
+    supplier_remark: Optional[str] = None
+
+
+class PortalCommitmentSubmit(BaseModel):
+    items: list[PortalCommitmentItem] = Field(default_factory=list)
 
 
 class PortalPoListResponse(BaseModel):
