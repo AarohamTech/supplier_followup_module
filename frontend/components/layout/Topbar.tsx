@@ -1,12 +1,11 @@
 "use client";
 
-import { Bell, LogOut, Menu } from "lucide-react";
+import { LogOut, Menu } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState } from "react";
 
 import { Logo } from "@/components/brand/Logo";
-import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import NotificationBell from "@/components/NotificationBell";
 
 const ROLE_LABEL: Record<string, string> = {
   admin: "Administrator",
@@ -17,27 +16,6 @@ const ROLE_LABEL: Record<string, string> = {
 
 export default function Topbar({ onMenuClick }: { onMenuClick?: () => void }) {
   const { user, logout } = useAuth();
-  const [unread, setUnread] = useState<number>(0);
-
-  useEffect(() => {
-    let cancelled = false;
-    const tick = async () => {
-      try {
-        const dash = await api.hubDashboard();
-        if (!cancelled) setUnread(Number(dash?.unread_inbound ?? 0));
-      } catch {
-        /* ignore polling errors */
-      }
-    };
-    void tick();
-    const t = setInterval(tick, 15000);
-    return () => {
-      cancelled = true;
-      clearInterval(t);
-    };
-  }, []);
-
-  const display = unread > 99 ? "99+" : String(unread);
   const name = user?.full_name || user?.email || "User";
   const initial = name.charAt(0).toUpperCase();
 
@@ -64,18 +42,7 @@ export default function Topbar({ onMenuClick }: { onMenuClick?: () => void }) {
           </div>
         </Link>
         <div className="flex-1" />
-        <Link
-          href="/mail-history"
-          className="relative p-2 rounded-md text-brand-muted hover:bg-red-50 hover:text-signal-red"
-          title={unread > 0 ? `${unread} new supplier mail${unread === 1 ? "" : "s"}` : "No new mails"}
-        >
-          <Bell size={18} />
-          {unread > 0 && (
-            <span className="absolute -top-0.5 -right-0.5 bg-emerald-500 text-white text-[10px] font-bold rounded-full px-1 min-w-[16px] text-center">
-              {display}
-            </span>
-          )}
-        </Link>
+        <NotificationBell />
         <div className="flex items-center gap-3">
           <div className="hidden text-right sm:block">
             <div className="text-sm font-medium">{name}</div>

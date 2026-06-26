@@ -70,6 +70,7 @@ import type {
   PortalPoMaterial,
   PortalMessage,
   PortalMe,
+  AppNotification,
 } from "./types";
 import { getToken, setToken, LOGIN_PATH } from "./auth-token";
 
@@ -718,6 +719,16 @@ export const api = {
     http<Asn>(`/api/portal/asns/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
   addPortalAsnEvent: (id: number, body: AsnEventPayload) =>
     http<Asn>(`/api/portal/asns/${id}/events`, { method: "POST", body: JSON.stringify(body) }),
+
+  // ─── Notifications (staff + supplier) ─────────────────────────────────
+  listNotifications: (limit = 30) =>
+    http<AppNotification[]>(`/api/notifications?limit=${limit}`),
+  notificationsUnreadCount: () =>
+    http<{ count: number }>("/api/notifications/unread-count"),
+  markNotificationRead: (id: number) =>
+    http<{ ok: boolean }>(`/api/notifications/${id}/read`, { method: "POST" }),
+  markAllNotificationsRead: () =>
+    http<{ ok: boolean; updated: number }>("/api/notifications/read-all", { method: "POST" }),
 };
 
 export default api;

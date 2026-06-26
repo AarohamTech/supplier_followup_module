@@ -39,6 +39,7 @@ from ..services.followup_engine import apply_followup_logic, get_followup_rule
 from ..services.mail_template_service import build_context, pick_template, render
 from ..services import ai_service
 from ..services import communication_message_service as msg_service
+from ..services import notification_service as notif
 from ..services import po_followup_mail_service
 from ..services import po_followup_service
 from ..services.reply_table_parser import parse_reply_table
@@ -1269,6 +1270,17 @@ def reply_now(payload: HubReplyIn, db: Session = Depends(get_db)) -> dict[str, A
             commit=True,
         )
         sent = False
+
+    notif.safe(
+        notif.notify_supplier, db, supplier_id,
+        type="STAFF_REPLY",
+        title="New message from your buyer",
+        body=f"PO {supplier_po_no}: {body[:140]}" if supplier_po_no else body[:140],
+        link="/portal/pos",
+        supplier_id=supplier_id,
+        supplier_po_no=supplier_po_no,
+        procurement_record_id=rec.id if rec else None,
+    )
 
     return {
         "ok": True,

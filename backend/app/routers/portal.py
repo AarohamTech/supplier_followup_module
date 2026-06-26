@@ -30,6 +30,7 @@ from ..schemas.portal import (
 )
 from ..services import asn_service
 from ..services import communication_message_service as msg_service
+from ..services import notification_service as notif
 
 router = APIRouter(prefix="/api/portal", tags=["portal"])
 
@@ -284,6 +285,16 @@ def post_po_message(
         mail_type="PORTAL_MESSAGE",
         received_at=datetime.utcnow(),
     )
+    notif.safe(
+        notif.notify_staff, db,
+        type="SUPPLIER_MESSAGE",
+        title=f"New message from {name or 'a supplier'}",
+        body=f"PO {supplier_po_no}: {payload.body.strip()[:140]}",
+        link="/mail-history",
+        supplier_id=user.supplier_id,
+        supplier_po_no=supplier_po_no,
+        procurement_record_id=rec.id,
+    )
     return _to_portal_message(cm, name)
 
 
@@ -343,6 +354,17 @@ def create_asn(
         created_by_user_id=user.id,
         created_by_email=user.email,
     )
+    if asn.status != "DRAFT":
+        notif.safe(
+            notif.notify_staff, db,
+            type="ASN_SUBMITTED",
+            title=f"New ASN {asn.asn_no} from {name or 'a supplier'}",
+            body=f"PO {asn.supplier_po_no} · {len(asn.items)} item(s)",
+            link="/asns",
+            supplier_id=user.supplier_id,
+            supplier_po_no=asn.supplier_po_no,
+            asn_id=asn.id,
+        )
     return AsnOut.model_validate(asn)
 
 
@@ -384,4 +406,16 @@ def add_event(
         created_by=user.email,
         occurred_at=payload.occurred_at,
     )
+    if asn.status == "DELIVERED":
+        name = _supplier_name(db, user)
+        notif.safe(
+            notif.notify_staff, db,
+            type="ASN_DELIVERED",
+            title=f"ASN {asn.asn_no} delivered",
+            body=f"PO {asn.supplier_po_no} marked delivered by {name or 'the supplier'}",
+            link="/asns",
+            supplier_id=user.supplier_id,
+            supplier_po_no=asn.supplier_po_no,
+            asn_id=asn.id,
+        )
     return AsnOut.model_validate(asn)

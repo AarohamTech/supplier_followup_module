@@ -6,7 +6,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi import Depends
 
 from .core.config import settings
-from .core.deps import get_current_staff, get_current_supplier, require_writer_for_writes
+from .core.deps import (
+    get_current_staff,
+    get_current_supplier,
+    get_current_user,
+    require_writer_for_writes,
+)
 from .core.logging import setup_logging
 from .core.schema_evolve import ensure_columns
 from .database import Base, engine, ensure_schema
@@ -27,6 +32,7 @@ from .routers import (
     po_followups,
     asns,
     portal,
+    notifications,
     supplier_accounts,
     settings as settings_router,
 )
@@ -127,6 +133,9 @@ app.include_router(asns.router, dependencies=_rbac)
 
 # Supplier portal surface: scoped to the logged-in supplier account.
 app.include_router(portal.router, dependencies=[Depends(get_current_supplier)])
+
+# In-app notifications: available to ANY logged-in user (staff or supplier).
+app.include_router(notifications.router, dependencies=[Depends(get_current_user)])
 
 
 @app.get("/")

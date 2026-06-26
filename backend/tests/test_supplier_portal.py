@@ -16,8 +16,8 @@ from sqlalchemy.orm import sessionmaker  # noqa: E402
 
 from app.core.roles import Role, normalize_role, rank, role_at_least, is_valid_role  # noqa: E402
 from app.database import Base  # noqa: E402
-from app.models import Asn, ProcurementRecord, SupplierMaster, User  # noqa: E402,F401
-from app.services import asn_service, supplier_account_service, user_service  # noqa: E402
+from app.models import Asn, Notification, ProcurementRecord, SupplierMaster, User  # noqa: E402,F401
+from app.services import asn_service, notification_service, supplier_account_service, user_service  # noqa: E402
 
 
 @contextmanager
@@ -152,6 +152,36 @@ class ProvisioningTests(unittest.TestCase):
             self.assertTrue(result["temp_password"])
             db.refresh(user)
             self.assertTrue(user.must_change_password)
+
+
+class NotificationTests(unittest.TestCase):
+    def test_staff_and_supplier_fanout_and_read(self):
+        with _temp_db() as db:
+            s = _supplier(db)
+            staff = user_service.create_user(db, email="staff@corp.com", password="x" * 8, role=Role.MANAGER)
+            sup_user = user_service.create_user(
+                db, email="a@s.com", password="x" * 8, role=Role.SUPPLIER, supplier_id=s.id)
+
+            # Staff fan-out.
+            n = notification_service.notify_staff(
+                db, type="SUPPLIER_MESSAGE", title="hi", supplier_id=s.id, supplier_po_no="PO-1")
+            self.assertEqual(n, 1)
+            self.assertEqual(notification_service.unread_count(db, staff.id), 1)
+            self.assertEqual(notification_service.unread_count(db, sup_user.id), 0)
+
+            # Supplier fan-out — passes supplier_id both as audience AND context
+            # column (regression: must not collide).
+            n2 = notification_service.notify_supplier(
+                db, s.id, type="STAFF_REPLY", title="reply", supplier_id=s.id, supplier_po_no="PO-1")
+            self.assertEqual(n2, 1)
+            self.assertEqual(notification_service.unread_count(db, sup_user.id), 1)
+
+            # Read flow.
+            notif = notification_service.list_for_user(db, sup_user.id)[0]
+            self.assertTrue(notification_service.mark_read(db, sup_user.id, notif.id))
+            self.assertEqual(notification_service.unread_count(db, sup_user.id), 0)
+            # A user can't mark someone else's notification.
+            self.assertFalse(notification_service.mark_read(db, staff.id, notif.id + 999))
 
 
 if __name__ == "__main__":

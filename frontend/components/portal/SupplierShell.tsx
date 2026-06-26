@@ -6,6 +6,7 @@ import { LogOut, Menu } from "lucide-react";
 import { Logo } from "@/components/brand/Logo";
 import { useAuth } from "@/lib/auth";
 import SupplierSidebar from "@/components/portal/SupplierSidebar";
+import NotificationBell from "@/components/NotificationBell";
 
 /**
  * Chrome for supplier portal accounts: a branded topbar + the supplier sidebar.
@@ -52,6 +53,7 @@ export default function SupplierShell({
           </div>
           <div className="flex-1" />
           <div className="flex items-center gap-3">
+            <NotificationBell />
             <div className="hidden text-right sm:block">
               <div className="text-sm font-medium">{name}</div>
               <div className="text-[10px] uppercase text-brand-muted tracking-wider">Supplier</div>

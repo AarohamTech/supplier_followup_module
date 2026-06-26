@@ -7,6 +7,7 @@ from .engine_job import EngineJob, EngineJobLog
 from .mail_history import MailHistory
 from .mail_parse_rule import MailParseRule
 from .mail_template import MailTemplate
+from .notification import Notification
 from .procurement import ProcurementRecord
 from .status_change_log import StatusChangeLog
 from .supplier import SupplierMaster
@@ -28,6 +29,7 @@ __all__ = [
     "MailHistory",
     "MailParseRule",
     "MailTemplate",
+    "Notification",
     "ProcurementRecord",
     "StatusChangeLog",
     "SupplierEmail",

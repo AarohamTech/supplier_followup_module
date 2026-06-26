@@ -1090,3 +1090,16 @@ export interface PortalMe {
   supplier_name: string | null;
   must_change_password: boolean;
 }
+
+// ─── Notifications ───────────────────────────────────────────────────────────
+export interface AppNotification {
+  id: number;
+  type: string;
+  title: string;
+  body?: string | null;
+  link?: string | null;
+  supplier_id?: number | null;
+  supplier_po_no?: string | null;
+  is_read: boolean;
+  created_at: string;
+}
