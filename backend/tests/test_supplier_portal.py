@@ -16,8 +16,8 @@ from sqlalchemy.orm import sessionmaker  # noqa: E402
 
 from app.core.roles import Role, normalize_role, rank, role_at_least, is_valid_role  # noqa: E402
 from app.database import Base  # noqa: E402
-from app.models import Asn, Notification, ProcurementRecord, SupplierMaster, User  # noqa: E402,F401
-from app.services import asn_service, notification_service, supplier_account_service, user_service  # noqa: E402
+from app.models import Asn, CommunicationMessage, Notification, ProcurementRecord, SupplierMaster, User  # noqa: E402,F401
+from app.services import ai_tools_service, asn_service, notification_service, supplier_account_service, user_service  # noqa: E402
 
 
 @contextmanager
@@ -182,6 +182,52 @@ class NotificationTests(unittest.TestCase):
             self.assertEqual(notification_service.unread_count(db, sup_user.id), 0)
             # A user can't mark someone else's notification.
             self.assertFalse(notification_service.mark_read(db, staff.id, notif.id + 999))
+
+
+class AiToolScopeTests(unittest.TestCase):
+    """A supplier's assistant tools must never reach another supplier's data."""
+
+    def _seed_two_suppliers(self, db):
+        for name, po, sid in [("ACME TOOLS", "ACME-1", 1), ("BETA PARTS", "BETA-1", 2)]:
+            db.add(SupplierMaster(supplier_name=name, is_active=True))
+            db.add(ProcurementRecord(
+                crm_no=f"CRM-{po}", material_name="Widget", supplier_po_no=po,
+                supplier_name=name, signal="BLACK"))
+            db.add(CommunicationMessage(
+                direction="INCOMING", status="RECEIVED", channel="EMAIL",
+                supplier_id=sid, supplier_name=name, supplier_po_no=po,
+                subject="hi", body="secret note"))
+        db.commit()
+
+    def test_supplier_scope_cannot_see_other_supplier(self):
+        with _temp_db() as db:
+            self._seed_two_suppliers(db)
+            acme = ai_tools_service.ToolScope(supplier_id=1, supplier_name="ACME TOOLS")
+            run = ai_tools_service.make_executor(db, acme)
+
+            # Overview is scoped to ACME's single record; no customer-inbox leak.
+            ov = run("get_overview", {})
+            self.assertEqual(ov["total_records"], 1)
+            self.assertNotIn("open_customer_mails", ov)
+
+            # Cannot read BETA's PO or its thread.
+            self.assertFalse(run("get_po_status", {"supplier_po_no": "BETA-1"})["found"])
+            self.assertTrue(run("get_po_status", {"supplier_po_no": "ACME-1"})["found"])
+            self.assertEqual(run("get_mail_thread", {"supplier_po_no": "BETA-1"})["message_count"], 0)
+            self.assertEqual(run("get_mail_thread", {"supplier_po_no": "ACME-1"})["message_count"], 1)
+
+            # list_red_pos ignores a spoofed supplier_name arg and stays on ACME.
+            red = run("list_red_pos", {"supplier_name": "BETA PARTS"})
+            pos = {p["supplier_po_no"] for p in red["purchase_orders"]}
+            self.assertNotIn("BETA-1", pos)
+
+            # Staff-only tools are refused for suppliers.
+            self.assertEqual(run("search_supplier", {"query": "BETA"}).get("error"), "not available")
+            self.assertEqual(run("search_knowledge", {"query": "x"}).get("error"), "not available")
+
+            # Staff scope (default) CAN see BETA's PO.
+            staff = ai_tools_service.make_executor(db)
+            self.assertTrue(staff("get_po_status", {"supplier_po_no": "BETA-1"})["found"])
 
 
 if __name__ == "__main__":

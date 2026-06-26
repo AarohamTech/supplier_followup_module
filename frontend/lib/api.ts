@@ -720,6 +720,14 @@ export const api = {
   addPortalAsnEvent: (id: number, body: AsnEventPayload) =>
     http<Asn>(`/api/portal/asns/${id}/events`, { method: "POST", body: JSON.stringify(body) }),
 
+  // Supplier assistant (Harmony Intelligent, scoped to this supplier's data).
+  portalAssistantHealth: () => http<{ enabled: boolean }>("/api/portal/assistant/health"),
+  portalAssistantChat: (messages: ChatMessage[]) =>
+    http<AiChatResponse>("/api/portal/assistant/chat", {
+      method: "POST",
+      body: JSON.stringify({ messages }),
+    }),
+
   // ─── Notifications (staff + supplier) ─────────────────────────────────
   listNotifications: (limit = 30) =>
     http<AppNotification[]>(`/api/notifications?limit=${limit}`),

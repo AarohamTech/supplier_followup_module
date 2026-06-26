@@ -5,13 +5,16 @@ trust `user.supplier_id`. Suppliers only ever see their own POs/ASNs.
 """
 from __future__ import annotations
 
+import logging
 import re
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from ..core.config import settings
 from ..core.deps import get_current_supplier
 from ..database import get_db
 from ..models.asn import Asn
@@ -28,9 +31,14 @@ from ..schemas.portal import (
     PortalPoMaterial,
     PortalSummary,
 )
+from ..services import ai_service
+from ..services import ai_tools_service
 from ..services import asn_service
 from ..services import communication_message_service as msg_service
 from ..services import notification_service as notif
+from ..services.ai_service import AIDisabledError
+
+log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/portal", tags=["portal"])
 
@@ -431,3 +439,59 @@ def add_event(
             asn_id=asn.id,
         )
     return AsnOut.model_validate(asn)
+
+
+# ── Supplier assistant (Harmony Intelligent, scoped to this supplier) ─────────
+class _AssistantMessage(BaseModel):
+    role: str = "user"
+    content: str
+
+
+class _AssistantRequest(BaseModel):
+    messages: list[_AssistantMessage] = Field(default_factory=list)
+
+
+@router.get("/assistant/health")
+def assistant_health(user: User = Depends(get_current_supplier)) -> dict:
+    return {"enabled": bool(ai_service.is_enabled())}
+
+
+@router.post("/assistant/chat")
+def assistant_chat(
+    payload: _AssistantRequest,
+    user: User = Depends(get_current_supplier),
+    db: Session = Depends(get_db),
+) -> dict:
+    if not payload.messages:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "messages cannot be empty")
+
+    name = _supplier_name(db, user)
+    scope = ai_tools_service.ToolScope(supplier_id=user.supplier_id, supplier_name=name)
+    system = (
+        f"You are Harmony Intelligent, the assistant for the supplier '{name}'. "
+        "You can ONLY see this supplier's own purchase orders, shipments (ASNs) and "
+        "message threads — never another supplier's or any internal-only data. "
+        "Always call a tool to fetch real data before answering, and be concise and "
+        "professional. If asked about anything outside this supplier's orders, say you "
+        "can only help with their POs and shipments." + ai_service.AGENT_TOOLS_SUFFIX
+    )
+    try:
+        if not ai_service.is_enabled():
+            raise AIDisabledError("Harmony Intelligent is currently unavailable.")
+        result = ai_service.chat_with_tools(
+            [m.model_dump() for m in payload.messages],
+            tools=ai_tools_service.tool_specs(scope),
+            executor=ai_tools_service.make_executor(db, scope),
+            system=system,
+        )
+    except AIDisabledError as exc:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc))
+    except Exception as exc:  # noqa: BLE001
+        log.exception("Portal assistant chat failed")
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"Assistant request failed: {exc}")
+
+    return {
+        "reply": result["reply"],
+        "model": settings.LLM_MODEL,
+        "tools_used": result.get("tools_used", []),
+    }

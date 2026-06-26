@@ -12,6 +12,7 @@ the chat turn.
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any, Callable
 
@@ -26,6 +27,42 @@ from ..models.supplier import SupplierMaster
 from . import embeddings_service, po_followup_service, vector_store
 
 log = logging.getLogger(__name__)
+
+
+# ── Caller scope ──────────────────────────────────────────────────────────────
+@dataclass(frozen=True)
+class ToolScope:
+    """Who the assistant is acting for. A supplier scope hard-filters every tool
+    to that supplier's data so one supplier can never see another's. Staff scope
+    (the default) is unrestricted.
+    """
+    supplier_id: int | None = None
+    supplier_name: str | None = None
+
+    @property
+    def is_supplier(self) -> bool:
+        return self.supplier_id is not None
+
+
+STAFF_SCOPE = ToolScope()
+
+# Outbound statuses a supplier is allowed to see (mirror routers/portal.py).
+_VISIBLE_OUTGOING = {"SENT", "SENT_MANUALLY", "READY", "COPIED", "MAILTO_OPENED"}
+
+# Tools a supplier account may call (everything else is staff-only).
+_SUPPLIER_TOOLS = {"get_overview", "list_red_pos", "get_po_status", "get_mail_thread"}
+
+
+def _owns_po(db: Session, scope: ToolScope, supplier_po_no: str) -> bool:
+    """True if the PO has at least one line belonging to the scoped supplier."""
+    if not scope.is_supplier or not scope.supplier_name:
+        return True
+    return db.scalar(
+        select(func.count(ProcurementRecord.id)).where(
+            ProcurementRecord.supplier_po_no == supplier_po_no,
+            func.upper(ProcurementRecord.supplier_name) == scope.supplier_name.upper(),
+        )
+    ) > 0
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
@@ -60,38 +97,35 @@ def _group_brief(g: dict[str, Any]) -> dict[str, Any]:
 
 
 # ── executors ────────────────────────────────────────────────────────────────
-def _get_overview(db: Session, args: dict[str, Any]) -> dict[str, Any]:
-    rows = db.execute(
-        select(func.upper(ProcurementRecord.signal), func.count(ProcurementRecord.id))
-        .group_by(func.upper(ProcurementRecord.signal))
-    ).all()
-    by_signal = {(sig or "UNSET"): int(c) for sig, c in rows}
-    open_customer_mails = int(
-        db.scalar(
-            select(func.count(CustomerMail.id)).where(CustomerMail.status == "OPEN")
-        )
-        or 0
+def _get_overview(db: Session, args: dict[str, Any], scope: ToolScope) -> dict[str, Any]:
+    sig_stmt = select(func.upper(ProcurementRecord.signal), func.count(ProcurementRecord.id))
+    total_stmt = select(func.count(ProcurementRecord.id))
+    high_stmt = select(func.count(ProcurementRecord.id)).where(
+        func.upper(ProcurementRecord.risk_band) == "HIGH"
     )
-    high_risk = int(
-        db.scalar(
-            select(func.count(ProcurementRecord.id)).where(
-                func.upper(ProcurementRecord.risk_band) == "HIGH"
-            )
-        )
-        or 0
-    )
-    total = int(db.scalar(select(func.count(ProcurementRecord.id))) or 0)
-    return {
-        "total_records": total,
+    if scope.is_supplier and scope.supplier_name:
+        cond = func.upper(ProcurementRecord.supplier_name) == scope.supplier_name.upper()
+        sig_stmt = sig_stmt.where(cond)
+        total_stmt = total_stmt.where(cond)
+        high_stmt = high_stmt.where(cond)
+    by_signal = {(sig or "UNSET"): int(c) for sig, c in db.execute(sig_stmt.group_by(func.upper(ProcurementRecord.signal))).all()}
+    out: dict[str, Any] = {
+        "total_records": int(db.scalar(total_stmt) or 0),
         "records_by_signal": by_signal,
-        "open_customer_mails": open_customer_mails,
-        "high_risk_records": high_risk,
+        "high_risk_records": int(db.scalar(high_stmt) or 0),
     }
+    # Customer inbox is internal-only — never surfaced to suppliers.
+    if not scope.is_supplier:
+        out["open_customer_mails"] = int(
+            db.scalar(select(func.count(CustomerMail.id)).where(CustomerMail.status == "OPEN")) or 0
+        )
+    return out
 
 
-def _list_red_pos(db: Session, args: dict[str, Any]) -> dict[str, Any]:
+def _list_red_pos(db: Session, args: dict[str, Any], scope: ToolScope) -> dict[str, Any]:
     limit = max(1, min(int(args.get("limit", 10) or 10), 50))
-    supplier = (args.get("supplier_name") or "").strip() or None
+    # A supplier scope forces their own name; staff may filter by any supplier.
+    supplier = scope.supplier_name if scope.is_supplier else ((args.get("supplier_name") or "").strip() or None)
     payload = po_followup_service.list_po_groups(db, supplier_name=supplier, size=200)
     red = [
         _group_brief(g)
@@ -101,10 +135,12 @@ def _list_red_pos(db: Session, args: dict[str, Any]) -> dict[str, Any]:
     return {"count": len(red), "purchase_orders": red[:limit]}
 
 
-def _get_po_status(db: Session, args: dict[str, Any]) -> dict[str, Any]:
+def _get_po_status(db: Session, args: dict[str, Any], scope: ToolScope) -> dict[str, Any]:
     po = (args.get("supplier_po_no") or "").strip()
     if not po:
         return {"error": "supplier_po_no is required"}
+    if not _owns_po(db, scope, po):
+        return {"found": False, "supplier_po_no": po, "message": "No PO found with that number"}
     anchor = db.scalar(
         select(ProcurementRecord)
         .where(ProcurementRecord.supplier_po_no == po)
@@ -141,7 +177,10 @@ def _get_po_status(db: Session, args: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _search_supplier(db: Session, args: dict[str, Any]) -> dict[str, Any]:
+def _search_supplier(db: Session, args: dict[str, Any], scope: ToolScope) -> dict[str, Any]:
+    # Cross-supplier search is staff-only; suppliers can never reach this tool.
+    if scope.is_supplier:
+        return {"error": "not available"}
     q = (args.get("query") or "").strip()
     if not q:
         return {"error": "query is required"}
@@ -182,17 +221,27 @@ def _search_supplier(db: Session, args: dict[str, Any]) -> dict[str, Any]:
     return {"count": len(out), "suppliers": out[:10]}
 
 
-def _get_mail_thread(db: Session, args: dict[str, Any]) -> dict[str, Any]:
+def _get_mail_thread(db: Session, args: dict[str, Any], scope: ToolScope) -> dict[str, Any]:
     po = (args.get("supplier_po_no") or "").strip()
     limit = max(1, min(int(args.get("limit", 12) or 12), 30))
     if not po:
         return {"error": "supplier_po_no is required"}
-    msgs = db.scalars(
+    if not _owns_po(db, scope, po):
+        return {"supplier_po_no": po, "message_count": 0, "thread": []}
+    stmt = (
         select(CommunicationMessage)
         .where(CommunicationMessage.supplier_po_no == po)
         .order_by(CommunicationMessage.created_at.asc())
-        .limit(limit)
-    ).all()
+    )
+    if scope.is_supplier:
+        # Only this supplier's own visible messages (no internal drafts).
+        stmt = stmt.where(CommunicationMessage.supplier_id == scope.supplier_id)
+    msgs = [
+        m for m in db.scalars(stmt.limit(limit)).all()
+        if not scope.is_supplier
+        or m.direction == "INCOMING"
+        or (m.status in _VISIBLE_OUTGOING)
+    ]
     thread = [
         {
             "direction": m.direction,
@@ -208,7 +257,10 @@ def _get_mail_thread(db: Session, args: dict[str, Any]) -> dict[str, Any]:
     return {"supplier_po_no": po, "message_count": len(thread), "thread": thread}
 
 
-def _search_knowledge(db: Session, args: dict[str, Any]) -> dict[str, Any]:
+def _search_knowledge(db: Session, args: dict[str, Any], scope: ToolScope) -> dict[str, Any]:
+    # Shared memory spans all suppliers' threads → staff-only (no cross-tenant leak).
+    if scope.is_supplier:
+        return {"available": False, "message": "not available"}
     if not (embeddings_service.is_enabled() and vector_store.available()):
         return {"available": False, "message": "Semantic memory is not enabled."}
     q = (args.get("query") or "").strip()
@@ -240,7 +292,7 @@ def _search_knowledge(db: Session, args: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-_EXECUTORS: dict[str, Callable[[Session, dict[str, Any]], dict[str, Any]]] = {
+_EXECUTORS: dict[str, Callable[[Session, dict[str, Any], "ToolScope"], dict[str, Any]]] = {
     "get_overview": _get_overview,
     "list_red_pos": _list_red_pos,
     "get_po_status": _get_po_status,
@@ -329,21 +381,32 @@ _KNOWLEDGE_SPEC = _spec(
 )
 
 
-def tool_specs() -> list[dict[str, Any]]:
-    """Tools exposed to the model — includes search_knowledge only when RAG is on."""
+def tool_specs(scope: ToolScope = STAFF_SCOPE) -> list[dict[str, Any]]:
+    """Tools exposed to the model for this caller. Suppliers get a scoped subset
+    (no cross-supplier search, no shared memory); staff get everything (+ RAG)."""
+    if scope.is_supplier:
+        return [s for s in _BASE_SPECS if s["function"]["name"] in _SUPPLIER_TOOLS]
     specs = list(_BASE_SPECS)
     if embeddings_service.is_enabled() and vector_store.available():
         specs.append(_KNOWLEDGE_SPEC)
     return specs
 
 
-def make_executor(db: Session) -> Callable[[str, dict[str, Any]], dict[str, Any]]:
-    """Bind a db session to a (name, args) -> result dispatcher for the agent loop."""
+def make_executor(
+    db: Session, scope: ToolScope = STAFF_SCOPE
+) -> Callable[[str, dict[str, Any]], dict[str, Any]]:
+    """Bind a db session + caller scope to a (name, args) -> result dispatcher.
+
+    For supplier scope, any tool outside the allowed set is refused even if the
+    model tries to call it — defence in depth on top of the scoped tool_specs.
+    """
 
     def _run(name: str, args: dict[str, Any]) -> dict[str, Any]:
+        if scope.is_supplier and name not in _SUPPLIER_TOOLS:
+            return {"error": "not available"}
         fn = _EXECUTORS.get(name)
         if fn is None:
             return {"error": f"unknown tool: {name}"}
-        return fn(db, args or {})
+        return fn(db, args or {}, scope)
 
     return _run

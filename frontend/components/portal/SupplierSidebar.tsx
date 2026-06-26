@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, FileSpreadsheet, MessagesSquare, Truck, X } from "lucide-react";
+import { LayoutDashboard, FileSpreadsheet, MessagesSquare, Sparkles, Truck, X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
 const items = [
   { href: "/portal", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/portal/assistant", label: "HI Assistant", icon: Sparkles },
   { href: "/portal/pos", label: "My Purchase Orders", icon: FileSpreadsheet },
   { href: "/portal/communication", label: "Communication Hub", icon: MessagesSquare },
   { href: "/portal/asn", label: "ASN Portal", icon: Truck },
