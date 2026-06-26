@@ -12,8 +12,10 @@ class AsnItemIn(BaseModel):
     procurement_record_id: Optional[int] = None
     material_name: str = Field(min_length=1, max_length=500)
     material_code: Optional[str] = None
+    po_qty: Optional[float] = None
     qty_shipped: Optional[float] = None
     uom: Optional[str] = None
+    invoice_no: Optional[str] = None
 
 
 class AsnCreate(BaseModel):
@@ -65,8 +67,10 @@ class AsnItemOut(BaseModel):
     procurement_record_id: Optional[int] = None
     material_name: str
     material_code: Optional[str] = None
+    po_qty: Optional[float] = None
     qty_shipped: Optional[float] = None
     uom: Optional[str] = None
+    invoice_no: Optional[str] = None
 
 
 class AsnEventOut(BaseModel):

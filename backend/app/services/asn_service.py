@@ -129,8 +129,10 @@ def create_asn(
                 procurement_record_id=it.get("procurement_record_id"),
                 material_name=it.get("material_name") or "",
                 material_code=it.get("material_code"),
+                po_qty=it.get("po_qty"),
                 qty_shipped=it.get("qty_shipped"),
                 uom=it.get("uom"),
+                invoice_no=it.get("invoice_no"),
             )
         )
 

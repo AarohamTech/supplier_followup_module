@@ -940,8 +940,10 @@ export interface AsnItem {
   procurement_record_id?: number | null;
   material_name: string;
   material_code?: string | null;
+  po_qty?: number | null;
   qty_shipped?: number | null;
   uom?: string | null;
+  invoice_no?: string | null;
 }
 
 export interface AsnEvent {
@@ -1000,8 +1002,10 @@ export interface AsnItemInput {
   procurement_record_id?: number | null;
   material_name: string;
   material_code?: string | null;
+  po_qty?: number | null;
   qty_shipped?: number | null;
   uom?: string | null;
+  invoice_no?: string | null;
 }
 
 export interface AsnCreatePayload {

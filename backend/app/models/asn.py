@@ -77,8 +77,11 @@ class AsnItem(Base):
     procurement_record_id: Mapped[int | None] = mapped_column(Integer, index=True)
     material_name: Mapped[str] = mapped_column(String(500), nullable=False)
     material_code: Mapped[str | None] = mapped_column(String(64))
+    # PO (ordered) quantity, captured for reference alongside what's being shipped.
+    po_qty: Mapped[float | None] = mapped_column(Numeric(18, 3))
     qty_shipped: Mapped[float | None] = mapped_column(Numeric(18, 3))
     uom: Mapped[str | None] = mapped_column(String(16))
+    invoice_no: Mapped[str | None] = mapped_column(String(64))
 
     asn: Mapped["Asn"] = relationship(back_populates="items")
 

@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import base64
 
+from ..core.config import settings
+
 BRAND_RED = "#E11D2E"
 BRAND_RED_DARK = "#B01624"
 BRAND_INK = "#1f2937"
@@ -33,9 +35,20 @@ def _logo_data_uri(stroke: str = "#ffffff") -> str:
     return f"data:image/svg+xml;base64,{b64}"
 
 
+def _logo_src() -> str:
+    """Logo URL for emails. Gmail (and many clients) block inline SVG data URIs,
+    so prefer a hosted PNG served by the frontend; fall back to the SVG data URI
+    only when no public base URL is configured.
+    """
+    base = (settings.APP_BASE_URL or "").strip().rstrip("/")
+    if base:
+        return f"{base}/email-logo.png"
+    return _logo_data_uri("#ffffff")
+
+
 def header_html(subtitle: str) -> str:
     """Brand-red header bar with the Harmony mark + 'Harmony × Hariom' wordmark."""
-    logo = _logo_data_uri("#ffffff")
+    logo = _logo_src()
     return (
         f'<div style="background:{BRAND_RED};padding:14px 20px;">'
         '<table role="presentation" cellpadding="0" cellspacing="0" '

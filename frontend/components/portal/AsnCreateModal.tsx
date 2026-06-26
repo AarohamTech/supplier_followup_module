@@ -62,8 +62,10 @@ export default function AsnCreateModal({
             _selected: true,
             procurement_record_id: m.procurement_record_id,
             material_name: m.material_name,
+            po_qty: m.qty ?? null,
             qty_shipped: m.qty ?? null,
             uom: m.uom ?? null,
+            invoice_no: null,
           })),
         );
       } catch (e) {
@@ -169,8 +171,10 @@ export default function AsnCreateModal({
                     <tr>
                       <th className="px-3 py-2 text-left table-header">Ship</th>
                       <th className="px-3 py-2 text-left table-header">Material</th>
+                      <th className="px-3 py-2 text-left table-header">PO Qty</th>
                       <th className="px-3 py-2 text-left table-header">Qty Shipped</th>
                       <th className="px-3 py-2 text-left table-header">UOM</th>
+                      <th className="px-3 py-2 text-left table-header">Invoice No</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -180,15 +184,27 @@ export default function AsnCreateModal({
                           <input type="checkbox" checked={l._selected} onChange={(e) => setLine(idx, { _selected: e.target.checked })} />
                         </td>
                         <td className="px-3 py-2">{l.material_name}</td>
+                        <td className="px-3 py-2 text-brand-muted whitespace-nowrap">
+                          {l.po_qty ?? "—"} {l.uom || ""}
+                        </td>
                         <td className="px-3 py-2">
                           <input
                             type="number"
-                            className="input py-1 w-28"
+                            className="input py-1 w-24"
                             value={l.qty_shipped ?? ""}
                             onChange={(e) => setLine(idx, { qty_shipped: e.target.value === "" ? null : Number(e.target.value) })}
                           />
                         </td>
                         <td className="px-3 py-2 text-xs text-brand-muted">{l.uom || "—"}</td>
+                        <td className="px-3 py-2">
+                          <input
+                            type="text"
+                            className="input py-1 w-28"
+                            placeholder="INV-…"
+                            value={l.invoice_no ?? ""}
+                            onChange={(e) => setLine(idx, { invoice_no: e.target.value || null })}
+                          />
+                        </td>
                       </tr>
                     ))}
                   </tbody>

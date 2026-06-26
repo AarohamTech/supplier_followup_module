@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import api from "@/lib/api";
 import { useStore } from "@/lib/store";
 import type {
@@ -296,6 +296,7 @@ export default function Page() {
   const [composer, setComposer] = useState("");
   const [sendAsEmail, setSendAsEmail] = useState(true);
   const [replying, setReplying] = useState(false);
+  const threadEndRef = useRef<HTMLDivElement | null>(null);
   const [assignOpen, setAssignOpen] = useState(false);
   const [assignSeed, setAssignSeed] = useState<Partial<CommunicationTaskCreate>>({});
   const [toasts, setToasts] = useState<{ id: number; tone: "ok" | "err"; msg: string }[]>([]);
@@ -310,6 +311,11 @@ export default function Page() {
   const draftCount = threadMessages.filter((m) => m.sent_status === "DRAFT").length;
   const sentCount = threadMessages.filter((m) => m.sent_status !== "DRAFT").length;
   const threadSignal = (thread?.signal ?? activePo?.signal ?? "GREEN") as TaskSignal;
+
+  // Jump to the latest message whenever the thread loads/changes.
+  useEffect(() => {
+    if (threadMessages.length) threadEndRef.current?.scrollIntoView({ block: "end" });
+  }, [thread, threadMessages.length]);
   const lastMessage = threadMessages[threadMessages.length - 1] ?? null;
   const lastMessageId = numericMailId(lastMessage?.id);
 
@@ -903,6 +909,7 @@ export default function Page() {
                     />
                   ))
                 )}
+                <div ref={threadEndRef} />
               </div>
 
               {/* Composer — minimal */}
