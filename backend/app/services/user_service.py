@@ -67,6 +67,8 @@ def create_user(
     full_name: str | None = None,
     role: str = DEFAULT_ROLE,
     is_active: bool = True,
+    supplier_id: int | None = None,
+    must_change_password: bool = False,
     commit: bool = True,
 ) -> User:
     if get_by_email(db, email) is not None:
@@ -77,6 +79,8 @@ def create_user(
         hashed_password=hash_password(password),
         role=normalize_role(role),
         is_active=is_active,
+        supplier_id=supplier_id,
+        must_change_password=must_change_password,
     )
     db.add(user)
     if commit:
@@ -122,8 +126,15 @@ def update_user(
     return user
 
 
-def set_password(db: Session, user: User, new_password: str) -> User:
+def set_password(
+    db: Session, user: User, new_password: str, *, must_change: bool | None = None
+) -> User:
+    """Set a new password. `must_change` (when given) updates the force-change
+    flag: True for admin/temp resets, False when the user changes it themselves.
+    """
     user.hashed_password = hash_password(new_password)
+    if must_change is not None:
+        user.must_change_password = must_change
     db.commit()
     db.refresh(user)
     return user

@@ -28,10 +28,14 @@ def _column_ddl_type(column: Column, engine: Engine) -> str:
         return "TEXT"
 
 
-def _default_clause(column: Column) -> str:
+def _default_clause(column: Column, engine: Engine) -> str:
     if column.default is not None and getattr(column.default, "is_scalar", False):
         value = column.default.arg
         if isinstance(value, bool):
+            # Postgres BOOLEAN rejects `DEFAULT 0/1` (DatatypeMismatch); it needs
+            # the boolean literal. SQLite has no bool type and uses 0/1.
+            if engine.dialect.name == "postgresql":
+                return f" DEFAULT {'true' if value else 'false'}"
             return f" DEFAULT {1 if value else 0}"
         if isinstance(value, (int, float)):
             return f" DEFAULT {value}"
@@ -66,7 +70,7 @@ def ensure_columns(engine: Engine, tables: Iterable | None = None) -> list[str]:
             if col.name in existing_cols:
                 continue
             ddl_type = _column_ddl_type(col, engine)
-            default = _default_clause(col)
+            default = _default_clause(col, engine)
             # ADD COLUMN can only be NOT NULL when a default exists to backfill
             # existing rows; otherwise add it nullable.
             not_null = " NOT NULL" if (not col.nullable and default) else ""

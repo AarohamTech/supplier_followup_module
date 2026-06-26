@@ -35,7 +35,9 @@ export default function UsersAdminPage() {
     setLoading(true);
     api
       .listUsers()
-      .then(setUsers)
+      // Staff page manages internal accounts only; supplier portal logins are
+      // provisioned + managed from Email Master.
+      .then((list) => setUsers(list.filter((u) => u.supplier_id == null)))
       .catch((e) => setError((e as Error).message))
       .finally(() => setLoading(false));
   }, []);
@@ -203,7 +205,7 @@ export default function UsersAdminPage() {
                       <select
                         value={u.role}
                         onChange={(e) => onChangeRole(u, e.target.value as Role)}
-                        className={`rounded-full px-2 py-1 text-xs font-medium capitalize outline-none ${ROLE_BADGE[u.role]}`}
+                        className={`rounded-full px-2 py-1 text-xs font-medium capitalize outline-none ${ROLE_BADGE[u.role as Role] ?? ""}`}
                       >
                         {ALL_ROLES.map((r) => (
                           <option key={r} value={r}>{r}</option>

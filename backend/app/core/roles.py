@@ -19,26 +19,42 @@ class Role:
     MANAGER = "manager"
     USER = "user"
     VIEWER = "viewer"
+    # External supplier portal account. Deliberately OUTSIDE the staff ladder
+    # (rank 0) so it never satisfies any staff guard; account type is decided by
+    # User.supplier_id, this string just labels the row. See core/deps.py.
+    SUPPLIER = "supplier"
 
 
-# Ordered low → high. Order matters for UI dropdowns and ranking.
+# Ordered low → high. Order matters for UI dropdowns and ranking. This is the
+# *staff* ladder only — `supplier` is intentionally excluded so admin user
+# dropdowns and `require_role` comparisons stay unchanged.
 ALL_ROLES: tuple[str, ...] = (Role.VIEWER, Role.USER, Role.MANAGER, Role.ADMIN)
+
+# Every role string the system recognises (staff ladder + the supplier label).
+KNOWN_ROLES: tuple[str, ...] = ALL_ROLES + (Role.SUPPLIER,)
 
 DEFAULT_ROLE = Role.VIEWER
 
+# Staff roles rank 1..4; supplier ranks 0 (below viewer) so role_at_least never
+# admits a supplier to a staff-gated endpoint.
 _RANK: dict[str, int] = {role: idx + 1 for idx, role in enumerate(ALL_ROLES)}
+_RANK[Role.SUPPLIER] = 0
 
 
 def is_valid_role(role: str | None) -> bool:
-    return role in _RANK
+    return role in KNOWN_ROLES
 
 
 def normalize_role(role: str | None) -> str:
-    """Coerce arbitrary input to a known role, defaulting to the lowest."""
+    """Coerce arbitrary input to a known role, defaulting to the lowest staff role.
+
+    Known roles (incl. `supplier`) round-trip unchanged; anything unrecognised
+    falls back to the default so a typo can never silently grant access.
+    """
     if role is None:
         return DEFAULT_ROLE
     candidate = role.strip().lower()
-    return candidate if candidate in _RANK else DEFAULT_ROLE
+    return candidate if candidate in KNOWN_ROLES else DEFAULT_ROLE
 
 
 def rank(role: str | None) -> int:

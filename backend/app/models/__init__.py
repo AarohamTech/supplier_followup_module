@@ -1,4 +1,5 @@
 from .app_setting import AppSetting
+from .asn import Asn, AsnEvent, AsnItem
 from .communication_message import CommunicationMessage
 from .communication_task import CommunicationTask
 from .customer_mail import CustomerMail
@@ -16,6 +17,9 @@ from .user import User
 
 __all__ = [
     "AppSetting",
+    "Asn",
+    "AsnEvent",
+    "AsnItem",
     "CommunicationMessage",
     "CommunicationTask",
     "CustomerMail",

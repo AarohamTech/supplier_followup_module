@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     # (run it once out-of-band) so cold starts stay fast and don't hammer the DB.
     RUN_STARTUP_INIT: bool = Field(default=True)
     CORS_ORIGINS: list[str] = Field(...)
+    # Public base URL of the frontend (used e.g. in supplier credential emails).
+    # When empty, falls back to the first CORS origin. No trailing slash.
+    APP_BASE_URL: str = Field(default="")
 
     JWT_SECRET: str = Field(...)
     JWT_ALGORITHM: str = Field(...)

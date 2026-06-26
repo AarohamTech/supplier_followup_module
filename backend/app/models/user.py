@@ -5,7 +5,7 @@ Passwords are never stored in plaintext — only the bcrypt hash produced by
 """
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, String, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ..core.roles import DEFAULT_ROLE
@@ -22,6 +22,15 @@ class User(Base):
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
     role: Mapped[str] = mapped_column(String(16), default=DEFAULT_ROLE, index=True, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+    # External supplier accounts link to a supplier_master row. NULL → internal
+    # staff account (the 4-tier RBAC). Set → supplier portal account scoped to
+    # that supplier's data. See core/roles.py (Role.SUPPLIER) and core/deps.py.
+    supplier_id: Mapped[int | None] = mapped_column(
+        ForeignKey("supplier_master.id"), index=True, nullable=True
+    )
+    # Forces a password change on next login (temp/admin-reset credentials).
+    must_change_password: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime)
 

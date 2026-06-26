@@ -33,8 +33,41 @@ class SupplierEmailUpdate(BaseModel):
     is_active: Optional[bool] = None
 
 
+class CreatedLogin(BaseModel):
+    email: str
+    temp_password: str
+
+
+class LoginConflict(BaseModel):
+    email: str
+    reason: str
+
+
+class LoginProvisioningSummary(BaseModel):
+    """Result of reconciling supplier logins with the mapping's TO emails."""
+    created: list[CreatedLogin] = Field(default_factory=list)
+    reactivated: list[str] = Field(default_factory=list)
+    deactivated: list[str] = Field(default_factory=list)
+    conflicts: list[LoginConflict] = Field(default_factory=list)
+    emailed: list[str] = Field(default_factory=list)
+
+
 class SupplierEmailOut(SupplierEmailBase):
     model_config = ConfigDict(from_attributes=True)
     id: int
     created_at: datetime
     updated_at: datetime
+    # Populated on create/update responses; None when simply listing mappings.
+    provisioning: Optional[LoginProvisioningSummary] = None
+
+
+class SupplierLoginOut(BaseModel):
+    """A supplier portal login account (subset of User) for admin review."""
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    email: EmailStr
+    supplier_id: Optional[int] = None
+    is_active: bool
+    must_change_password: bool
+    last_login_at: Optional[datetime] = None
+    created_at: datetime

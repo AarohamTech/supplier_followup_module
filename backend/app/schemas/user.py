@@ -26,6 +26,11 @@ class UserOut(BaseModel):
     full_name: str | None = None
     role: str
     is_active: bool
+    # Supplier portal accounts carry a supplier_id (NULL → internal staff account).
+    supplier_id: int | None = None
+    must_change_password: bool = False
+    # Convenience field populated by the auth/portal routers (not an ORM column).
+    supplier_name: str | None = None
     last_login_at: datetime | None = None
     created_at: datetime
     updated_at: datetime

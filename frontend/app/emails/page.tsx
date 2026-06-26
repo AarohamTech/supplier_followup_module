@@ -2,10 +2,12 @@
 
 import { useState } from "react";
 import { useStore } from "@/lib/store";
+import { useAuth } from "@/lib/auth";
 import api from "@/lib/api";
-import type { SupplierEmail } from "@/lib/types";
-import { Mail, Pencil, Trash2, Plus, X, Save } from "lucide-react";
+import type { LoginProvisioningSummary, SupplierEmail } from "@/lib/types";
+import { Mail, Pencil, Trash2, Plus, X, Save, KeyRound } from "lucide-react";
 import PageHeader from "@/components/layout/PageHeader";
+import SupplierLoginsModal from "@/components/emails/SupplierLoginsModal";
 
 const EMPTY: Partial<SupplierEmail> = {
   supplier_id: undefined,
@@ -24,9 +26,13 @@ export default function Page() {
   const supplierMasters = useStore((s) => s.supplierMasters);
   const mappings = useStore((s) => s.suppliers);
   const reload = useStore((s) => s.loadSuppliers);
+  const { hasRole } = useAuth();
+  const isAdmin = hasRole("admin");
   const [editing, setEditing] = useState<Partial<SupplierEmail> | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [provisioning, setProvisioning] = useState<LoginProvisioningSummary | null>(null);
+  const [loginsFor, setLoginsFor] = useState<SupplierEmail | null>(null);
 
   const save = async () => {
     if (!editing?.supplier_id) {
@@ -51,9 +57,11 @@ export default function Page() {
     setBusy(true);
     setError(null);
     try {
-      if (editing.id) await api.updateSupplierEmail(editing.id, editing);
-      else await api.createSupplierEmail(editing);
+      const saved = editing.id
+        ? await api.updateSupplierEmail(editing.id, editing)
+        : await api.createSupplierEmail(editing);
       setEditing(null);
+      setProvisioning(saved.provisioning ?? null);
       await reload();
     } catch (e: any) {
       setError(e.message ?? "Unable to save email mapping.");
@@ -95,6 +103,58 @@ export default function Page() {
         <div className="rounded-md bg-red-50 px-3 py-2 text-xs text-signal-red">{error}</div>
       )}
 
+      {provisioning && (
+        <div className="card p-4 text-sm">
+          <div className="mb-2 flex items-center justify-between">
+            <div className="font-semibold text-brand-dark">Supplier login provisioning</div>
+            <button className="p-1 rounded hover:bg-gray-100" onClick={() => setProvisioning(null)}><X size={16} /></button>
+          </div>
+          {provisioning.created.length === 0 &&
+          provisioning.reactivated.length === 0 &&
+          provisioning.deactivated.length === 0 &&
+          provisioning.conflicts.length === 0 ? (
+            <div className="text-xs text-brand-muted">No login changes — all TO emails were already provisioned.</div>
+          ) : (
+            <div className="space-y-2">
+              {provisioning.created.length > 0 && (
+                <div>
+                  <div className="text-[11px] font-semibold uppercase tracking-wider text-emerald-700">Logins created</div>
+                  <div className="mt-1 overflow-x-auto">
+                    <table className="text-xs">
+                      <tbody>
+                        {provisioning.created.map((c) => (
+                          <tr key={c.email}>
+                            <td className="pr-4 py-0.5">{c.email}</td>
+                            <td className="py-0.5 font-mono font-semibold">{c.temp_password}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="mt-1 text-[11px] text-brand-muted">
+                    {provisioning.emailed.length > 0
+                      ? `Credentials emailed to: ${provisioning.emailed.join(", ")}.`
+                      : "Email not sent (SMTP off) — share the temporary passwords securely."}
+                  </div>
+                </div>
+              )}
+              {provisioning.reactivated.length > 0 && (
+                <div className="text-xs"><span className="font-semibold">Reactivated:</span> {provisioning.reactivated.join(", ")}</div>
+              )}
+              {provisioning.deactivated.length > 0 && (
+                <div className="text-xs"><span className="font-semibold">Deactivated:</span> {provisioning.deactivated.join(", ")}</div>
+              )}
+              {provisioning.conflicts.length > 0 && (
+                <div className="text-xs text-signal-red">
+                  <span className="font-semibold">Skipped (conflict):</span>{" "}
+                  {provisioning.conflicts.map((c) => `${c.email} (${c.reason})`).join(", ")}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="card overflow-hidden">
         <table className="min-w-full text-sm">
           <thead className="bg-gray-50">
@@ -124,6 +184,11 @@ export default function Page() {
                 </td>
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-2">
+                    {isAdmin && (
+                      <button title="Supplier logins" onClick={() => setLoginsFor(mapping)} className="p-1 rounded hover:bg-gray-100">
+                        <KeyRound size={14} />
+                      </button>
+                    )}
                     <button title="Edit" onClick={() => edit(mapping)} className="p-1 rounded hover:bg-gray-100">
                       <Pencil size={14} />
                     </button>
@@ -169,7 +234,12 @@ export default function Page() {
                 </select>
               </div>
 
-              <TagsInput label="TO Emails *" values={editing.to_emails ?? []} onChange={(values) => setEditing({ ...editing, to_emails: values })} />
+              <div>
+                <TagsInput label="TO Emails *" values={editing.to_emails ?? []} onChange={(values) => setEditing({ ...editing, to_emails: values })} />
+                <p className="mt-1 text-[11px] text-brand-muted">
+                  Each TO email gets a Supplier Portal login (a temporary password is emailed; they’re asked to change it on first login).
+                </p>
+              </div>
               <TagsInput label="CC Emails" values={editing.cc_emails ?? []} onChange={(values) => setEditing({ ...editing, cc_emails: values })} />
               <TagsInput label="BCC Emails" values={editing.bcc_emails ?? []} onChange={(values) => setEditing({ ...editing, bcc_emails: values })} />
               <TagsInput label="Escalation Emails" values={editing.escalation_emails ?? []} onChange={(values) => setEditing({ ...editing, escalation_emails: values })} />
@@ -195,6 +265,8 @@ export default function Page() {
           </div>
         </div>
       )}
+
+      {loginsFor && <SupplierLoginsModal mapping={loginsFor} onClose={() => setLoginsFor(null)} />}
     </div>
   );
 }

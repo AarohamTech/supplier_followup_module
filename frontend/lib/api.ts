@@ -59,6 +59,17 @@ import type {
   LoginResponse,
   UserCreatePayload,
   UserUpdatePayload,
+  SupplierLogin,
+  Asn,
+  AsnListResponse,
+  AsnSummary,
+  AsnCreatePayload,
+  AsnEventPayload,
+  PortalSummary,
+  PortalPoListResponse,
+  PortalPoMaterial,
+  PortalMessage,
+  PortalMe,
 } from "./types";
 import { getToken, setToken, LOGIN_PATH } from "./auth-token";
 
@@ -632,6 +643,67 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ supplier_po_no, instruction, send }),
     }),
+
+  // ─── Supplier login management (admin) ────────────────────────────────
+  listSupplierLogins: (supplierId?: number) =>
+    http<SupplierLogin[]>(
+      `/api/supplier-accounts${supplierId != null ? `?supplier_id=${supplierId}` : ""}`,
+    ),
+  resetSupplierLogin: (userId: number) =>
+    http<{ ok: boolean; email: string; temp_password: string; emailed: boolean }>(
+      `/api/supplier-accounts/${userId}/reset-password`,
+      { method: "POST" },
+    ),
+  activateSupplierLogin: (userId: number) =>
+    http<SupplierLogin>(`/api/supplier-accounts/${userId}/activate`, { method: "POST" }),
+  deactivateSupplierLogin: (userId: number) =>
+    http<SupplierLogin>(`/api/supplier-accounts/${userId}/deactivate`, { method: "POST" }),
+
+  // ─── Internal ASN view (staff) ────────────────────────────────────────
+  listAsns: (params: { tab?: string; status?: string; search?: string } = {}) => {
+    const q = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== "") q.append(k, String(v));
+    });
+    const qs = q.toString();
+    return http<AsnListResponse>(`/api/asns${qs ? `?${qs}` : ""}`);
+  },
+  asnSummary: () => http<AsnSummary>("/api/asns/summary"),
+  getAsn: (id: number) => http<Asn>(`/api/asns/${id}`),
+  updateAsn: (id: number, body: Partial<AsnCreatePayload> & { alert?: boolean; alert_reason?: string; submit?: boolean }) =>
+    http<Asn>(`/api/asns/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+  addAsnEvent: (id: number, body: AsnEventPayload) =>
+    http<Asn>(`/api/asns/${id}/events`, { method: "POST", body: JSON.stringify(body) }),
+
+  // ─── Supplier portal (supplier accounts only) ─────────────────────────
+  portalMe: () => http<PortalMe>("/api/portal/me"),
+  portalSummary: () => http<PortalSummary>("/api/portal/summary"),
+  portalPos: () => http<PortalPoListResponse>("/api/portal/pos"),
+  portalPoMaterials: (supplierPoNo: string) =>
+    http<PortalPoMaterial[]>(`/api/portal/pos/${encodeURIComponent(supplierPoNo)}/materials`),
+  portalPoMessages: (supplierPoNo: string) =>
+    http<PortalMessage[]>(`/api/portal/pos/${encodeURIComponent(supplierPoNo)}/messages`),
+  sendPortalPoMessage: (supplierPoNo: string, body: string, subject?: string) =>
+    http<PortalMessage>(`/api/portal/pos/${encodeURIComponent(supplierPoNo)}/messages`, {
+      method: "POST",
+      body: JSON.stringify({ body, subject }),
+    }),
+  portalAsnSummary: () => http<AsnSummary>("/api/portal/asns/summary"),
+  portalAsns: (params: { tab?: string; search?: string } = {}) => {
+    const q = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== "") q.append(k, String(v));
+    });
+    const qs = q.toString();
+    return http<AsnListResponse>(`/api/portal/asns${qs ? `?${qs}` : ""}`);
+  },
+  getPortalAsn: (id: number) => http<Asn>(`/api/portal/asns/${id}`),
+  createPortalAsn: (body: AsnCreatePayload) =>
+    http<Asn>("/api/portal/asns", { method: "POST", body: JSON.stringify(body) }),
+  updatePortalAsn: (id: number, body: Partial<AsnCreatePayload> & { alert?: boolean; alert_reason?: string; submit?: boolean }) =>
+    http<Asn>(`/api/portal/asns/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+  addPortalAsnEvent: (id: number, body: AsnEventPayload) =>
+    http<Asn>(`/api/portal/asns/${id}/events`, { method: "POST", body: JSON.stringify(body) }),
 };
 
 export default api;

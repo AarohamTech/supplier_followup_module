@@ -60,6 +60,24 @@ export interface DashboardKpis {
   ai_required_count: number;
 }
 
+export interface CreatedLogin {
+  email: string;
+  temp_password: string;
+}
+
+export interface LoginConflict {
+  email: string;
+  reason: string;
+}
+
+export interface LoginProvisioningSummary {
+  created: CreatedLogin[];
+  reactivated: string[];
+  deactivated: string[];
+  conflicts: LoginConflict[];
+  emailed: string[];
+}
+
 export interface SupplierEmail {
   id: number;
   supplier_id: number;
@@ -74,6 +92,18 @@ export interface SupplierEmail {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+  // Present only on create/update responses (login provisioning result).
+  provisioning?: LoginProvisioningSummary | null;
+}
+
+export interface SupplierLogin {
+  id: number;
+  email: string;
+  supplier_id?: number | null;
+  is_active: boolean;
+  must_change_password: boolean;
+  last_login_at?: string | null;
+  created_at: string;
 }
 
 export interface SupplierMaster {
@@ -669,8 +699,12 @@ export interface AuthUser {
   id: number;
   email: string;
   full_name: string | null;
-  role: Role;
+  role: Role | "supplier";
   is_active: boolean;
+  // Supplier portal accounts carry a supplier_id (null → internal staff account).
+  supplier_id?: number | null;
+  must_change_password?: boolean;
+  supplier_name?: string | null;
   last_login_at: string | null;
   created_at: string;
   updated_at: string;
@@ -885,4 +919,170 @@ export interface BlackFollowupCommandResult {
   mapping_active?: boolean;
   skipped_reason?: string | null;
   message_id?: number | null;
+}
+
+// ─── ASN (Advance Shipping Notice) ───────────────────────────────────────────
+export type AsnStatus =
+  | "DRAFT"
+  | "SUBMITTED"
+  | "DISPATCHED"
+  | "IN_TRANSIT"
+  | "AT_CUSTOMS"
+  | "INBOUND_HUB"
+  | "OUT_FOR_DELIVERY"
+  | "DELIVERED"
+  | "CANCELLED";
+
+export type TransportMode = "SEA" | "AIR" | "ROAD" | "RAIL";
+
+export interface AsnItem {
+  id: number;
+  procurement_record_id?: number | null;
+  material_name: string;
+  material_code?: string | null;
+  qty_shipped?: number | null;
+  uom?: string | null;
+}
+
+export interface AsnEvent {
+  id: number;
+  stage: string;
+  status_label?: string | null;
+  location?: string | null;
+  note?: string | null;
+  occurred_at: string;
+  created_by?: string | null;
+}
+
+export interface Asn {
+  id: number;
+  asn_no: string;
+  supplier_id: number;
+  supplier_name?: string | null;
+  supplier_po_no: string;
+  crm_no?: string | null;
+  carrier_name?: string | null;
+  tracking_no?: string | null;
+  transport_mode?: string | null;
+  origin?: string | null;
+  destination?: string | null;
+  dispatch_date?: string | null;
+  eta?: string | null;
+  delivered_at?: string | null;
+  status: AsnStatus;
+  status_label?: string | null;
+  alert: boolean;
+  alert_reason?: string | null;
+  progress_percent: number;
+  remarks?: string | null;
+  created_by_email?: string | null;
+  created_at: string;
+  updated_at: string;
+  items: AsnItem[];
+  events: AsnEvent[];
+}
+
+export interface AsnSummary {
+  active: number;
+  pending: number;
+  urgent: number;
+  finalized: number;
+  total: number;
+  drafts: number;
+}
+
+export interface AsnListResponse {
+  count: number;
+  items: Asn[];
+}
+
+export interface AsnItemInput {
+  procurement_record_id?: number | null;
+  material_name: string;
+  material_code?: string | null;
+  qty_shipped?: number | null;
+  uom?: string | null;
+}
+
+export interface AsnCreatePayload {
+  supplier_po_no: string;
+  crm_no?: string | null;
+  carrier_name?: string | null;
+  tracking_no?: string | null;
+  transport_mode?: string | null;
+  origin?: string | null;
+  destination?: string | null;
+  dispatch_date?: string | null;
+  eta?: string | null;
+  remarks?: string | null;
+  items: AsnItemInput[];
+  submit: boolean;
+}
+
+export interface AsnEventPayload {
+  stage: string;
+  location?: string | null;
+  note?: string | null;
+  label?: string | null;
+  alert?: boolean | null;
+  alert_reason?: string | null;
+  occurred_at?: string | null;
+}
+
+// ─── Supplier portal ─────────────────────────────────────────────────────────
+export interface PortalSummary {
+  supplier_name?: string | null;
+  total_pos: number;
+  pending_pos: number;
+  completed_pos: number;
+  blocked_count: number;
+  asn: AsnSummary;
+}
+
+export interface PortalPo {
+  supplier_po_no: string;
+  crm_no?: string | null;
+  material_count: number;
+  overall_signal?: string | null;
+  po_status?: string | null;
+  earliest_shipment_date?: string | null;
+  completed: boolean;
+  asn_count: number;
+  message_count: number;
+}
+
+export interface PortalMessage {
+  id: number;
+  direction: "INCOMING" | "OUTGOING" | string;
+  mine: boolean;
+  author: string;
+  subject?: string | null;
+  body: string;
+  mail_type?: string | null;
+  status: string;
+  at?: string | null;
+}
+
+export interface PortalPoListResponse {
+  count: number;
+  items: PortalPo[];
+}
+
+export interface PortalPoMaterial {
+  procurement_record_id: number;
+  crm_no: string;
+  material_name: string;
+  uom?: string | null;
+  qty?: number | null;
+  shipment_date?: string | null;
+  signal?: string | null;
+  po_status?: string | null;
+}
+
+export interface PortalMe {
+  id: number;
+  email: string;
+  supplier_id: number | null;
+  supplier_name: string | null;
+  must_change_password: boolean;
 }

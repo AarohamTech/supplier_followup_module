@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi import Depends
 
 from .core.config import settings
-from .core.deps import get_current_user, require_writer_for_writes
+from .core.deps import get_current_staff, get_current_supplier, require_writer_for_writes
 from .core.logging import setup_logging
 from .core.schema_evolve import ensure_columns
 from .database import Base, engine, ensure_schema
@@ -25,6 +25,9 @@ from .routers import (
     users,
     webhooks,
     po_followups,
+    asns,
+    portal,
+    supplier_accounts,
     settings as settings_router,
 )
 from .scheduler import register_all_specs, start_scheduler, stop_scheduler
@@ -95,6 +98,8 @@ app.include_router(webhooks.router)
 
 # Admin-only user management (guards itself at the router level).
 app.include_router(users.router)
+# Admin-only supplier-login management (guards itself at the router level).
+app.include_router(supplier_accounts.router)
 
 # All business routers: reads open to any logged-in user; writes require user+
 # (viewer is read-only). Send/approve-style endpoints add require_manager on the
@@ -112,10 +117,16 @@ app.include_router(customer_mails.router, dependencies=_rbac)
 app.include_router(po_followups.router, dependencies=_rbac)
 app.include_router(settings_router.router, dependencies=_rbac)
 
-# AI assistant + insights: available to any logged-in user (including viewers).
+# AI assistant + insights: available to any logged-in *staff* user (incl. viewers).
 # Write/heavy actions inside add their own require_writer / require_manager.
-app.include_router(ai.router, dependencies=[Depends(get_current_user)])
-app.include_router(ai_insights.router, dependencies=[Depends(get_current_user)])
+app.include_router(ai.router, dependencies=[Depends(get_current_staff)])
+app.include_router(ai_insights.router, dependencies=[Depends(get_current_staff)])
+
+# Internal staff view of ASNs (shipments suppliers submit). Staff-only via _rbac.
+app.include_router(asns.router, dependencies=_rbac)
+
+# Supplier portal surface: scoped to the logged-in supplier account.
+app.include_router(portal.router, dependencies=[Depends(get_current_supplier)])
 
 
 @app.get("/")

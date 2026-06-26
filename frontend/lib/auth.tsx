@@ -14,9 +14,10 @@ import { getToken, setToken } from "./auth-token";
 
 const ROLE_RANK: Record<Role, number> = { viewer: 1, user: 2, manager: 3, admin: 4 };
 
-export function roleAtLeast(role: Role | undefined | null, minimum: Role): boolean {
+// Accepts the supplier label too (rank 0 — never satisfies a staff guard).
+export function roleAtLeast(role: Role | "supplier" | undefined | null, minimum: Role): boolean {
   if (!role) return false;
-  return (ROLE_RANK[role] ?? 0) >= (ROLE_RANK[minimum] ?? 0);
+  return (ROLE_RANK[role as Role] ?? 0) >= (ROLE_RANK[minimum] ?? 0);
 }
 
 interface AuthState {

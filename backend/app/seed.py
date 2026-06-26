@@ -225,6 +225,95 @@ def seed_admin(db: Session) -> bool:
     )
 
 
+# Known demo supplier login (DEBUG only) so the portal is immediately testable.
+DEMO_SUPPLIER_NAME = "M/S SUPERB TOOLS"
+DEMO_SUPPLIER_LOGIN = "orders@superbtools.example.com"
+DEMO_SUPPLIER_PASSWORD = "Supplier!123"
+
+
+def seed_supplier_portal_demo(db: Session) -> dict:
+    """DEBUG-only: a known supplier login + a few ASNs across lifecycle stages."""
+    from .core.roles import Role
+    from .models.asn import Asn
+    from .services import asn_service
+
+    master = db.scalar(
+        select(SupplierMaster).where(SupplierMaster.supplier_name == DEMO_SUPPLIER_NAME)
+    )
+    if not master:
+        return {"supplier_login": "skipped (no demo supplier)"}
+
+    # 0) Ensure an email mapping exists for the demo supplier (suppliers are only
+    #    created during procurement sync, which runs after seed_supplier_emails —
+    #    so the static SUPPLIER_EMAILS seed misses them on a fresh DB).
+    mapping = db.scalar(
+        select(SupplierEmail).where(SupplierEmail.supplier_id == master.id)
+    )
+    if not mapping:
+        db.add(SupplierEmail(
+            supplier_id=master.id,
+            supplier_name=master.supplier_name,
+            to_emails=[DEMO_SUPPLIER_LOGIN],
+            cc_emails=["purchase@example.com"],
+            bcc_emails=[],
+            escalation_emails=["md@example.com"],
+            is_active=True,
+        ))
+        db.commit()
+
+    # 1) Supplier login with a known password (so devs can sign in directly).
+    existing = user_service.get_by_email(db, DEMO_SUPPLIER_LOGIN)
+    login_created = False
+    if existing is None:
+        user_service.create_user(
+            db,
+            email=DEMO_SUPPLIER_LOGIN,
+            password=DEMO_SUPPLIER_PASSWORD,
+            full_name=DEMO_SUPPLIER_NAME,
+            role=Role.SUPPLIER,
+            is_active=True,
+            supplier_id=master.id,
+            must_change_password=False,  # known demo creds → don't force a change
+        )
+        login_created = True
+
+    # 2) A couple of demo ASNs (only if none exist for this supplier yet).
+    asns_created = 0
+    has_asn = db.scalar(select(Asn.id).where(Asn.supplier_id == master.id))
+    if not has_asn:
+        po_nos = list(
+            db.scalars(
+                select(ProcurementRecord.supplier_po_no)
+                .where(ProcurementRecord.supplier_name == DEMO_SUPPLIER_NAME)
+                .distinct()
+            ).all()
+        )
+        plan = [("IN_TRANSIT", False), ("AT_CUSTOMS", True), ("DELIVERED", False)]
+        for idx, po in enumerate(po_nos[: len(plan)]):
+            stage, alert = plan[idx]
+            asn = asn_service.create_asn(
+                db,
+                supplier_id=master.id,
+                supplier_name=DEMO_SUPPLIER_NAME,
+                supplier_po_no=po,
+                carrier_name=["Maersk Line", "DHL Global Forwarding", "FedEx Express"][idx % 3],
+                tracking_no=f"TRK-{1000 + idx}",
+                transport_mode=["SEA", "AIR", "ROAD"][idx % 3],
+                origin="Mumbai", destination="Pune",
+                submit=True,
+                created_by_email=DEMO_SUPPLIER_LOGIN,
+            )
+            asn_service.add_event(
+                db, asn, stage=stage,
+                note=f"Demo shipment at {stage}",
+                alert=alert, alert_reason="Documentation Missing" if alert else None,
+                created_by=DEMO_SUPPLIER_LOGIN,
+            )
+            asns_created += 1
+
+    return {"supplier_login_created": login_created, "demo_asns_created": asns_created}
+
+
 def run() -> dict:
     init_schema()
     db = SessionLocal()
@@ -238,6 +327,7 @@ def run() -> dict:
         # into a production database.
         if settings.DEBUG:
             result["procurement_sync"] = seed_procurement(db)
+            result["supplier_portal_demo"] = seed_supplier_portal_demo(db)
         else:
             result["procurement_sync"] = "skipped (DEBUG off)"
         return result

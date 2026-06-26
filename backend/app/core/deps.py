@@ -62,6 +62,33 @@ def get_current_user(
     return user
 
 
+def get_current_staff(user: User = Depends(get_current_user)) -> User:
+    """Any logged-in *staff* user (internal account). Rejects supplier accounts.
+
+    Use as the base dependency for internal `/api/*` business + AI routers so a
+    supplier portal account can never reach them — not even on GET.
+    """
+    if user.supplier_id is not None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Internal endpoint — not available to supplier accounts",
+        )
+    return user
+
+
+def get_current_supplier(user: User = Depends(get_current_user)) -> User:
+    """The logged-in *supplier* user. Rejects staff accounts.
+
+    Portal handlers derive their data scope from `user.supplier_id`.
+    """
+    if user.supplier_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Supplier portal endpoint — requires a supplier account",
+        )
+    return user
+
+
 def require_role(minimum: str):
     """Dependency factory: require `minimum` role or higher (hierarchical).
 
@@ -94,7 +121,15 @@ def require_writer_for_writes(
 
     Applied at the router level so a `viewer` is effectively read-only across the
     whole app, while send/approve-style endpoints add their own `require_manager`.
+
+    Supplier accounts are rejected outright (even on reads) — internal business
+    routers are staff-only; suppliers use the `/api/portal/*` surface instead.
     """
+    if user.supplier_id is not None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Internal endpoint — not available to supplier accounts",
+        )
     if request.method in {"GET", "HEAD", "OPTIONS"}:
         return user
     if not roles_mod.role_at_least(user.role, Role.USER):

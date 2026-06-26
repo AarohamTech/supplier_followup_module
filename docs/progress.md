@@ -238,3 +238,35 @@ flag-gated and degrades gracefully (LLM off → templates/heuristics; RAG off �
 - RAG: set `RAG_ENABLED=true` (Postgres only). `EMBED_API_KEY` blank reuses `LLM_API_KEY`. The
   Supabase **session pooler** is fine for pgvector; `ensure_store()` runs `CREATE EXTENSION vector`.
   After enabling, call `POST /api/ai/memory/backfill` once (manager) to embed existing mail.
+
+### Phase 6 — Supplier Portal + supplier logins + ASN _(2026-06-26)_
+Opened the system to **external suppliers** (it was internal-staff-only) with three additions.
+
+- **Account model** — `users.supplier_id` (nullable FK) now discriminates accounts:
+  NULL → internal staff (unchanged 4-tier RBAC); set → a `role="supplier"` portal account scoped
+  to that supplier. `supplier` is a known role at **rank 0** (never satisfies a staff guard). New
+  `users.must_change_password` flag. Both columns auto-added to Supabase by `schema_evolve`.
+- **Guards** (`core/deps.py`) — `get_current_staff` (rejects supplier accounts) now backs the
+  internal `/api/*` business + AI routers, and `require_writer_for_writes` rejects suppliers on
+  **all** methods (closes the prior read-leak where any logged-in user could GET). `get_current_supplier`
+  backs the new `/api/portal/*` surface. Verified: supplier→`/api/procurement` 403; staff→`/api/portal/*` 403.
+- **Login provisioning** (`services/supplier_account_service.py`) — saving an Email Master mapping
+  reconciles **TO** emails → one supplier login each (temp password, force-change), emails branded
+  credentials (reuses `queue_outgoing_message`+`send_message_now`+`brand_email`; no-ops if SMTP off,
+  temp passwords also returned to the admin). Removing a TO email deactivates its login (never deleted);
+  staff/other-supplier emails are skipped as conflicts. Admin reset via `/api/supplier-accounts/{id}/reset-password`.
+- **ASN feature** (`models/asn.py`, `services/asn_service.py`, `routers/portal.py` + `routers/asns.py`)
+  — full shipment-tracking lifecycle (DRAFT→SUBMITTED→DISPATCHED→IN_TRANSIT→AT_CUSTOMS→INBOUND_HUB→
+  OUT_FOR_DELIVERY→DELIVERED, +CANCELLED), progress %, alert flag, and a per-leg events timeline.
+  Suppliers create/advance ASNs against their POs; staff see all ASNs at `/api/asns`. A PO counts as
+  **Completed** once it has a DELIVERED ASN (drives the portal dashboard counts).
+- **Frontend** — `AppShell` branches on account type: suppliers get a dedicated `SupplierShell`
+  (Dashboard, My POs, ASN Portal) and a forced first-login change-password gate; staff get the
+  existing app plus a new **Shipments (ASN)** page. Email Master surfaces the provisioning result +
+  a per-supplier **Supplier Logins** panel (reset/activate). New `APP_BASE_URL` env (optional; used in
+  the credential email link, falls back to the first CORS origin).
+- **Verified** — 38/38 backend tests (the 2 `mail_send_retry` failures pre-date this work — stale tests
+  from the concurrent-SMTP refactor); new `tests/test_supplier_portal.py` (roles, ASN lifecycle/summary/
+  completion, provisioning); a hermetic TestClient smoke (29/29) over the real HTTP surface; frontend
+  `tsc --noEmit` clean + `next build` (24 routes incl. `/portal`, `/portal/asn`, `/portal/pos`, `/asns`).
+  DEBUG seed adds a demo supplier login (`orders@superbtools.example.com` / `Supplier!123`) + mapping + ASNs.

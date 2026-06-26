@@ -9,6 +9,8 @@ import Topbar from "@/components/layout/Topbar";
 import StoreBootstrap from "@/components/StoreBootstrap";
 import MailDraftModal from "@/components/MailDraftModal";
 import SendToaster from "@/components/SendToaster";
+import SupplierShell from "@/components/portal/SupplierShell";
+import PortalChangePassword from "@/components/portal/PortalChangePassword";
 
 const PUBLIC_PATHS = ["/login"];
 
@@ -23,7 +25,8 @@ function FullScreen({ children }: { children: React.ReactNode }) {
 /**
  * Client-side gate around the whole app:
  *  - /login renders bare (no shell)
- *  - every other route requires a logged-in user; otherwise redirect to /login
+ *  - supplier accounts get the portal shell (scoped to /portal/*)
+ *  - staff accounts get the internal shell (everything else)
  */
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -31,13 +34,18 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const isPublic = PUBLIC_PATHS.includes(pathname);
+  const isSupplier = !!user && user.supplier_id != null;
+  const inPortal = pathname === "/portal" || pathname.startsWith("/portal/");
 
   // Redirect rules run after render to keep hooks order stable.
   useEffect(() => {
     if (loading) return;
     if (!user && !isPublic) router.replace("/login");
-    if (user && isPublic) router.replace("/");
-  }, [loading, user, isPublic, router]);
+    if (user && isPublic) router.replace(isSupplier ? "/portal" : "/");
+    // Keep each account type inside its own surface.
+    if (user && isSupplier && !isPublic && !inPortal) router.replace("/portal");
+    if (user && !isSupplier && inPortal) router.replace("/");
+  }, [loading, user, isPublic, isSupplier, inPortal, router]);
 
   useEffect(() => {
     setSidebarOpen(false);
@@ -53,6 +61,21 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   // Not authenticated on a protected route - show a light state while redirecting.
   if (!user) return <FullScreen>Redirecting to sign in...</FullScreen>;
+
+  // ── Supplier portal ─────────────────────────────────────────────────────────
+  if (isSupplier) {
+    // Force the first-login / post-reset password change before anything else.
+    if (user.must_change_password) return <PortalChangePassword />;
+    if (!inPortal) return <FullScreen>Opening your portal...</FullScreen>;
+    return (
+      <SupplierShell open={sidebarOpen} onMenuClick={() => setSidebarOpen(true)} onClose={() => setSidebarOpen(false)}>
+        {children}
+      </SupplierShell>
+    );
+  }
+
+  // ── Internal staff app ───────────────────────────────────────────────────────
+  if (inPortal) return <FullScreen>Redirecting...</FullScreen>;
 
   return (
     <>
