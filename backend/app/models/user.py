@@ -18,6 +18,11 @@ class User(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
 
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
+    # Login identifier for accounts without an email (internal employees log in
+    # with their CRM login id, e.g. "PRAMOD"). NULL for staff/supplier accounts,
+    # who log in by email. Uniqueness is enforced in app code (schema-evolve only
+    # adds columns, not constraints, to the live DB).
+    username: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
     full_name: Mapped[str | None] = mapped_column(String(255))
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
     role: Mapped[str] = mapped_column(String(16), default=DEFAULT_ROLE, index=True, nullable=False)
@@ -29,6 +34,10 @@ class User(Base):
     supplier_id: Mapped[int | None] = mapped_column(
         ForeignKey("supplier_master.id"), index=True, nullable=True
     )
+    # Internal employee accounts carry their CRM employee code (CRM `EmpCode`).
+    # Set → employee portal account scoped to POs where owner_emp_code == this.
+    # NULL → staff or supplier account. See core/roles.py (Role.EMPLOYEE).
+    emp_code: Mapped[str | None] = mapped_column(String(32), index=True, nullable=True)
     # Forces a password change on next login (temp/admin-reset credentials).
     must_change_password: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 

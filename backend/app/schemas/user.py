@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
 from ..core.roles import ALL_ROLES, DEFAULT_ROLE, normalize_role
 
@@ -23,11 +23,15 @@ class UserOut(BaseModel):
 
     id: int
     email: EmailStr
+    # Login id for accounts without an email (internal employees).
+    username: str | None = None
     full_name: str | None = None
     role: str
     is_active: bool
     # Supplier portal accounts carry a supplier_id (NULL → internal staff account).
     supplier_id: int | None = None
+    # Employee portal accounts carry an emp_code (their CRM EmpCode).
+    emp_code: str | None = None
     must_change_password: bool = False
     # Convenience field populated by the auth/portal routers (not an ORM column).
     supplier_name: str | None = None
@@ -38,8 +42,16 @@ class UserOut(BaseModel):
 
 # ── Auth ─────────────────────────────────────────────────────────────────────
 class LoginRequest(BaseModel):
-    email: EmailStr
+    # Staff/suppliers log in by email; internal employees by username.
+    email: EmailStr | None = None
+    username: str | None = None
     password: str = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _one_identifier(self) -> "LoginRequest":
+        if not self.email and not self.username:
+            raise ValueError("Provide email or username")
+        return self
 
 
 class Token(BaseModel):

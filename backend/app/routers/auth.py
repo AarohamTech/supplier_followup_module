@@ -28,11 +28,14 @@ def user_out(db: Session, user: User) -> UserOut:
 
 @router.post("/login", response_model=Token)
 def login(payload: LoginRequest, db: Session = Depends(get_db)) -> Token:
-    user = user_service.authenticate(db, payload.email, payload.password)
+    if payload.username:
+        user = user_service.authenticate_by_username(db, payload.username, payload.password)
+    else:
+        user = user_service.authenticate(db, payload.email, payload.password)
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password",
+            detail="Invalid credentials",
         )
     token = create_access_token(subject=user.id, role=user.role, email=user.email)
     return Token(

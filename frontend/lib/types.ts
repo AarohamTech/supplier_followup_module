@@ -698,11 +698,15 @@ export type Role = "admin" | "manager" | "user" | "viewer";
 export interface AuthUser {
   id: number;
   email: string;
+  // Login id for accounts without an email (internal employees).
+  username?: string | null;
   full_name: string | null;
-  role: Role | "supplier";
+  role: Role | "supplier" | "employee";
   is_active: boolean;
   // Supplier portal accounts carry a supplier_id (null → internal staff account).
   supplier_id?: number | null;
+  // Employee portal accounts carry an emp_code (their CRM EmpCode).
+  emp_code?: string | null;
   must_change_password?: boolean;
   supplier_name?: string | null;
   last_login_at: string | null;
@@ -1080,6 +1084,72 @@ export interface PortalPo {
   asn_count: number;
   message_count: number;
   escalated: boolean;
+}
+
+// ─── Employee portal (internal employee accounts, scoped to their POs) ────────
+export interface EmployeeSummary {
+  emp_code?: string | null;
+  full_name?: string | null;
+  total_pos: number;
+  total_materials: number;
+  green: number;
+  yellow: number;
+  red: number;
+  black: number;
+  escalated_pos: number;
+  overdue_pos: number;
+}
+
+export interface EmployeePo {
+  supplier_po_no: string;
+  crm_no?: string | null;
+  supplier_name?: string | null;
+  material_count: number;
+  overall_signal?: string | null;
+  po_status?: string | null;
+  earliest_shipment_date?: string | null;
+  escalated: boolean;
+}
+
+export interface EmployeePoListResponse {
+  count: number;
+  items: EmployeePo[];
+}
+
+export interface EmployeePoMaterial {
+  procurement_record_id: number;
+  crm_no?: string | null;
+  material_name: string;
+  uom?: string | null;
+  qty?: number | null;
+  supplier_name?: string | null;
+  shipment_date?: string | null;
+  signal?: string | null;
+  po_status?: string | null;
+  rate?: number | null;
+  lead_time?: number | null;
+  commitment_date?: string | null;
+}
+
+export interface EmployeeCredential {
+  username?: string | null;
+  full_name?: string | null;
+  temp_password?: string | null;
+  emp_code?: string | null;
+}
+
+export interface EmployeeProvisionResult {
+  ok?: boolean;
+  created: EmployeeCredential[];
+  reactivated: string[];
+  conflicts: { username?: string; reason?: string }[];
+  skipped: { row?: string; reason?: string }[];
+}
+
+export interface EmployeeCreatePayload {
+  username: string;
+  full_name?: string | null;
+  emp_code?: string | null;
 }
 
 export interface PortalMessage {

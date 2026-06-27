@@ -18,6 +18,7 @@ import {
   Sparkles,
   Truck,
   Users,
+  UserCog,
   Wand2,
   X,
 } from "lucide-react";
@@ -68,6 +69,7 @@ const groups: { label: string; items: NavItem[] }[] = [
       { href: "/ai-prompts", label: "HI Prompts", icon: Wand2, minRole: "manager" },
       { href: "/settings", label: "Settings", icon: Settings, minRole: "manager" },
       { href: "/admin/users", label: "Users", icon: ShieldCheck, minRole: "admin" },
+      { href: "/employees", label: "Employee Logins", icon: UserCog, minRole: "admin" },
     ],
   },
 ];

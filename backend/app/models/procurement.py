@@ -34,6 +34,10 @@ class ProcurementRecord(Base):
     quantity: Mapped[float | None] = mapped_column("supplier_quantity", Numeric(18, 3))
     rate: Mapped[float | None] = mapped_column(Numeric(18, 4))
 
+    # CRM employee/desk owner code (CRM `EmpCode`). Scopes a PO to the employee
+    # portal: an employee sees POs where owner_emp_code == their emp_code.
+    owner_emp_code: Mapped[str | None] = mapped_column(String(32), index=True)
+
     # Deprecated source columns retained for old local SQLite databases only.
     crm_date: Mapped[date | None] = mapped_column(Date)
     mdn_no: Mapped[str | None] = mapped_column(String(64), index=True)

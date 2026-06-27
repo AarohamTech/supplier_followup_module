@@ -7,6 +7,7 @@ from fastapi import Depends
 
 from .core.config import settings
 from .core.deps import (
+    get_current_employee,
     get_current_staff,
     get_current_supplier,
     get_current_user,
@@ -32,8 +33,10 @@ from .routers import (
     po_followups,
     asns,
     portal,
+    employee_portal,
     notifications,
     supplier_accounts,
+    employee_accounts,
     settings as settings_router,
 )
 from .scheduler import register_all_specs, start_scheduler, stop_scheduler
@@ -106,6 +109,8 @@ app.include_router(webhooks.router)
 app.include_router(users.router)
 # Admin-only supplier-login management (guards itself at the router level).
 app.include_router(supplier_accounts.router)
+# Admin-only employee-login management (guards itself at the router level).
+app.include_router(employee_accounts.router)
 
 # All business routers: reads open to any logged-in user; writes require user+
 # (viewer is read-only). Send/approve-style endpoints add require_manager on the
@@ -133,6 +138,9 @@ app.include_router(asns.router, dependencies=_rbac)
 
 # Supplier portal surface: scoped to the logged-in supplier account.
 app.include_router(portal.router, dependencies=[Depends(get_current_supplier)])
+
+# Employee portal surface: scoped to the logged-in employee account (own POs).
+app.include_router(employee_portal.router, dependencies=[Depends(get_current_employee)])
 
 # In-app notifications: available to ANY logged-in user (staff or supplier).
 app.include_router(notifications.router, dependencies=[Depends(get_current_user)])

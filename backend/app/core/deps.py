@@ -63,15 +63,15 @@ def get_current_user(
 
 
 def get_current_staff(user: User = Depends(get_current_user)) -> User:
-    """Any logged-in *staff* user (internal account). Rejects supplier accounts.
+    """Any logged-in *staff* user (internal account). Rejects portal accounts.
 
     Use as the base dependency for internal `/api/*` business + AI routers so a
-    supplier portal account can never reach them — not even on GET.
+    supplier or employee portal account can never reach them — not even on GET.
     """
-    if user.supplier_id is not None:
+    if user.supplier_id is not None or user.emp_code is not None:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Internal endpoint — not available to supplier accounts",
+            detail="Internal endpoint — not available to portal accounts",
         )
     return user
 
@@ -85,6 +85,20 @@ def get_current_supplier(user: User = Depends(get_current_user)) -> User:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Supplier portal endpoint — requires a supplier account",
+        )
+    return user
+
+
+def get_current_employee(user: User = Depends(get_current_user)) -> User:
+    """The logged-in *employee* user. Rejects staff and supplier accounts.
+
+    Employee portal handlers derive their data scope from `user.emp_code`
+    (matched against ProcurementRecord.owner_emp_code).
+    """
+    if user.emp_code is None or user.supplier_id is not None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Employee portal endpoint — requires an employee account",
         )
     return user
 
@@ -122,13 +136,14 @@ def require_writer_for_writes(
     Applied at the router level so a `viewer` is effectively read-only across the
     whole app, while send/approve-style endpoints add their own `require_manager`.
 
-    Supplier accounts are rejected outright (even on reads) — internal business
-    routers are staff-only; suppliers use the `/api/portal/*` surface instead.
+    Portal accounts are rejected outright (even on reads) — internal business
+    routers are staff-only; suppliers use `/api/portal/*` and employees use
+    `/api/eportal/*` instead.
     """
-    if user.supplier_id is not None:
+    if user.supplier_id is not None or user.emp_code is not None:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Internal endpoint — not available to supplier accounts",
+            detail="Internal endpoint — not available to portal accounts",
         )
     if request.method in {"GET", "HEAD", "OPTIONS"}:
         return user

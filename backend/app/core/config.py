@@ -129,6 +129,18 @@ class Settings(BaseSettings):
     SMTP_SEND_WORKERS: int = Field(default=4)
     MAIL_SEND_BATCH_LIMIT: int = Field(default=50)
 
+    # ── Live CRM PO ingestion (Hariom CRM desk feed) ─────────────────────────
+    # Polls the CRM for pending POs and upserts them into procurement_records.
+    # The bearer token is short-lived, so we auto-refresh via the login endpoint.
+    CRM_INGEST_ENABLED: bool = Field(default=False)
+    CRM_API_BASE_URL: str = Field(default="http://hariomapp.dyndns-server.com:8599")
+    CRM_DESK_ID: str = Field(default="102")
+    CRM_LOGIN_EMAIL: str = Field(default="")
+    CRM_LOGIN_PASSWORD: str = Field(default="")
+    CRM_DEVICE_ID: str = Field(default="102")
+    CRM_INGEST_INTERVAL_MINUTES: int = Field(default=3)
+    CRM_HTTP_TIMEOUT_SECONDS: float = Field(default=40.0)
+
     @property
     def embed_api_key(self) -> str | None:
         """Embedding key, falling back to the chat LLM key (same NVIDIA account)."""

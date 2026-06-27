@@ -182,6 +182,25 @@ def knowledge_index_runner() -> dict[str, Any]:
         db.close()
 
 
+def crm_ingestion_runner() -> dict[str, Any]:
+    """Poll the live CRM desk feed and upsert generated POs into procurement_records."""
+    if not getattr(settings, "CRM_INGEST_ENABLED", False):
+        return {"enabled": False, "status": "DISABLED"}
+    db: Session = SessionLocal()
+    try:
+        from ..services import crm_ingest_service
+
+        result = crm_ingest_service.poll_and_ingest(db)
+        log.info("[cron] crm_ingestion_runner done: %s", result)
+        return result
+    except Exception:  # noqa: BLE001
+        db.rollback()
+        log.exception("crm_ingestion_runner failed")
+        return {"ok": False, "status": "ERROR", "error": True}
+    finally:
+        db.close()
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Registry bootstrapping
 # ─────────────────────────────────────────────────────────────────────────────
@@ -241,6 +260,14 @@ JOB_SPECS: list[EngineJobSpec] = [
         default_interval_minutes=30,
         runner=knowledge_index_runner,
         category="OTHER",
+    ),
+    EngineJobSpec(
+        job_name="crm_ingestion_cron",
+        display_name="CRM Purchase Order Sync",
+        description="Poll the Hariom CRM desk feed and upsert generated POs live.",
+        default_interval_minutes=int(getattr(settings, "CRM_INGEST_INTERVAL_MINUTES", 3) or 3),
+        runner=crm_ingestion_runner,
+        category="PROCUREMENT",
     ),
 ]
 

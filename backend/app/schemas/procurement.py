@@ -43,6 +43,7 @@ class ProcurementBase(BaseModel):
     supplier_name: Optional[str] = None
     quantity: Optional[float] = None
     rate: Optional[float] = None
+    owner_emp_code: Optional[str] = None
 
     @field_validator("supplier_date", mode="before")
     @classmethod

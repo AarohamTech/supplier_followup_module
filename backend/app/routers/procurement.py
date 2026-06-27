@@ -1,11 +1,7 @@
 from datetime import date, datetime
-from io import BytesIO
-import json
-from pathlib import Path
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
-from openpyxl import load_workbook
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select, func, or_
 from sqlalchemy.orm import Session
 
@@ -18,15 +14,12 @@ from ..schemas.procurement import (
 from ..services.procurement_sync_service import (
     ACCEPTED_EXCEL_COLUMNS,
     COLUMN_ALIASES,
-    normalize_excel_headers,
-    row_from_excel,
     sync_procurement_rows,
 )
 from ..services.followup_engine import apply_followup_logic
+from ..services import engine_registry
 
 router = APIRouter(prefix="/api/procurement", tags=["procurement"])
-
-SAMPLE_DATA_PATH = Path(__file__).resolve().parents[2] / "sample_data" / "procurement_sample.json"
 
 
 @router.get("/dashboard", response_model=DashboardKpis)
@@ -122,37 +115,10 @@ def sync_endpoint(payload: list[dict[str, Any]], db: Session = Depends(get_db)):
     return sync_procurement_rows(db, payload, source="json")
 
 
-@router.post("/upload-excel", response_model=ProcurementSyncSummary)
-async def upload_excel(file: UploadFile = File(...), db: Session = Depends(get_db)):
-    if not file.filename or not file.filename.lower().endswith(".xlsx"):
-        raise HTTPException(400, "Only .xlsx files are supported")
-
-    try:
-        workbook = load_workbook(BytesIO(await file.read()), read_only=True, data_only=True)
-        sheet = workbook.active
-        rows_iter = sheet.iter_rows(values_only=True)
-        raw_headers = next(rows_iter, None)
-        if not raw_headers:
-            raise HTTPException(400, "Excel file is empty")
-        headers = normalize_excel_headers(raw_headers)
-        rows = [row_from_excel(headers, values) for values in rows_iter if any(v is not None for v in values)]
-    except HTTPException:
-        raise
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(400, f"Unable to read Excel file: {exc}") from exc
-
-    return sync_procurement_rows(db, rows, source="excel")
-
-
-@router.post("/load-sample-data", response_model=ProcurementSyncSummary)
-def load_sample_data(db: Session = Depends(get_db)):
-    if not SAMPLE_DATA_PATH.exists():
-        raise HTTPException(404, f"Sample data file not found: {SAMPLE_DATA_PATH}")
-    with SAMPLE_DATA_PATH.open("r", encoding="utf-8") as fh:
-        rows = json.load(fh)
-    if not isinstance(rows, list):
-        raise HTTPException(400, "Sample data must be a JSON array")
-    return sync_procurement_rows(db, rows, source="sample")
+@router.post("/crm-sync")
+def crm_sync_now(db: Session = Depends(get_db)) -> dict:
+    """Manually trigger a live CRM ingestion run (same job the scheduler runs)."""
+    return engine_registry.run_job("crm_ingestion_cron", manual=True)
 
 
 @router.put("/{rec_id}", response_model=ProcurementOut)

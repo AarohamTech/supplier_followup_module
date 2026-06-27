@@ -15,6 +15,10 @@ class EmailTakenError(ValueError):
     """Raised when creating/updating a user with an email already in use."""
 
 
+class UsernameTakenError(ValueError):
+    """Raised when creating a user with a username already in use."""
+
+
 class LastAdminError(ValueError):
     """Raised when an action would leave the system with no active admin."""
 
@@ -28,6 +32,14 @@ def get_by_email(db: Session, email: str) -> User | None:
     if not email:
         return None
     return db.scalar(select(User).where(func.lower(User.email) == email.strip().lower()))
+
+
+def get_by_username(db: Session, username: str) -> User | None:
+    if not username:
+        return None
+    return db.scalar(
+        select(User).where(func.lower(User.username) == username.strip().lower())
+    )
 
 
 def list_users(
@@ -68,18 +80,24 @@ def create_user(
     role: str = DEFAULT_ROLE,
     is_active: bool = True,
     supplier_id: int | None = None,
+    emp_code: str | None = None,
+    username: str | None = None,
     must_change_password: bool = False,
     commit: bool = True,
 ) -> User:
     if get_by_email(db, email) is not None:
         raise EmailTakenError(f"A user with email '{email}' already exists")
+    if username and get_by_username(db, username) is not None:
+        raise UsernameTakenError(f"A user with username '{username}' already exists")
     user = User(
         email=email.strip().lower(),
+        username=(username.strip() if username else None),
         full_name=(full_name or None),
         hashed_password=hash_password(password),
         role=normalize_role(role),
         is_active=is_active,
         supplier_id=supplier_id,
+        emp_code=(emp_code or None),
         must_change_password=must_change_password,
     )
     db.add(user)
@@ -140,8 +158,7 @@ def set_password(
     return user
 
 
-def authenticate(db: Session, email: str, password: str) -> User | None:
-    user = get_by_email(db, email)
+def _complete_login(db: Session, user: User | None, password: str) -> User | None:
     if user is None or not user.is_active:
         return None
     if not verify_password(password, user.hashed_password):
@@ -150,6 +167,14 @@ def authenticate(db: Session, email: str, password: str) -> User | None:
     db.commit()
     db.refresh(user)
     return user
+
+
+def authenticate(db: Session, email: str, password: str) -> User | None:
+    return _complete_login(db, get_by_email(db, email), password)
+
+
+def authenticate_by_username(db: Session, username: str, password: str) -> User | None:
+    return _complete_login(db, get_by_username(db, username), password)
 
 
 def ensure_seed_admin(

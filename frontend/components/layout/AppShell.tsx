@@ -10,6 +10,7 @@ import StoreBootstrap from "@/components/StoreBootstrap";
 import MailDraftModal from "@/components/MailDraftModal";
 import SendToaster from "@/components/SendToaster";
 import SupplierShell from "@/components/portal/SupplierShell";
+import EmployeeShell from "@/components/eportal/EmployeeShell";
 import PortalChangePassword from "@/components/portal/PortalChangePassword";
 
 const PUBLIC_PATHS = ["/login"];
@@ -35,17 +36,27 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const isPublic = PUBLIC_PATHS.includes(pathname);
   const isSupplier = !!user && user.supplier_id != null;
+  const isEmployee = !!user && user.emp_code != null;
   const inPortal = pathname === "/portal" || pathname.startsWith("/portal/");
+  const inEportal = pathname === "/eportal" || pathname.startsWith("/eportal/");
+  const home = isSupplier ? "/portal" : isEmployee ? "/eportal" : "/";
 
   // Redirect rules run after render to keep hooks order stable.
   useEffect(() => {
     if (loading) return;
-    if (!user && !isPublic) router.replace("/login");
-    if (user && isPublic) router.replace(isSupplier ? "/portal" : "/");
+    if (!user) {
+      if (!isPublic) router.replace("/login");
+      return;
+    }
+    if (isPublic) {
+      router.replace(home);
+      return;
+    }
     // Keep each account type inside its own surface.
-    if (user && isSupplier && !isPublic && !inPortal) router.replace("/portal");
-    if (user && !isSupplier && inPortal) router.replace("/");
-  }, [loading, user, isPublic, isSupplier, inPortal, router]);
+    if (isSupplier && !inPortal) router.replace("/portal");
+    else if (isEmployee && !inEportal) router.replace("/eportal");
+    else if (!isSupplier && !isEmployee && (inPortal || inEportal)) router.replace("/");
+  }, [loading, user, isPublic, isSupplier, isEmployee, inPortal, inEportal, home, router]);
 
   useEffect(() => {
     setSidebarOpen(false);
@@ -74,8 +85,19 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     );
   }
 
+  // ── Employee portal ───────────────────────────────────────────────────────────
+  if (isEmployee) {
+    if (user.must_change_password) return <PortalChangePassword />;
+    if (!inEportal) return <FullScreen>Opening your portal...</FullScreen>;
+    return (
+      <EmployeeShell open={sidebarOpen} onMenuClick={() => setSidebarOpen(true)} onClose={() => setSidebarOpen(false)}>
+        {children}
+      </EmployeeShell>
+    );
+  }
+
   // ── Internal staff app ───────────────────────────────────────────────────────
-  if (inPortal) return <FullScreen>Redirecting...</FullScreen>;
+  if (inPortal || inEportal) return <FullScreen>Redirecting...</FullScreen>;
 
   return (
     <>

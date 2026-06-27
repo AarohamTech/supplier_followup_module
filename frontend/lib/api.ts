@@ -73,6 +73,11 @@ import type {
   PortalTask,
   PortalMessage,
   PortalMe,
+  EmployeeSummary,
+  EmployeePoListResponse,
+  EmployeePoMaterial,
+  EmployeeProvisionResult,
+  EmployeeCreatePayload,
   AppNotification,
 } from "./types";
 import { getToken, setToken, LOGIN_PATH } from "./auth-token";
@@ -134,17 +139,12 @@ export const api = {
       { method: "POST", body: JSON.stringify(rows) },
     ),
 
-  uploadProcurementExcel: (file: File) => {
-    const body = new FormData();
-    body.append("file", file);
-    return http<ProcurementSyncSummary>("/api/procurement/upload-excel", {
-      method: "POST",
-      body,
-    });
-  },
-
-  loadSampleProcurement: () =>
-    http<ProcurementSyncSummary>("/api/procurement/load-sample-data", { method: "POST" }),
+  // Manually trigger a live CRM ingestion run (same job the scheduler runs).
+  crmSyncNow: () =>
+    http<{ ok?: boolean; status?: string; result?: Record<string, unknown> }>(
+      "/api/procurement/crm-sync",
+      { method: "POST" },
+    ),
 
   listSuppliers: () => http<SupplierMaster[]>("/api/suppliers"),
   getSupplier: (id: number) => http<SupplierMaster>(`/api/suppliers/${id}`),
@@ -549,11 +549,16 @@ export const api = {
     http<TaskActivity[]>(`/api/tasks/${taskId}/activity`),
 
   // ─── Auth ─────────────────────────────────────────────────────────────
-  login: (email: string, password: string) =>
-    http<LoginResponse>("/api/auth/login", {
+  login: (identifier: string, password: string) => {
+    // Staff/suppliers sign in by email; employees by username (no '@').
+    const body = identifier.includes("@")
+      ? { email: identifier, password }
+      : { username: identifier, password };
+    return http<LoginResponse>("/api/auth/login", {
       method: "POST",
-      body: JSON.stringify({ email, password }),
-    }),
+      body: JSON.stringify(body),
+    });
+  },
 
   me: () => http<AuthUser>("/api/auth/me"),
 
@@ -745,6 +750,52 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ messages }),
     }),
+
+  // ─── Employee portal (employee accounts only) ─────────────────────────
+  eportalMe: () =>
+    http<{ id: number; username: string | null; full_name: string | null; emp_code: string | null; must_change_password: boolean }>(
+      "/api/eportal/me",
+    ),
+  eportalSummary: () => http<EmployeeSummary>("/api/eportal/summary"),
+  eportalPos: () => http<EmployeePoListResponse>("/api/eportal/pos"),
+  eportalPoMaterials: (supplierPoNo: string) =>
+    http<EmployeePoMaterial[]>(`/api/eportal/pos/${encodeURIComponent(supplierPoNo)}/materials`),
+
+  // ─── Employee login management (admin) ────────────────────────────────
+  listEmployeeLogins: () => http<AuthUser[]>("/api/employee-accounts"),
+  importEmployeeSheet: (file: File) => {
+    const body = new FormData();
+    body.append("file", file);
+    return http<EmployeeProvisionResult>("/api/employee-accounts/import-sheet", { method: "POST", body });
+  },
+  createEmployeeLogin: (body: EmployeeCreatePayload) =>
+    http<{ ok: boolean; id: number; username: string; full_name?: string | null; emp_code?: string | null; temp_password: string }>(
+      "/api/employee-accounts",
+      { method: "POST", body: JSON.stringify(body) },
+    ),
+  resetEmployeeLogin: (userId: number) =>
+    http<{ ok: boolean; id: number; username: string | null; full_name: string | null; temp_password: string }>(
+      `/api/employee-accounts/${userId}/reset-password`,
+      { method: "POST" },
+    ),
+  activateEmployeeLogin: (userId: number) =>
+    http<AuthUser>(`/api/employee-accounts/${userId}/activate`, { method: "POST" }),
+  deactivateEmployeeLogin: (userId: number) =>
+    http<AuthUser>(`/api/employee-accounts/${userId}/deactivate`, { method: "POST" }),
+  deleteEmployeeLogin: (userId: number) =>
+    http<{ ok: boolean; deleted: number }>(`/api/employee-accounts/${userId}`, { method: "DELETE" }),
+  downloadEmployeeCredentials: async (
+    items: { full_name?: string | null; username?: string | null; temp_password?: string | null }[],
+  ) => {
+    const token = getToken();
+    const res = await fetch("/api/employee-accounts/credentials.xlsx", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: JSON.stringify(items),
+    });
+    if (!res.ok) throw new Error("Could not download credentials");
+    return res.blob();
+  },
 
   // ─── Notifications (staff + supplier) ─────────────────────────────────
   listNotifications: (limit = 30) =>
