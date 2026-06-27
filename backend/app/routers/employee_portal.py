@@ -6,15 +6,18 @@ their employee code. Read-only in v1.
 """
 from __future__ import annotations
 
+import re
 from datetime import datetime
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..core.deps import get_current_employee
 from ..database import get_db
+from ..models.communication_message import CommunicationMessage
 from ..models.procurement import ProcurementRecord
+from ..models.supplier import SupplierMaster
 from ..models.user import User
 from ..schemas.employee_portal import (
     EmployeePo,
@@ -22,10 +25,16 @@ from ..schemas.employee_portal import (
     EmployeePoMaterial,
     EmployeeSummary,
 )
+from ..schemas.portal import PortalMessage, PortalMessageCreate
+from ..services import communication_message_service as msg_service
+from ..services import notification_service as notif
 
 router = APIRouter(prefix="/api/eportal", tags=["employee-portal"])
 
 _SIGNAL_RANK = {"GREEN": 1, "YELLOW": 2, "RED": 3, "BLACK": 4}
+# Outgoing statuses visible in a thread (internal DRAFTs awaiting approval hidden).
+_VISIBLE_OUTGOING = {"SENT", "SENT_MANUALLY", "READY", "COPIED", "MAILTO_OPENED"}
+_TAG_RE = re.compile(r"<[^>]+>")
 
 
 def _emp_records(db: Session, emp_code: str | None) -> list[ProcurementRecord]:
@@ -179,3 +188,103 @@ def po_materials(
         )
         for r in rows
     ]
+
+
+# ── PO communication thread (shared with staff hub + supplier portal) ──────────
+def _owned_po(db: Session, user: User, supplier_po_no: str) -> ProcurementRecord | None:
+    return db.scalar(
+        select(ProcurementRecord).where(
+            ProcurementRecord.owner_emp_code == user.emp_code,
+            ProcurementRecord.supplier_po_no == supplier_po_no,
+        )
+    )
+
+
+def _msg_text(cm: CommunicationMessage) -> str:
+    if cm.body and cm.body.strip():
+        return cm.body.strip()
+    if cm.body_html:
+        return re.sub(r"\s+", " ", _TAG_RE.sub(" ", cm.body_html)).strip()
+    return ""
+
+
+def _msg_out(cm: CommunicationMessage, me: str | None) -> PortalMessage:
+    mine = cm.direction == "OUTGOING"  # internal-authored (employee/staff/system)
+    author = (me or "You") if mine else (cm.supplier_name or "Supplier")
+    return PortalMessage(
+        id=cm.id,
+        direction=cm.direction,
+        mine=mine,
+        author=author,
+        subject=cm.subject,
+        body=_msg_text(cm),
+        mail_type=cm.mail_type,
+        status=cm.status,
+        at=cm.sent_at or cm.received_at or cm.created_at,
+    )
+
+
+@router.get("/pos/{supplier_po_no}/messages", response_model=list[PortalMessage])
+def list_messages(
+    supplier_po_no: str,
+    user: User = Depends(get_current_employee),
+    db: Session = Depends(get_db),
+) -> list[PortalMessage]:
+    if not _owned_po(db, user, supplier_po_no):
+        raise HTTPException(404, "PO not found for your account")
+    rows = db.scalars(
+        select(CommunicationMessage)
+        .where(CommunicationMessage.supplier_po_no == supplier_po_no)
+        .order_by(CommunicationMessage.created_at.asc())
+    ).all()
+    visible = [m for m in rows if m.direction == "INCOMING" or m.status in _VISIBLE_OUTGOING]
+    return [_msg_out(m, user.full_name) for m in visible]
+
+
+@router.post("/pos/{supplier_po_no}/messages", response_model=PortalMessage, status_code=201)
+def post_message(
+    supplier_po_no: str,
+    payload: PortalMessageCreate,
+    user: User = Depends(get_current_employee),
+    db: Session = Depends(get_db),
+) -> PortalMessage:
+    rec = _owned_po(db, user, supplier_po_no)
+    if rec is None:
+        raise HTTPException(404, "PO not found for your account")
+    supplier = (
+        db.scalar(
+            select(SupplierMaster).where(
+                func.upper(SupplierMaster.supplier_name) == (rec.supplier_name or "").upper()
+            )
+        )
+        if rec.supplier_name
+        else None
+    )
+    subject = (payload.subject or "").strip() or f"Message · PO {supplier_po_no}"
+    # OUTGOING + SENT_MANUALLY → appears in the staff Communication Hub and the
+    # supplier's own portal thread; supplier replies come back as INCOMING.
+    cm = msg_service.create_message(
+        db,
+        direction="OUTGOING",
+        status="SENT_MANUALLY",
+        supplier_id=supplier.id if supplier else None,
+        supplier_name=rec.supplier_name,
+        procurement_record_id=rec.id,
+        supplier_po_no=supplier_po_no,
+        subject=subject,
+        body=payload.body.strip(),
+        sender_email=user.username or user.email,
+        mail_type="EMPLOYEE_MESSAGE",
+        sent_at=datetime.utcnow(),
+    )
+    notif.safe(
+        notif.notify_staff, db,
+        type="EMPLOYEE_MESSAGE",
+        title=f"{user.full_name or user.username} messaged on PO {supplier_po_no}",
+        body=payload.body.strip()[:140],
+        link="/mail-history",
+        supplier_id=supplier.id if supplier else None,
+        supplier_po_no=supplier_po_no,
+        procurement_record_id=rec.id,
+    )
+    return _msg_out(cm, user.full_name)

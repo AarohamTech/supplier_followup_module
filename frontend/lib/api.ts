@@ -765,6 +765,13 @@ export const api = {
   eportalPos: () => http<EmployeePoListResponse>("/api/eportal/pos"),
   eportalPoMaterials: (supplierPoNo: string) =>
     http<EmployeePoMaterial[]>(`/api/eportal/pos/${encodeURIComponent(supplierPoNo)}/materials`),
+  eportalPoMessages: (supplierPoNo: string) =>
+    http<PortalMessage[]>(`/api/eportal/pos/${encodeURIComponent(supplierPoNo)}/messages`),
+  eportalSendMessage: (supplierPoNo: string, body: string, subject?: string) =>
+    http<PortalMessage>(`/api/eportal/pos/${encodeURIComponent(supplierPoNo)}/messages`, {
+      method: "POST",
+      body: JSON.stringify({ body, subject }),
+    }),
 
   // ─── Employee login management (admin) ────────────────────────────────
   listEmployeeLogins: () => http<AuthUser[]>("/api/employee-accounts"),

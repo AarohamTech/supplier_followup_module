@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, FileSpreadsheet, X } from "lucide-react";
+import { LayoutDashboard, FileSpreadsheet, MessagesSquare, X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
 const items = [
   { href: "/eportal", label: "Dashboard", icon: LayoutDashboard },
   { href: "/eportal/pos", label: "My Purchase Orders", icon: FileSpreadsheet },
+  { href: "/eportal/communication", label: "Communication", icon: MessagesSquare },
 ];
 
 function isActive(path: string, href: string) {
