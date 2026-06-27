@@ -62,9 +62,11 @@ export default function BlackFollowupsPage() {
   const [view, setView] = useState<"active" | "history">("active");
   const [history, setHistory] = useState<FollowupAttempt[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [selectedAttempt, setSelectedAttempt] = useState<FollowupAttempt | null>(null);
 
   const loadHistory = useCallback(() => {
     setHistoryLoading(true);
+    setError(null);
     api
       .getFollowupHistory({ signal: "BLACK", limit: 200 })
       .then((r) => setHistory(r.items))
@@ -212,7 +214,7 @@ export default function BlackFollowupsPage() {
             {(["active", "history"] as const).map((v) => (
               <button
                 key={v}
-                onClick={() => setView(v)}
+                onClick={() => { setError(null); setView(v); }}
                 className={cn(
                   "rounded px-3 py-1 text-xs font-medium",
                   view === v ? "bg-signal-red text-white" : "text-brand-muted hover:text-brand-dark",
@@ -266,7 +268,11 @@ export default function BlackFollowupsPage() {
           )}
         </>
       ) : (
-        <FollowupHistoryTable items={history} loading={historyLoading} />
+        <FollowupHistoryTable items={history} loading={historyLoading} onOpen={setSelectedAttempt} />
+      )}
+
+      {selectedAttempt && (
+        <AttemptDetailModal attempt={selectedAttempt} onClose={() => setSelectedAttempt(null)} />
       )}
     </div>
   );
@@ -288,24 +294,42 @@ function SendBadge({ status }: { status: string | null }) {
   return <span className={"badge " + cls}>{up}</span>;
 }
 
-function FollowupHistoryTable({ items, loading }: { items: FollowupAttempt[]; loading: boolean }) {
+function recipientsLabel(a: FollowupAttempt): string {
+  const to = a.to_emails || [];
+  if (to.length === 0) return "—";
+  return to.length === 1 ? to[0] : `${to[0]} +${to.length - 1}`;
+}
+
+function FollowupHistoryTable({
+  items,
+  loading,
+  onOpen,
+}: {
+  items: FollowupAttempt[];
+  loading: boolean;
+  onOpen: (a: FollowupAttempt) => void;
+}) {
   return (
     <div className="table-shell">
       <table className="min-w-full text-sm">
         <thead className="bg-gray-50">
           <tr>
-            {["When", "PO", "Supplier", "Source", "Outcome", "Harmony Intelligent", "Send", "Detail"].map((h) => (
+            {["When", "PO", "Supplier", "Source", "Outcome", "Harmony Intelligent", "Send", "Sent to", "Detail"].map((h) => (
               <th key={h} className="px-3 py-3 text-left table-header whitespace-nowrap">{h}</th>
             ))}
           </tr>
         </thead>
         <tbody>
-          {loading && <tr><td colSpan={8} className="px-4 py-10 text-center text-brand-muted">Loading…</td></tr>}
+          {loading && <tr><td colSpan={9} className="px-4 py-10 text-center text-brand-muted">Loading…</td></tr>}
           {!loading && items.length === 0 && (
-            <tr><td colSpan={8} className="px-4 py-10 text-center text-brand-muted">No follow-up attempts recorded yet.</td></tr>
+            <tr><td colSpan={9} className="px-4 py-10 text-center text-brand-muted">No follow-up attempts recorded yet.</td></tr>
           )}
           {items.map((a) => (
-            <tr key={a.id} className="border-t border-brand-border align-top">
+            <tr
+              key={a.id}
+              onClick={() => onOpen(a)}
+              className="cursor-pointer border-t border-brand-border align-top hover:bg-gray-50"
+            >
               <td className="px-3 py-3 whitespace-nowrap text-xs">{fmtDate(a.created_at)}{a.created_at ? " " + new Date(a.created_at).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" }) : ""}</td>
               <td className="px-3 py-3 font-medium text-brand-dark">{a.supplier_po_no || "—"}</td>
               <td className="px-3 py-3 text-xs text-brand-muted">{a.supplier_name || "—"}</td>
@@ -321,13 +345,61 @@ function FollowupHistoryTable({ items, loading }: { items: FollowupAttempt[]; lo
                 )}
               </td>
               <td className="px-3 py-3"><SendBadge status={a.send_status} /></td>
-              <td className="px-3 py-3 max-w-[280px] text-xs text-brand-muted">
+              <td className="px-3 py-3 max-w-[180px] truncate text-xs text-brand-muted" title={(a.to_emails || []).join(", ")}>{recipientsLabel(a)}</td>
+              <td className="px-3 py-3 max-w-[240px] truncate text-xs text-brand-muted">
                 {a.send_error || a.ai_error || a.detail || "—"}
               </td>
             </tr>
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+function DRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="grid grid-cols-[120px_1fr] gap-2 py-1.5">
+      <div className="text-xs font-semibold uppercase tracking-wide text-brand-muted">{label}</div>
+      <div className="text-sm text-brand-dark">{children}</div>
+    </div>
+  );
+}
+
+function AttemptDetailModal({ attempt: a, onClose }: { attempt: FollowupAttempt; onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" onClick={onClose}>
+      <div className="w-full max-w-lg overflow-hidden rounded-lg bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between border-b border-brand-border px-5 py-3">
+          <div className="font-semibold text-brand-dark">Follow-up attempt · {a.supplier_po_no || "—"}</div>
+          <button className="rounded p-1 hover:bg-gray-100" onClick={onClose} aria-label="Close"><X size={18} /></button>
+        </div>
+        <div className="max-h-[70vh] divide-y divide-brand-border overflow-y-auto px-5 py-2">
+          <DRow label="When">{fmt(a.created_at)}</DRow>
+          <DRow label="Supplier">{a.supplier_name || "—"}</DRow>
+          <DRow label="Source"><span className="uppercase">{a.source}</span></DRow>
+          <DRow label="Outcome"><AttemptBadge outcome={a.outcome} /></DRow>
+          <DRow label="Harmony Intelligent">
+            {a.ai_error ? (
+              <span className="text-signal-red">Errored → fell back to template</span>
+            ) : a.ai_used ? (
+              <span className="text-violet-700">Written by Harmony Intelligent</span>
+            ) : (
+              "Template (no AI)"
+            )}
+          </DRow>
+          {a.ai_error && <DRow label="AI error"><span className="text-signal-red">{a.ai_error}</span></DRow>}
+          <DRow label="Send"><SendBadge status={a.send_status} />{a.sent_at ? <span className="ml-2 text-xs text-brand-muted">{fmt(a.sent_at)}</span> : null}</DRow>
+          {a.send_error && <DRow label="Send error"><span className="text-signal-red">{a.send_error}</span></DRow>}
+          <DRow label="Sent to">{a.to_emails?.length ? a.to_emails.join(", ") : "—"}</DRow>
+          {a.cc_emails?.length ? <DRow label="CC">{a.cc_emails.join(", ")}</DRow> : null}
+          <DRow label="Subject">{a.subject || "—"}</DRow>
+          {a.detail && <DRow label="Detail">{a.detail}</DRow>}
+        </div>
+        <div className="border-t border-brand-border px-5 py-3 text-right">
+          <button className="btn-ghost" onClick={onClose}>Close</button>
+        </div>
+      </div>
     </div>
   );
 }

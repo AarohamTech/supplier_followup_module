@@ -16,8 +16,8 @@ export default function QuickFilters() {
   ];
 
   return (
-    <div className="card p-3 flex flex-wrap items-center gap-2">
-      <span className="text-[10px] uppercase tracking-wider text-brand-muted font-semibold mr-2">Quick Filters:</span>
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="mr-1 text-[10px] font-semibold uppercase tracking-wider text-brand-muted">Quick filters</span>
       {chips.map((c) => {
         const active = filters.signal === c.sig;
         return (
@@ -30,17 +30,16 @@ export default function QuickFilters() {
           </button>
         );
       })}
-      <div className="flex-1" />
-      <div className="relative">
+      <div className="relative order-last w-full sm:order-none sm:ml-auto sm:w-auto">
         <Search size={14} className="absolute left-2 top-1/2 -translate-y-1/2 text-brand-muted" />
         <input
           placeholder="Search PO No. / CRM / material / supplier..."
           value={filters.search ?? ""}
           onChange={(e) => setFilters({ search: e.target.value })}
-          className="pl-7 pr-3 py-1.5 border border-brand-border rounded-md text-sm w-[320px] bg-white"
+          className="input w-full py-1.5 pl-7 sm:w-80"
         />
       </div>
-      <button onClick={clear} className="btn-ghost">Clear Filters</button>
+      <button onClick={clear} className="btn-ghost ml-auto sm:ml-0">Clear Filters</button>
     </div>
   );
 }

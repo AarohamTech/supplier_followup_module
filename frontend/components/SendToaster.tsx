@@ -13,6 +13,10 @@ type Toast = { key: string; title: string; detail: string };
 
 const POLL_MS = 12_000;
 
+// Module-level so a remount (or React StrictMode's double-mount in dev) can't
+// re-toast a send we've already shown — every sent-mail id is toasted at most once.
+const seenSendIds = new Set<string>();
+
 export default function SendToaster() {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const sinceRef = useRef<string | null>(null);
@@ -25,23 +29,25 @@ export default function SendToaster() {
     const poll = async () => {
       try {
         const r = await api.sentFeed(sinceRef.current ?? undefined);
+        const items = r.items || [];
         if (firstRun.current) {
-          // Seed the watermark — don't toast mail sent before the app opened.
+          // Seed: never toast mail that already existed when the app opened.
           firstRun.current = false;
-        } else if (r.items.length && !cancelled) {
-          const fresh = r.items.slice(0, 4).map((it) => ({
-            key: `${it.id}`,
-            title: it.supplier_name ? `Sent to ${it.supplier_name}` : "Mail sent",
-            detail: it.subject || it.to || "",
-          }));
-          if (r.items.length > 4) {
-            fresh.push({
-              key: `more-${r.server_time}`,
-              title: `+${r.items.length - 4} more sent`,
-              detail: "",
-            });
+          items.forEach((it) => seenSendIds.add(String(it.id)));
+        } else if (!cancelled) {
+          const unseen = items.filter((it) => !seenSendIds.has(String(it.id)));
+          unseen.forEach((it) => seenSendIds.add(String(it.id)));
+          if (unseen.length) {
+            const fresh: Toast[] = unseen.slice(0, 4).map((it) => ({
+              key: `${it.id}`,
+              title: it.supplier_name ? `Sent to ${it.supplier_name}` : "Mail sent",
+              detail: it.subject || it.to || "",
+            }));
+            if (unseen.length > 4) {
+              fresh.push({ key: `more-${r.server_time}`, title: `+${unseen.length - 4} more sent`, detail: "" });
+            }
+            setToasts((cur) => [...fresh, ...cur].slice(0, 5));
           }
-          setToasts((cur) => [...fresh, ...cur].slice(0, 5));
         }
         sinceRef.current = r.server_time;
       } catch {

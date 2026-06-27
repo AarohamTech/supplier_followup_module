@@ -5,6 +5,7 @@
 @layer base {
   html {
     scroll-behavior: smooth;
+    scrollbar-gutter: stable;
   }
 
   html,
@@ -38,7 +39,7 @@
 }
 
 @layer components {
-  .card { @apply bg-white rounded-lg shadow-card border border-brand-border; }
+  .card { @apply rounded-lg border border-brand-border bg-white shadow-card; }
   .kpi-num { @apply text-3xl font-semibold tracking-tight; }
   .page-stack { @apply space-y-5; }
   .page-header { @apply flex flex-wrap items-start justify-between gap-3; }
@@ -52,18 +53,17 @@
   .badge-track { @apply bg-emerald-50 text-emerald-600; }
   .badge-critical { @apply bg-black text-white; }
   .chip { @apply inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs bg-gray-50 border border-brand-border text-brand-dark; }
-  .btn-primary { @apply inline-flex items-center justify-center gap-2 rounded-md bg-signal-red px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-red-700 disabled:pointer-events-none disabled:opacity-50; }
-  .btn-dark { @apply inline-flex items-center justify-center gap-2 rounded-md bg-brand-dark px-3 py-1.5 text-sm font-medium text-white shadow-sm hover:bg-gray-800 disabled:pointer-events-none disabled:opacity-50; }
-  .btn-outline { @apply inline-flex items-center justify-center gap-2 rounded-md border border-brand-border bg-white px-3 py-1.5 text-sm font-medium text-brand-dark hover:bg-gray-50 disabled:pointer-events-none disabled:opacity-50; }
-  .btn-ghost { @apply inline-flex items-center justify-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium text-brand-muted hover:bg-gray-100 hover:text-brand-dark disabled:pointer-events-none disabled:opacity-50; }
-  .input { @apply w-full rounded-md border border-brand-border bg-white px-3 py-2 text-sm text-brand-dark outline-none focus:border-signal-red; }
+  .btn-primary { @apply inline-flex items-center justify-center gap-2 rounded-md bg-signal-red px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-red-700 active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50; }
+  .btn-dark { @apply inline-flex items-center justify-center gap-2 rounded-md bg-brand-dark px-3 py-1.5 text-sm font-medium text-white shadow-sm hover:bg-gray-800 active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50; }
+  .btn-outline { @apply inline-flex items-center justify-center gap-2 rounded-md border border-brand-border bg-white px-3 py-1.5 text-sm font-medium text-brand-dark hover:bg-gray-50 active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50; }
+  .btn-ghost { @apply inline-flex items-center justify-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium text-brand-muted hover:bg-gray-100 hover:text-brand-dark active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50; }
+  .input { @apply w-full rounded-md border border-brand-border bg-white px-3 py-2 text-sm text-brand-dark outline-none placeholder:text-brand-muted focus:border-signal-red; }
   .table-header { @apply text-[11px] uppercase tracking-wider text-brand-muted font-semibold; }
   .table-shell { @apply overflow-x-auto rounded-lg border border-brand-border bg-white; }
   .empty-state { @apply rounded-lg border border-dashed border-brand-border bg-white p-8 text-center text-sm text-brand-muted; }
 }
 
 /* Animations (system-wide). */
-@keyframes fadeInUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 @keyframes fadeIn   { from { opacity: 0; } to { opacity: 1; } }
 @keyframes slideDown { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
 @keyframes pulseRing {
@@ -72,11 +72,30 @@
   100% { box-shadow: 0 0 0 0 rgba(239,68,68,0); }
 }
 
-.animate-fade-in-up { animation: fadeInUp .35s ease-out both; }
-.animate-fade-in    { animation: fadeIn .3s ease-out both; }
-.animate-slide-down { animation: slideDown .25s ease-out both; }
+.animate-fade-in    { animation: fadeIn .18s cubic-bezier(.23,1,.32,1) both; }
+.animate-slide-down { animation: slideDown .2s cubic-bezier(.23,1,.32,1) both; }
 .animate-pulse-ring { animation: pulseRing 2s ease-out infinite; }
-.page-enter         { animation: fadeInUp .35s ease-out both; }
+
+.mobile-nav-backdrop {
+  opacity: 1;
+  transition: opacity .18s cubic-bezier(.23,1,.32,1);
+
+  @starting-style { opacity: 0; }
+}
+
+.mobile-nav-drawer {
+  transform: translateX(0);
+  transition: transform .22s cubic-bezier(.23,1,.32,1);
+
+  @starting-style { transform: translateX(-100%); }
+}
+
+.side-panel-right {
+  transform: translateX(0);
+  transition: transform .22s cubic-bezier(.23,1,.32,1);
+
+  @starting-style { transform: translateX(100%); }
+}
 
 /* Harmony logo "draw" loop — used for loaders and AI-generating states. */
 @keyframes logoDraw {
@@ -89,17 +108,10 @@
 .logo-anim path { animation-delay: .18s; }
 
 /* Smooth, consistent micro-interactions across the whole app. */
-button, a, .card, .chip, .badge, input, select, textarea {
+button, a, .chip, input, select, textarea {
   transition: background-color .15s ease, color .15s ease, box-shadow .15s ease,
               transform .15s ease, opacity .15s ease, border-color .15s ease;
 }
-
-/* Stagger children of a list/grid so items cascade in. */
-.stagger > * { animation: fadeInUp .35s ease-out both; }
-.stagger > *:nth-child(1){animation-delay:.00s} .stagger > *:nth-child(2){animation-delay:.05s}
-.stagger > *:nth-child(3){animation-delay:.10s} .stagger > *:nth-child(4){animation-delay:.15s}
-.stagger > *:nth-child(5){animation-delay:.20s} .stagger > *:nth-child(6){animation-delay:.25s}
-.stagger > *:nth-child(7){animation-delay:.30s} .stagger > *:nth-child(8){animation-delay:.35s}
 
 /* Accessibility: honour the OS "reduce motion" setting. */
 @media (prefers-reduced-motion: reduce) {

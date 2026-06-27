@@ -29,42 +29,43 @@ export default function SupplierShell({
   const initial = name.charAt(0).toUpperCase();
 
   return (
-    <div className="min-h-screen flex flex-col bg-brand-surface">
-      <header className="sticky top-0 z-30 border-b border-brand-border bg-white/95 backdrop-blur">
-        <div className="max-w-[1600px] mx-auto px-4 py-3 sm:px-6 lg:px-8 flex items-center gap-4">
+    <div className="flex min-h-screen flex-col bg-[#F4F5F7]">
+      <header className="sticky top-0 z-30 border-b border-brand-border bg-white">
+        <div className="mx-auto flex h-16 max-w-[1600px] items-center gap-2 px-4 sm:gap-4 sm:px-6 lg:px-8">
           <button
             type="button"
             onClick={onMenuClick}
-            className="p-2 rounded-md hover:bg-gray-100 md:hidden"
+            className="grid h-9 w-9 place-items-center rounded-md text-brand-muted hover:bg-gray-100 hover:text-brand-dark md:hidden"
             aria-label="Open navigation"
           >
             <Menu size={18} />
           </button>
-          <div className="flex items-center gap-3">
-            <span className="text-signal-red">
-              <Logo size={34} />
+          <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+            <span className="shrink-0 text-signal-red">
+              <Logo size={30} />
             </span>
-            <div className="flex flex-col">
-              <span className="text-signal-red font-bold text-lg leading-tight">Supplier Portal</span>
+            <div className="flex min-w-0 flex-col">
+              <span className="truncate text-sm font-semibold leading-tight text-brand-dark sm:text-[15px]">Supplier Portal</span>
               <span className="hidden text-xs text-brand-muted leading-tight sm:block">
-                Harmony × Hariom · Purchase Orders &amp; Shipments
+                Purchase orders, communication and shipments
               </span>
             </div>
           </div>
           <div className="flex-1" />
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1 sm:gap-2.5">
             <NotificationBell />
+            <div className="hidden h-6 w-px bg-brand-border sm:block" />
             <div className="hidden text-right sm:block">
               <div className="text-sm font-medium">{name}</div>
               <div className="text-[10px] uppercase text-brand-muted tracking-wider">Supplier</div>
             </div>
-            <div className="h-9 w-9 rounded-full bg-red-50 text-signal-red flex items-center justify-center text-sm font-semibold">
+            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-red-50 text-xs font-semibold text-signal-red ring-1 ring-inset ring-red-100">
               {initial}
             </div>
             <button
               onClick={logout}
               title="Sign out"
-              className="p-2 rounded-md hover:bg-gray-100 text-brand-muted hover:text-signal-red"
+              className="grid h-9 w-9 place-items-center rounded-md text-brand-muted hover:bg-gray-100 hover:text-signal-red"
             >
               <LogOut size={18} />
             </button>
@@ -76,7 +77,7 @@ export default function SupplierShell({
         <SupplierSidebar open={open} onClose={onClose} />
         <main
           key={pathname}
-          className="page-enter flex-1 min-w-0 px-4 py-5 sm:px-6 lg:px-8 max-w-[1600px] w-full mx-auto"
+          className="mx-auto w-full max-w-[1600px] min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-8"
         >
           {children}
         </main>

@@ -906,6 +906,9 @@ export interface FollowupAttempt {
   send_status: string | null;
   sent_at: string | null;
   send_error: string | null;
+  to_emails: string[];
+  cc_emails: string[];
+  subject: string | null;
 }
 
 export interface FollowupHistoryResponse {

@@ -1,11 +1,12 @@
 "use client";
 import { useStore } from "@/lib/store";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, ArrowUpRight } from "lucide-react";
+import Link from "next/link";
 
 export default function AlertsCard() {
   const k = useStore((s) => s.kpis);
   return (
-    <div className="card p-4">
+    <div className="card flex min-h-40 flex-col p-4">
       <div className="flex items-center gap-2">
         <div className="h-8 w-8 rounded-md bg-red-50 grid place-content-center">
           <AlertTriangle size={16} className="text-signal-red" />
@@ -13,13 +14,13 @@ export default function AlertsCard() {
         <div className="text-sm font-medium">System Alerts</div>
       </div>
       <div className="mt-3 space-y-1">
-        <Row label="Black (Critical)" value={k?.black_count ?? 0} tone="red" />
+        <Row label="Black" value={k?.black_count ?? 0} tone="red" />
         <Row label="Red (Overdue)" value={k?.red_count ?? 0} tone="red" />
         <Row label="HI Follow-up Required" value={k?.ai_required_count ?? 0} />
       </div>
-      <button className="mt-3 w-full bg-red-50 text-signal-red text-sm font-medium py-2 rounded-md">
-        View Alerts
-      </button>
+      <Link href="/black-followups" className="mt-auto inline-flex items-center gap-1 pt-4 text-xs font-semibold text-signal-red hover:text-red-700 active:scale-[0.98]">
+        View black follow-ups <ArrowUpRight size={13} />
+      </Link>
     </div>
   );
 }

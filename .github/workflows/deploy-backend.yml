@@ -5,7 +5,7 @@ name: Deploy backend to EC2
 # deps, and restarts the systemd service.
 #
 # Required repo secrets (Settings → Secrets and variables → Actions):
-#   EC2_HOST     = 54.88.107.89
+#   EC2_HOST     = 54.160.160.10
 #   EC2_SSH_KEY  = full contents of SUPPLIER_EMAIL_MODULE_API.pem (the private key)
 
 on:

@@ -80,13 +80,13 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <>
       <StoreBootstrap />
-      <div className="min-h-screen flex flex-col bg-brand-surface">
+      <div className="flex min-h-screen flex-col bg-[#F4F5F7]">
         <Topbar onMenuClick={() => setSidebarOpen(true)} />
         <div className="flex-1 flex min-h-0">
           <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
           <main
             key={pathname}
-            className="page-enter flex-1 min-w-0 px-4 py-5 sm:px-6 lg:px-8 max-w-[1600px] w-full mx-auto"
+            className="mx-auto w-full max-w-[1600px] min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-8"
           >
             {children}
           </main>

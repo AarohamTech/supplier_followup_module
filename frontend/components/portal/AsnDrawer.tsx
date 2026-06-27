@@ -77,7 +77,7 @@ export default function AsnDrawer({
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/40" onClick={onClose}>
       <div
-        className="h-full w-full max-w-md overflow-y-auto bg-white shadow-2xl animate-fade-in-up"
+        className="side-panel-right h-full w-full max-w-md overflow-y-auto bg-white shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="sticky top-0 z-10 flex items-center justify-between border-b border-brand-border bg-white px-5 py-3">
@@ -87,7 +87,7 @@ export default function AsnDrawer({
           </div>
           <div className="flex items-center gap-2">
             <span className={"badge " + meta.badge}>{asn.status_label || meta.label}</span>
-            <button className="p-1 rounded hover:bg-gray-100" onClick={onClose}><X size={18} /></button>
+            <button className="rounded p-1 hover:bg-gray-100" onClick={onClose} aria-label="Close ASN details"><X size={18} /></button>
           </div>
         </div>
 

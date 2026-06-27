@@ -8,7 +8,7 @@ export default function AIInsights() {
 
   const items: string[] = [];
   if (k) {
-    if (k.black_count) items.push(`${k.black_count} BLACK record(s) flagged critical — escalation required.`);
+    if (k.black_count) items.push(`${k.black_count} BLACK record(s) flagged for escalation.`);
     if (k.red_count) items.push(`${k.red_count} RED record(s) overdue — urgent follow-up due today.`);
     if (k.ai_required_count) items.push(`${k.ai_required_count} record(s) need AI-generated follow-up mails.`);
     if (k.due_today_count) items.push(`${k.due_today_count} shipment(s) are due today — confirm dispatch.`);
@@ -22,7 +22,7 @@ export default function AIInsights() {
     }
   });
   const topSupplier = [...supplierCounts.entries()].sort((a, b) => b[1] - a[1])[0];
-  if (topSupplier) items.push(`${topSupplier[0]} has ${topSupplier[1]} critical PO line(s).`);
+  if (topSupplier) items.push(`${topSupplier[0]} has ${topSupplier[1]} BLACK / RED PO line(s).`);
 
   if (!items.length) items.push("All records are on track. No immediate action required.");
 

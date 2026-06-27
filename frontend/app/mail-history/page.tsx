@@ -1188,7 +1188,7 @@ function SupplierRow({ s, active, onClick }: { s: CommHubSupplier; active: boole
     <button
       onClick={onClick}
       className={`w-full border-b border-brand-border px-4 py-3 text-left transition-colors hover:bg-gray-50 ${
-        active ? "bg-red-50/40 shadow-[inset_3px_0_0_#E11D2E]" : ""
+        active ? "bg-red-50/50 ring-1 ring-inset ring-red-100" : ""
       }`}
     >
       <div className="flex items-center gap-2">
@@ -1222,7 +1222,7 @@ function PoRow({ p, active, onClick }: { p: CommHubPO; active: boolean; onClick:
     <button
       onClick={onClick}
       className={`w-full border-b border-brand-border px-4 py-3 text-left transition hover:bg-gray-50 ${
-        active ? "bg-amber-50/60 shadow-[inset_3px_0_0_#F59E0B]" : ""
+        active ? "bg-amber-50/60 ring-1 ring-inset ring-amber-100" : ""
       }`}
     >
       <div className="flex items-center gap-2">

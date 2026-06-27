@@ -99,6 +99,10 @@ def followup_history(
             "send_status": h.sent_status if h else None,
             "sent_at": h.sent_at.isoformat() if (h and h.sent_at) else None,
             "send_error": h.remarks if h else None,
+            # Recipients + subject (from the linked mail) for the detail popup.
+            "to_emails": (h.to_emails or []) if h else [],
+            "cc_emails": (h.cc_emails or []) if h else [],
+            "subject": h.subject if h else None,
         })
     return {"count": len(items), "items": items}
 

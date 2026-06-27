@@ -1,31 +1,32 @@
 "use client";
-import { Mail, Clock, Edit3, Bell } from "lucide-react";
+import { ArrowUpRight, Bell, Clock, Edit3, Mail, Zap } from "lucide-react";
 import Link from "next/link";
 
 const actions = [
-  { icon: Mail, title: "Generate Follow-up Mail", desc: "Click any row → Mail icon", tint: "text-signal-red bg-red-50", href: "/po-followups" },
-  { icon: Clock, title: "View Mail History", desc: "Drafts and sent mails", tint: "text-blue-600 bg-blue-50", href: "/mail-history" },
-  { icon: Edit3, title: "Email Master", desc: "Map supplier emails", tint: "text-emerald-600 bg-emerald-50", href: "/emails" },
-  { icon: Bell, title: "Reports", desc: "Delays, supplier-wise", tint: "text-amber-600 bg-amber-50", href: "/reports" },
+  { icon: Mail, title: "Generate follow-up", desc: "Open the PO mail queue", href: "/po-followups" },
+  { icon: Clock, title: "Communication history", desc: "Review drafts and sent mail", href: "/mail-history" },
+  { icon: Edit3, title: "Supplier email mapping", desc: "Maintain delivery addresses", href: "/emails" },
+  { icon: Bell, title: "Procurement reports", desc: "Review delay patterns", href: "/reports" },
 ];
 
 export default function ActionCenter() {
   return (
-    <div className="card p-4">
-      <div className="flex items-center gap-2 mb-3">
-        <div className="h-7 w-7 rounded-md bg-red-50 grid place-content-center text-signal-red">⚡</div>
-        <div className="font-semibold text-sm">Action Center</div>
+    <div className="card overflow-hidden">
+      <div className="flex items-center gap-2 border-b border-brand-border px-4 py-3">
+        <Zap size={14} className="text-signal-red" />
+        <div className="text-sm font-semibold">Quick actions</div>
       </div>
-      <div className="space-y-2">
+      <div className="p-2">
         {actions.map((a) => {
           const I = a.icon;
           return (
-            <Link key={a.title} href={a.href} className="w-full flex items-start gap-3 p-3 rounded-md hover:bg-gray-50 text-left">
-              <div className={"h-8 w-8 rounded-md grid place-content-center " + a.tint}><I size={14} /></div>
-              <div>
+            <Link key={a.title} href={a.href} className="group flex w-full items-center gap-3 rounded-md p-2.5 text-left hover:bg-gray-50">
+              <div className="grid h-8 w-8 shrink-0 place-content-center rounded-md bg-gray-100 text-gray-500 group-hover:text-brand-dark"><I size={14} /></div>
+              <div className="min-w-0 flex-1">
                 <div className="text-sm font-medium">{a.title}</div>
                 <div className="text-xs text-brand-muted">{a.desc}</div>
               </div>
+              <ArrowUpRight size={13} className="text-gray-300 group-hover:text-gray-500" />
             </Link>
           );
         })}

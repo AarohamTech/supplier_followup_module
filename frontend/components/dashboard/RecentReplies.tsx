@@ -1,6 +1,7 @@
 "use client";
 import { useStore } from "@/lib/store";
 import { fmtDate } from "@/lib/format";
+import Link from "next/link";
 
 export default function RecentReplies() {
   const list = useStore((s) => s.list);
@@ -9,9 +10,9 @@ export default function RecentReplies() {
     .slice(0, 3);
   return (
     <div className="card p-4">
-      <div className="flex items-center justify-between mb-3">
-        <div className="font-semibold text-sm">Recent Supplier Replies</div>
-        <a className="text-xs text-signal-red font-medium">VIEW ALL</a>
+      <div className="mb-3 flex items-center justify-between">
+        <div className="text-sm font-semibold">Recent supplier replies</div>
+        <Link href="/mail-history" className="text-xs font-medium text-signal-red hover:text-red-700">View all</Link>
       </div>
       <div className="space-y-3">
         {items.length === 0 && <div className="text-xs text-brand-muted">No supplier replies recorded yet.</div>}

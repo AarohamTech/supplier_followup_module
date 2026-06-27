@@ -1,6 +1,6 @@
 "use client";
 import { useStore } from "@/lib/store";
-import { Users } from "lucide-react";
+import { ArrowUpRight, Users } from "lucide-react";
 import Link from "next/link";
 
 export default function SupplierMasterCard() {
@@ -9,7 +9,7 @@ export default function SupplierMasterCard() {
   const mappedSuppliers = suppliers.filter((supplier) => supplier.email_mapped).length;
 
   return (
-    <div className="card p-4">
+    <div className="card flex min-h-40 flex-col p-4">
       <div className="flex items-center gap-2">
         <div className="h-8 w-8 rounded-md bg-blue-50 grid place-content-center">
           <Users size={16} className="text-blue-600" />
@@ -20,8 +20,8 @@ export default function SupplierMasterCard() {
         <Row label="Suppliers" value={String(total)} />
         <Row label="Email Mapped" value={`${mappedSuppliers}`} />
       </div>
-      <Link href="/suppliers" className="mt-3 block w-full text-center bg-blue-50 text-blue-600 text-sm font-medium py-2 rounded-md hover:bg-blue-100">
-        View Suppliers
+      <Link href="/suppliers" className="mt-auto inline-flex items-center gap-1 pt-4 text-xs font-semibold text-blue-700 hover:text-blue-800">
+        View suppliers <ArrowUpRight size={13} />
       </Link>
     </div>
   );

@@ -26,7 +26,7 @@ function MailCardBase({ mail, selected, onSelect }: MailCardProps) {
       onClick={() => onSelect(mail.id)}
       className={[
         "w-full border-b border-brand-border px-4 py-3 text-left transition-colors hover:bg-gray-50",
-        selected ? "bg-red-50/40 shadow-[inset_3px_0_0_#E11D2E]" : "",
+        selected ? "bg-red-50/50 ring-1 ring-inset ring-red-100" : "",
       ].join(" ")}
     >
       <div className="flex items-center gap-2">

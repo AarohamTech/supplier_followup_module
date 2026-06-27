@@ -52,7 +52,7 @@ export default function CriticalPos({ pos }: { pos: PortalPo[] }) {
 
   if (black.length === 0) {
     return (
-      <div className="card border-l-4 border-l-emerald-500 p-4">
+      <div className="card p-4">
         <div className="flex items-center gap-3">
           <div className="icon-tile bg-emerald-50 text-emerald-600">
             <ShieldAlert size={16} />
@@ -67,7 +67,7 @@ export default function CriticalPos({ pos }: { pos: PortalPo[] }) {
   }
 
   return (
-    <div className="card overflow-hidden border-l-4 border-l-signal-red">
+    <div className="card overflow-hidden">
       <div className="flex items-center justify-between border-b border-brand-border bg-red-50/60 px-4 py-3">
         <div className="flex items-center gap-2">
           <ShieldAlert size={16} className="text-signal-red" />

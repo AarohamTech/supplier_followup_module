@@ -33,14 +33,14 @@ import type {
 
 type DashboardResult = Awaited<ReturnType<typeof api.getTasksDashboard>>;
 
-const COLUMNS: { key: TaskStatus; label: string; accent: string; dot: string }[] = [
-  { key: "BACKLOG", label: "Backlog", accent: "border-t-slate-400", dot: "bg-slate-400" },
-  { key: "TODO", label: "To Do", accent: "border-t-blue-400", dot: "bg-blue-400" },
-  { key: "IN_PROGRESS", label: "In Progress", accent: "border-t-amber-400", dot: "bg-amber-400" },
-  { key: "WAITING_SUPPLIER", label: "Waiting Supplier", accent: "border-t-violet-400", dot: "bg-violet-400" },
-  { key: "WAITING_CUSTOMER", label: "Waiting Customer", accent: "border-t-cyan-400", dot: "bg-cyan-400" },
-  { key: "BLOCKED", label: "Blocked", accent: "border-t-rose-500", dot: "bg-rose-500" },
-  { key: "DONE", label: "Done", accent: "border-t-green-500", dot: "bg-green-500" },
+const COLUMNS: { key: TaskStatus; label: string; dot: string }[] = [
+  { key: "BACKLOG", label: "Backlog", dot: "bg-slate-400" },
+  { key: "TODO", label: "To Do", dot: "bg-blue-400" },
+  { key: "IN_PROGRESS", label: "In Progress", dot: "bg-amber-400" },
+  { key: "WAITING_SUPPLIER", label: "Waiting Supplier", dot: "bg-violet-400" },
+  { key: "WAITING_CUSTOMER", label: "Waiting Customer", dot: "bg-cyan-400" },
+  { key: "BLOCKED", label: "Blocked", dot: "bg-rose-500" },
+  { key: "DONE", label: "Done", dot: "bg-green-500" },
 ];
 
 const SOURCE_OPTIONS: { value: TaskSource | ""; label: string }[] = [
@@ -52,13 +52,6 @@ const SOURCE_OPTIONS: { value: TaskSource | ""; label: string }[] = [
 ];
 
 const PRIORITY_OPTS = ["P0", "P1", "P2", "P3"];
-
-const PRIORITY_BORDER: Record<string, string> = {
-  P0: "border-l-rose-500",
-  P1: "border-l-amber-500",
-  P2: "border-l-blue-400",
-  P3: "border-l-slate-300",
-};
 
 const PRIORITY_BADGE: Record<string, string> = {
   P0: "bg-rose-100 text-rose-700",
@@ -386,7 +379,7 @@ export default function TasksPage() {
         <div className="flex gap-3 overflow-x-auto pb-3">
           {COLUMNS.map((col) => (
             <div key={col.key} className="flex-shrink-0 w-72">
-              <div className={`bg-white rounded-lg border border-brand-border border-t-4 ${col.accent} shadow-sm`}>
+              <div className="rounded-lg border border-brand-border bg-white shadow-sm">
                 <div className="flex items-center justify-between px-3 py-2 border-b border-brand-border">
                   <div className="flex items-center gap-2">
                     <span className={`h-2 w-2 rounded-full ${col.dot}`} />
@@ -405,7 +398,7 @@ export default function TasksPage() {
                         key={task.id}
                         type="button"
                         onClick={() => setSelected(task)}
-                        className={`w-full text-left bg-white border border-brand-border rounded-lg p-2.5 shadow-sm hover:shadow-md transition border-l-4 ${PRIORITY_BORDER[task.priority] || "border-l-slate-300"}`}
+                        className="w-full rounded-lg border border-brand-border bg-white p-2.5 text-left shadow-sm transition hover:border-gray-300 hover:shadow-md"
                       >
                         <div className="flex items-start justify-between gap-2">
                           <span className="text-sm font-medium leading-snug line-clamp-2">{task.title}</span>

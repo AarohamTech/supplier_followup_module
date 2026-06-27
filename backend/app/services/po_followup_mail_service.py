@@ -717,15 +717,40 @@ def queue_due_po_followups(
             })
             continue
 
-        result = create_po_followup_mail(
-            db,
-            supplier_name=group["supplier_name"],
-            supplier_po_no=group["supplier_po_no"],
-            mail_type=mail_type,
-            require_mapping=True,
-            commit=False,
-            source="auto",
-        )
+        try:
+            result = create_po_followup_mail(
+                db,
+                supplier_name=group["supplier_name"],
+                supplier_po_no=group["supplier_po_no"],
+                mail_type=mail_type,
+                require_mapping=True,
+                commit=False,
+                source="auto",
+            )
+        except Exception as exc:  # noqa: BLE001 — record the failure, keep the run going
+            log.exception("PO follow-up generation failed for %s", group.get("supplier_po_no"))
+            db.rollback()
+            followup_audit_service.record_safe(
+                db,
+                supplier_po_no=group.get("supplier_po_no"),
+                supplier_name=group.get("supplier_name"),
+                signal=group.get("overall_signal"),
+                mail_type=mail_type,
+                source="auto",
+                outcome="FAILED",
+                detail=str(exc)[:1000],
+                commit=True,
+            )
+            skipped += 1
+            results.append({
+                "created": False,
+                "supplier_name": group.get("supplier_name"),
+                "supplier_po_no": group.get("supplier_po_no"),
+                "mail_type": mail_type,
+                "overall_signal": group.get("overall_signal"),
+                "skipped_reason": f"error: {exc}",
+            })
+            continue
         if result.created:
             queued += 1
         else:

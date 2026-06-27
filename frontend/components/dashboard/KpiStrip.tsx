@@ -5,29 +5,29 @@ import { Layers, Calendar, AlertCircle, Zap, MessageSquare, Sparkles } from "luc
 export default function KpiStrip() {
   const k = useStore((s) => s.kpis);
   const items = [
-    { icon: Layers, label: "TOTAL RECORDS", value: k?.total_records ?? 0, tint: "bg-blue-50 text-blue-600" },
-    { icon: Calendar, label: "DUE TODAY", value: k?.due_today_count ?? 0, tint: "bg-amber-50 text-amber-600" },
-    { icon: AlertCircle, label: "OVERDUE", value: k?.overdue_count ?? 0, tint: "bg-red-50 text-signal-red", strong: true },
-    { icon: Zap, label: "BLACK / CRITICAL", value: k?.black_count ?? 0, tint: "bg-gray-100 text-gray-900", strong: true },
-    { icon: MessageSquare, label: "RED", value: k?.red_count ?? 0, tint: "bg-red-50 text-signal-red" },
-    { icon: Sparkles, label: "HI REQUIRED", value: k?.ai_required_count ?? 0, tint: "bg-purple-50 text-purple-600" },
+    { icon: Layers, label: "Total records", value: k?.total_records ?? 0, tint: "bg-blue-50 text-blue-700" },
+    { icon: Calendar, label: "Due today", value: k?.due_today_count ?? 0, tint: "bg-amber-50 text-amber-700" },
+    { icon: AlertCircle, label: "Overdue", value: k?.overdue_count ?? 0, tint: "bg-red-50 text-signal-red", strong: true },
+    { icon: Zap, label: "Black", value: k?.black_count ?? 0, tint: "bg-red-50 text-signal-red", strong: true },
+    { icon: MessageSquare, label: "Red signal", value: k?.red_count ?? 0, tint: "bg-rose-50 text-rose-700" },
+    { icon: Sparkles, label: "HI required", value: k?.ai_required_count ?? 0, tint: "bg-violet-50 text-violet-700" },
   ];
   return (
-    <div className="card grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 divide-x divide-brand-border">
+    <section aria-label="Procurement overview" className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-brand-border bg-brand-border shadow-card md:grid-cols-3 lg:grid-cols-6">
       {items.map((it) => {
         const I = it.icon;
         return (
-          <div key={it.label} className="p-4 flex items-center gap-3">
-            <div className={"h-9 w-9 rounded-md grid place-content-center " + it.tint}>
-              <I size={16} />
+          <div key={it.label} className="flex min-w-0 items-center gap-3 bg-white p-4 lg:p-5">
+            <div className={"grid h-9 w-9 shrink-0 place-content-center rounded-md " + it.tint}>
+              <I size={16} strokeWidth={1.8} />
             </div>
-            <div>
-              <div className="text-[10px] uppercase tracking-wider text-brand-muted font-semibold">{it.label}</div>
-              <div className={"kpi-num " + (it.strong ? "text-signal-red" : "")}>{it.value}</div>
+            <div className="min-w-0">
+              <div className="truncate text-[10px] font-semibold uppercase tracking-[0.12em] text-brand-muted" title={it.label}>{it.label}</div>
+              <div className={"mt-0.5 text-2xl font-semibold tracking-tight " + (it.strong ? "text-signal-red" : "text-brand-dark")}>{it.value}</div>
             </div>
           </div>
         );
       })}
-    </div>
+    </section>
   );
 }

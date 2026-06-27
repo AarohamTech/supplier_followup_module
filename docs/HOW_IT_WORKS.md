@@ -330,7 +330,7 @@ These run on their own in the background. You can see and tune them in
 | Piece | Runs on |
 |-------|---------|
 | Frontend | **Vercel** (auto-deploys when we push code) |
-| Backend | **EC2** server `54.88.107.89:8000` (systemd keeps it always on) |
+| Backend | **EC2** server `54.160.160.10:8000` (systemd keeps it always on) |
 | Database | **Supabase** Postgres (via the connection pooler) |
 | AI model | **NVIDIA** hosted `llama-3.3-70b` + `nv-embedqa-e5-v5` embeddings |
 | Auto-deploy | **GitHub Actions** — push to `main` → backend redeploys itself |

@@ -94,7 +94,7 @@ export default function CommunicationHubPage() {
                     onClick={() => setSelected(p)}
                     className={cn(
                       "flex w-full flex-col gap-1 px-4 py-3 text-left hover:bg-gray-50",
-                      active && "bg-red-50 shadow-[inset_3px_0_0_#E11D2E]",
+                      active && "bg-red-50 ring-1 ring-inset ring-red-100",
                     )}
                   >
                     <div className="flex items-center justify-between gap-2">

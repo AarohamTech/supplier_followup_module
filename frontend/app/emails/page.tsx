@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { forwardRef, useImperativeHandle, useRef, useState } from "react";
 import { useStore } from "@/lib/store";
 import { useAuth } from "@/lib/auth";
 import api from "@/lib/api";
@@ -33,13 +33,24 @@ export default function Page() {
   const [error, setError] = useState<string | null>(null);
   const [provisioning, setProvisioning] = useState<LoginProvisioningSummary | null>(null);
   const [loginsFor, setLoginsFor] = useState<SupplierEmail | null>(null);
+  // Refs so Save can flush a typed-but-not-yet-added email from each tag box.
+  const toRef = useRef<TagsHandle>(null);
+  const ccRef = useRef<TagsHandle>(null);
+  const bccRef = useRef<TagsHandle>(null);
+  const escRef = useRef<TagsHandle>(null);
 
   const save = async () => {
     if (!editing?.supplier_id) {
       setError("Select a supplier.");
       return;
     }
-    if (!editing.to_emails?.length) {
+    // Commit any pending draft in each tag box so a typed email isn't lost.
+    const to_emails = toRef.current?.commit() ?? editing.to_emails ?? [];
+    const cc_emails = ccRef.current?.commit() ?? editing.cc_emails ?? [];
+    const bcc_emails = bccRef.current?.commit() ?? editing.bcc_emails ?? [];
+    const escalation_emails = escRef.current?.commit() ?? editing.escalation_emails ?? [];
+
+    if (!to_emails.length) {
       setError("Add at least one TO email.");
       return;
     }
@@ -54,12 +65,13 @@ export default function Page() {
       return;
     }
 
+    const payload = { ...editing, to_emails, cc_emails, bcc_emails, escalation_emails };
     setBusy(true);
     setError(null);
     try {
       const saved = editing.id
-        ? await api.updateSupplierEmail(editing.id, editing)
-        : await api.createSupplierEmail(editing);
+        ? await api.updateSupplierEmail(editing.id, payload)
+        : await api.createSupplierEmail(payload);
       setEditing(null);
       setProvisioning(saved.provisioning ?? null);
       await reload();
@@ -235,14 +247,14 @@ export default function Page() {
               </div>
 
               <div>
-                <TagsInput label="TO Emails *" values={editing.to_emails ?? []} onChange={(values) => setEditing({ ...editing, to_emails: values })} />
+                <TagsInput ref={toRef} label="TO Emails *" values={editing.to_emails ?? []} onChange={(values) => setEditing({ ...editing, to_emails: values })} />
                 <p className="mt-1 text-[11px] text-brand-muted">
                   Each TO email gets a Supplier Portal login (a temporary password is emailed; they’re asked to change it on first login).
                 </p>
               </div>
-              <TagsInput label="CC Emails" values={editing.cc_emails ?? []} onChange={(values) => setEditing({ ...editing, cc_emails: values })} />
-              <TagsInput label="BCC Emails" values={editing.bcc_emails ?? []} onChange={(values) => setEditing({ ...editing, bcc_emails: values })} />
-              <TagsInput label="Escalation Emails" values={editing.escalation_emails ?? []} onChange={(values) => setEditing({ ...editing, escalation_emails: values })} />
+              <TagsInput ref={ccRef} label="CC Emails" values={editing.cc_emails ?? []} onChange={(values) => setEditing({ ...editing, cc_emails: values })} />
+              <TagsInput ref={bccRef} label="BCC Emails" values={editing.bcc_emails ?? []} onChange={(values) => setEditing({ ...editing, bcc_emails: values })} />
+              <TagsInput ref={escRef} label="Escalation Emails" values={editing.escalation_emails ?? []} onChange={(values) => setEditing({ ...editing, escalation_emails: values })} />
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <Field label="Contact Person" value={editing.contact_person ?? ""} onChange={(value) => setEditing({ ...editing, contact_person: value })} />
@@ -288,7 +300,10 @@ function Field({ label, value, onChange }: { label: string; value: string; onCha
   );
 }
 
-function TagsInput({ label, values, onChange }: { label: string; values: string[]; onChange: (values: string[]) => void }) {
+type TagsHandle = { commit: () => string[] };
+
+const TagsInput = forwardRef<TagsHandle, { label: string; values: string[]; onChange: (values: string[]) => void }>(
+  function TagsInput({ label, values, onChange }, ref) {
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
 
@@ -310,6 +325,29 @@ function TagsInput({ label, values, onChange }: { label: string; values: string[
     onChange(next);
     setDraft("");
   };
+
+  // Called by the parent on Save: fold any valid typed-but-unadded email into
+  // the list and return the final array synchronously (no state-timing races).
+  useImperativeHandle(ref, () => ({
+    commit: () => {
+      const parts = draft.split(",").map((p) => p.trim()).filter(Boolean);
+      if (parts.length === 0) return values;
+      const next = [...values];
+      let changed = false;
+      for (const email of parts) {
+        if (!isEmail(email)) continue; // ignore an incomplete entry on save
+        if (!next.some((item) => item.toLowerCase() === email.toLowerCase())) {
+          next.push(email);
+          changed = true;
+        }
+      }
+      if (changed) {
+        onChange(next);
+        setDraft("");
+      }
+      return next;
+    },
+  }));
 
   const remove = (email: string) => {
     onChange(values.filter((item) => item !== email));
@@ -343,7 +381,7 @@ function TagsInput({ label, values, onChange }: { label: string; values: string[
       {error && <div className="mt-1 text-xs text-signal-red">{error}</div>}
     </div>
   );
-}
+});
 
 function isEmail(value: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
