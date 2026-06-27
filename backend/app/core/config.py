@@ -28,9 +28,10 @@ class Settings(BaseSettings):
     RUN_STARTUP_INIT: bool = Field(default=True)
     CORS_ORIGINS: list[str] = Field(...)
     # Public base URL of the frontend (used in emails: sign-in links + hosted
-    # logo). Defaults to the deployed app; override in .env for other envs.
-    # No trailing slash. (Avoid localhost here — it leaks into supplier emails.)
-    APP_BASE_URL: str = Field(default="https://supplier-followup-module-atj8.vercel.app")
+    # logo + commitment form link). Defaults to the deployed app; override in
+    # .env for other envs. No trailing slash. (Avoid localhost — it leaks into
+    # supplier emails.)
+    APP_BASE_URL: str = Field(default="https://h-connect.harmonytech.in")
 
     JWT_SECRET: str = Field(...)
     JWT_ALGORITHM: str = Field(...)

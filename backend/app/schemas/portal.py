@@ -78,6 +78,20 @@ class PortalCommitmentSubmit(BaseModel):
     items: list[PortalCommitmentItem] = Field(default_factory=list)
 
 
+class PortalTask(BaseModel):
+    """Safe, read-only view of an internal task for the supplier's PO."""
+    id: int
+    title: str
+    description: Optional[str] = None
+    material_name: Optional[str] = None
+    status: str
+    priority: str
+    signal: Optional[str] = None
+    due_date: Optional[datetime] = None
+    created_at: datetime
+    closed_at: Optional[datetime] = None
+
+
 class PortalPoListResponse(BaseModel):
     count: int
     items: list[PortalPo] = Field(default_factory=list)

@@ -2,16 +2,25 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, CalendarCheck, MessageSquare, Save } from "lucide-react";
+import { ArrowLeft, CalendarCheck, ListChecks, MessageSquare, Save } from "lucide-react";
 
 import { api } from "@/lib/api";
 import { signalBadge } from "@/lib/asn";
 import { fmtDate, fmtNum } from "@/lib/format";
-import type { Asn, PortalPo, PortalPoMaterial } from "@/lib/types";
+import type { Asn, PortalPo, PortalPoMaterial, PortalTask } from "@/lib/types";
 import AsnTable from "@/components/portal/AsnTable";
 import AsnDrawer from "@/components/portal/AsnDrawer";
 
 const STATUS_OPTIONS = ["CONFIRMED", "DELAYED", "PARTIAL", "DISPATCHED", "ON_HOLD", "CANCELLED"];
+
+function taskStatusBadge(status: string): string {
+  const s = (status || "").toUpperCase();
+  if (s === "DONE") return "bg-emerald-50 text-emerald-700";
+  if (s === "BLOCKED") return "bg-red-50 text-signal-red";
+  if (s.startsWith("WAITING")) return "bg-amber-50 text-amber-700";
+  if (s === "IN_PROGRESS") return "bg-blue-50 text-blue-600";
+  return "bg-gray-100 text-gray-600";
+}
 
 type Draft = { date: string; status: string; remark: string };
 
@@ -29,6 +38,7 @@ export default function PoDetailPage() {
   const [po, setPo] = useState<PortalPo | null>(null);
   const [materials, setMaterials] = useState<PortalPoMaterial[]>([]);
   const [asns, setAsns] = useState<Asn[]>([]);
+  const [tasks, setTasks] = useState<PortalTask[]>([]);
   const [drafts, setDrafts] = useState<Record<number, Draft>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -40,15 +50,17 @@ export default function PoDetailPage() {
     let cancelled = false;
     (async () => {
       try {
-        const [pos, mats, asnRes] = await Promise.all([
+        const [pos, mats, asnRes, taskList] = await Promise.all([
           api.portalPos(),
           api.portalPoMaterials(poNo),
           api.portalAsns(),
+          api.portalPoTasks(poNo),
         ]);
         if (cancelled) return;
         setPo(pos.items.find((p) => p.supplier_po_no === poNo) ?? null);
         setMaterials(mats);
         setAsns(asnRes.items.filter((a) => a.supplier_po_no === poNo));
+        setTasks(taskList);
       } catch (e) {
         if (!cancelled) setError((e as Error).message);
       } finally {
@@ -203,6 +215,35 @@ export default function PoDetailPage() {
             <Save size={15} /> {saving ? "Saving…" : "Save commitments"}
           </button>
         </div>
+      </div>
+
+      {/* Tasks the buyer's team is tracking for this PO (read-only) */}
+      <div>
+        <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-brand-muted">
+          <ListChecks size={14} className="text-signal-red" /> Buyer Tasks
+        </div>
+        {tasks.length === 0 ? (
+          <div className="empty-state">No tasks from your buyer's team for this PO.</div>
+        ) : (
+          <div className="space-y-2">
+            {tasks.map((t) => (
+              <div key={t.id} className="card flex flex-wrap items-start justify-between gap-3 p-3">
+                <div className="min-w-0">
+                  <div className="font-medium text-brand-dark">{t.title}</div>
+                  {t.description && <div className="mt-0.5 text-xs text-brand-muted">{t.description}</div>}
+                  <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-brand-muted">
+                    {t.material_name && <span>{t.material_name}</span>}
+                    {t.due_date && <span>· Due {fmtDate(t.due_date)}</span>}
+                  </div>
+                </div>
+                <div className="flex shrink-0 items-center gap-1.5">
+                  <span className="badge bg-gray-100 text-gray-600">{t.priority}</span>
+                  <span className={"badge " + taskStatusBadge(t.status)}>{t.status.replace(/_/g, " ")}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* ASNs for this PO */}

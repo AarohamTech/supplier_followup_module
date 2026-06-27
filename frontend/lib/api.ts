@@ -70,6 +70,7 @@ import type {
   PortalPoListResponse,
   PortalPoMaterial,
   PortalCommitmentItem,
+  PortalTask,
   PortalMessage,
   PortalMe,
   AppNotification,
@@ -711,6 +712,8 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ items }),
     }),
+  portalPoTasks: (supplierPoNo: string) =>
+    http<PortalTask[]>(`/api/portal/pos/${encodeURIComponent(supplierPoNo)}/tasks`),
   portalPoMessages: (supplierPoNo: string) =>
     http<PortalMessage[]>(`/api/portal/pos/${encodeURIComponent(supplierPoNo)}/messages`),
   sendPortalPoMessage: (supplierPoNo: string, body: string, subject?: string) =>

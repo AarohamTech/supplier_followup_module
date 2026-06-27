@@ -1120,6 +1120,19 @@ export interface PortalCommitmentItem {
   supplier_remark?: string | null;
 }
 
+export interface PortalTask {
+  id: number;
+  title: string;
+  description?: string | null;
+  material_name?: string | null;
+  status: string;
+  priority: string;
+  signal?: string | null;
+  due_date?: string | null;
+  created_at: string;
+  closed_at?: string | null;
+}
+
 export interface PortalMe {
   id: number;
   email: string;

@@ -11,7 +11,7 @@ from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from ..core.config import settings
@@ -19,6 +19,7 @@ from ..core.deps import get_current_supplier
 from ..database import get_db
 from ..models.asn import Asn
 from ..models.communication_message import CommunicationMessage
+from ..models.communication_task import CommunicationTask
 from ..models.procurement import ProcurementRecord
 from ..models.supplier import SupplierMaster
 from ..models.supplier_material_commitment import SupplierMaterialCommitment
@@ -32,6 +33,7 @@ from ..schemas.portal import (
     PortalPoListResponse,
     PortalPoMaterial,
     PortalSummary,
+    PortalTask,
 )
 from ..services import ai_service
 from ..services import ai_tools_service
@@ -315,6 +317,47 @@ def submit_commitments(
         )
     ).all()
     return [_material_out(r, commits.get((r.material_name or "").strip().upper())) for r in rows]
+
+
+# ── PO tasks (read-only view of the internal team's tasks for this PO) ────────
+@router.get("/pos/{supplier_po_no}/tasks", response_model=list[PortalTask])
+def po_tasks(
+    supplier_po_no: str,
+    user: User = Depends(get_current_supplier),
+    db: Session = Depends(get_db),
+) -> list[PortalTask]:
+    name = _supplier_name(db, user)
+    if not _po_is_owned(db, name, supplier_po_no):
+        raise HTTPException(404, "PO not found for your account")
+    rows = db.scalars(
+        select(CommunicationTask).where(
+            CommunicationTask.supplier_po_no == supplier_po_no,
+            or_(
+                CommunicationTask.supplier_id == user.supplier_id,
+                func.upper(CommunicationTask.supplier_name) == (name or "").upper(),
+            ),
+        )
+    ).all()
+    # Open tasks first, then by due date (undated last).
+    rows = sorted(
+        rows,
+        key=lambda t: (1 if (t.status or "").upper() == "DONE" else 0, t.due_date or datetime.max),
+    )
+    return [
+        PortalTask(
+            id=t.id,
+            title=t.title,
+            description=t.description,
+            material_name=t.material_name,
+            status=t.status,
+            priority=t.priority,
+            signal=t.signal,
+            due_date=t.due_date,
+            created_at=t.created_at,
+            closed_at=t.closed_at,
+        )
+        for t in rows
+    ]
 
 
 # ── PO messaging (shared thread with the staff Communication Hub) ─────────────
