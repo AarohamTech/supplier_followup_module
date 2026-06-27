@@ -11,6 +11,8 @@ run stays in the low seconds and concurrent runs can't collide on the unique key
 """
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 import threading
 import time
@@ -236,6 +238,19 @@ def _col_values(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+_MISSING = object()
+# Source fields that define whether a PO row has materially changed.
+_HASH_FIELDS = (
+    "signal", "po_status", "adv_status", "shipment_date", "qty", "rate", "stock",
+    "supplier_name", "supplier_date", "lead_time", "uom", "owner_emp_code", "quantity",
+)
+
+
+def _source_hash(payload: dict[str, Any]) -> str:
+    sub = {k: payload.get(k) for k in _HASH_FIELDS}
+    return hashlib.sha1(json.dumps(sub, sort_keys=True, default=str).encode("utf-8")).hexdigest()
+
+
 def _bulk_upsert(db: Session, raw_rows: list[dict[str, Any]]) -> tuple[int, int, int]:
     """Normalize + bulk-upsert via INSERT ... ON CONFLICT DO UPDATE (one statement
     per chunk, server-side). Returns (created, updated, skipped)."""
@@ -262,25 +277,39 @@ def _bulk_upsert(db: Session, raw_rows: list[dict[str, Any]]) -> tuple[int, int,
     except Exception:  # noqa: BLE001
         pass
 
-    # Classify created vs updated with one lightweight key-only query.
+    # Detect genuinely new / changed rows via a content hash (one key+hash query),
+    # so unchanged POs are never re-written and the fetch history is accurate.
     crm_nos = {k[0] for k in by_key}
-    existing_keys: set[tuple] = set()
+    existing_hash: dict[tuple, str | None] = {}
     for row in db.execute(
         select(
             ProcurementRecord.crm_no,
             ProcurementRecord.supplier_po_no,
             ProcurementRecord.material_name,
+            ProcurementRecord.source_hash,
         ).where(ProcurementRecord.crm_no.in_(crm_nos))
     ).all():
-        existing_keys.add((row[0], row[1], row[2]))
-    created = sum(1 for k in by_key if k not in existing_keys)
-    updated = len(by_key) - created
+        existing_hash[(row[0], row[1], row[2])] = row[3]
+
+    created = updated = 0
+    to_upsert: list[dict[str, Any]] = []
+    for key, payload in by_key.items():
+        h = _source_hash(payload)
+        prior = existing_hash.get(key, _MISSING)
+        if prior is _MISSING:
+            created += 1
+        elif prior != h:
+            updated += 1
+        else:
+            continue  # unchanged — skip the write entirely
+        row_values = _col_values(payload)
+        row_values["source_hash"] = h
+        to_upsert.append(row_values)
 
     tbl = ProcurementRecord.__table__
-    values = [_col_values(p) for p in by_key.values()]
     batch = 500
-    for i in range(0, len(values), batch):
-        part = values[i : i + batch]
+    for i in range(0, len(to_upsert), batch):
+        part = to_upsert[i : i + batch]
         stmt = pg_insert(tbl).values(part)
         sig = stmt.excluded.signal
         stmt = stmt.on_conflict_do_update(
@@ -300,6 +329,7 @@ def _bulk_upsert(db: Session, raw_rows: list[dict[str, Any]]) -> tuple[int, int,
                 "rate": stmt.excluded.rate,
                 "owner_emp_code": stmt.excluded.owner_emp_code,
                 "po_no": stmt.excluded.po_no,
+                "source_hash": stmt.excluded.source_hash,
                 "followup_status": case(
                     (sig == "GREEN", "PENDING_ACK"),
                     (sig == "YELLOW", "REMINDER_DUE"),

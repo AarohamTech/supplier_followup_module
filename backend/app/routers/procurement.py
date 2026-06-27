@@ -28,22 +28,33 @@ router = APIRouter(prefix="/api/procurement", tags=["procurement"])
 def dashboard(db: Session = Depends(get_db)):
     R = ProcurementRecord
     today = date.today()
+    start = datetime.combine(today, datetime.min.time())
+    end = datetime.combine(today, datetime.max.time())
 
-    def n(stmt) -> int:
-        return db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
+    # Single round-trip: conditional COUNT(*) FILTER(...) instead of 8 queries —
+    # the DB is cross-region, so collapsing round-trips is the main win.
+    row = db.execute(
+        select(
+            func.count(),
+            func.count().filter(R.signal == "GREEN"),
+            func.count().filter(R.signal == "YELLOW"),
+            func.count().filter(R.signal == "RED"),
+            func.count().filter(R.signal == "BLACK"),
+            func.count().filter(R.shipment_date < start),
+            func.count().filter(R.shipment_date >= start, R.shipment_date < end),
+            func.count().filter(R.ai_required.is_(True)),
+        )
+    ).one()
 
     return DashboardKpis(
-        total_records=n(select(R)),
-        green_count=n(select(R).where(R.signal == "GREEN")),
-        yellow_count=n(select(R).where(R.signal == "YELLOW")),
-        red_count=n(select(R).where(R.signal == "RED")),
-        black_count=n(select(R).where(R.signal == "BLACK")),
-        overdue_count=n(select(R).where(R.shipment_date < datetime.combine(today, datetime.min.time()))),
-        due_today_count=n(select(R).where(
-            R.shipment_date >= datetime.combine(today, datetime.min.time()),
-            R.shipment_date < datetime.combine(today, datetime.max.time()),
-        )),
-        ai_required_count=n(select(R).where(R.ai_required.is_(True))),
+        total_records=row[0] or 0,
+        green_count=row[1] or 0,
+        yellow_count=row[2] or 0,
+        red_count=row[3] or 0,
+        black_count=row[4] or 0,
+        overdue_count=row[5] or 0,
+        due_today_count=row[6] or 0,
+        ai_required_count=row[7] or 0,
     )
 
 
