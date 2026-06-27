@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   BarChart3,
+  Database,
   FileSpreadsheet,
   Gauge,
   Inbox,
@@ -70,6 +71,7 @@ const groups: { label: string; items: NavItem[] }[] = [
       { href: "/settings", label: "Settings", icon: Settings, minRole: "manager" },
       { href: "/admin/users", label: "Users", icon: ShieldCheck, minRole: "admin" },
       { href: "/employees", label: "Employee Logins", icon: UserCog, minRole: "admin" },
+      { href: "/crm-ingestion", label: "CRM Ingestion", icon: Database, minRole: "admin" },
     ],
   },
 ];

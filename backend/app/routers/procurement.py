@@ -5,11 +5,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select, func, or_
 from sqlalchemy.orm import Session
 
+from ..core.deps import require_admin, require_manager
 from ..database import get_db
+from ..models.crm_ingest_log import CrmIngestLog
 from ..models.procurement import ProcurementRecord
 from ..schemas.procurement import (
     ProcurementCreate, ProcurementUpdate, ProcurementOut,
-    ProcurementListOut, ProcurementSyncSummary, DashboardKpis,
+    ProcurementListOut, ProcurementSyncSummary, DashboardKpis, CrmIngestLogOut,
 )
 from ..services.procurement_sync_service import (
     ACCEPTED_EXCEL_COLUMNS,
@@ -17,7 +19,7 @@ from ..services.procurement_sync_service import (
     sync_procurement_rows,
 )
 from ..services.followup_engine import apply_followup_logic
-from ..services import engine_registry
+from ..services import crm_ingest_service
 
 router = APIRouter(prefix="/api/procurement", tags=["procurement"])
 
@@ -102,6 +104,21 @@ def columns():
     }
 
 
+@router.get(
+    "/crm-ingestion-logs",
+    response_model=list[CrmIngestLogOut],
+    dependencies=[Depends(require_admin)],
+)
+def crm_ingestion_logs(
+    db: Session = Depends(get_db),
+    limit: int = Query(50, ge=1, le=500),
+) -> list[CrmIngestLog]:
+    """Admin-only CRM fetch history: how many POs were fetched / added / changed."""
+    return list(
+        db.scalars(select(CrmIngestLog).order_by(CrmIngestLog.ran_at.desc()).limit(limit)).all()
+    )
+
+
 @router.get("/{rec_id}", response_model=ProcurementOut)
 def get_one(rec_id: int, db: Session = Depends(get_db)):
     rec = db.get(ProcurementRecord, rec_id)
@@ -115,10 +132,10 @@ def sync_endpoint(payload: list[dict[str, Any]], db: Session = Depends(get_db)):
     return sync_procurement_rows(db, payload, source="json")
 
 
-@router.post("/crm-sync")
+@router.post("/crm-sync", dependencies=[Depends(require_manager)])
 def crm_sync_now(db: Session = Depends(get_db)) -> dict:
-    """Manually trigger a live CRM ingestion run (same job the scheduler runs)."""
-    return engine_registry.run_job("crm_ingestion_cron", manual=True)
+    """Manually trigger a live CRM ingestion run (manager+). Records a fetch log."""
+    return crm_ingest_service.poll_and_ingest(db, trigger="manual")
 
 
 @router.put("/{rec_id}", response_model=ProcurementOut)

@@ -1152,6 +1152,23 @@ export interface EmployeeCreatePayload {
   emp_code?: string | null;
 }
 
+// ─── CRM ingestion fetch history (admin-only) ─────────────────────────────────
+export interface CrmIngestLog {
+  id: number;
+  ran_at: string;
+  status: string; // OK | ERROR | DISABLED
+  trigger: string; // auto | manual
+  desk?: string | null;
+  fetched: number;
+  generated: number;
+  created: number;
+  updated: number;
+  skipped: number;
+  errors: number;
+  duration_ms?: number | null;
+  message?: string | null;
+}
+
 export interface PortalMessage {
   id: number;
   direction: "INCOMING" | "OUTGOING" | string;

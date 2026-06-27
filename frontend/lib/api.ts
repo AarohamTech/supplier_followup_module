@@ -78,6 +78,7 @@ import type {
   EmployeePoMaterial,
   EmployeeProvisionResult,
   EmployeeCreatePayload,
+  CrmIngestLog,
   AppNotification,
 } from "./types";
 import { getToken, setToken, LOGIN_PATH } from "./auth-token";
@@ -139,12 +140,16 @@ export const api = {
       { method: "POST", body: JSON.stringify(rows) },
     ),
 
-  // Manually trigger a live CRM ingestion run (same job the scheduler runs).
+  // Manually trigger a live CRM ingestion run (manager+).
   crmSyncNow: () =>
-    http<{ ok?: boolean; status?: string; result?: Record<string, unknown> }>(
+    http<{ ok?: boolean; status?: string; created?: number; updated?: number; skipped?: number; errors?: number; fetched?: number; generated?: number }>(
       "/api/procurement/crm-sync",
       { method: "POST" },
     ),
+
+  // Admin-only CRM fetch history (added/changed per fetch).
+  crmIngestionLogs: (limit = 50) =>
+    http<CrmIngestLog[]>(`/api/procurement/crm-ingestion-logs?limit=${limit}`),
 
   listSuppliers: () => http<SupplierMaster[]>("/api/suppliers"),
   getSupplier: (id: number) => http<SupplierMaster>(`/api/suppliers/${id}`),

@@ -143,3 +143,21 @@ class DashboardKpis(BaseModel):
     overdue_count: int
     due_today_count: int
     ai_required_count: int
+
+
+class CrmIngestLogOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    ran_at: datetime
+    status: str
+    trigger: str
+    desk: Optional[str] = None
+    fetched: int
+    generated: int
+    created: int
+    updated: int
+    skipped: int
+    errors: int
+    duration_ms: Optional[int] = None
+    message: Optional[str] = None

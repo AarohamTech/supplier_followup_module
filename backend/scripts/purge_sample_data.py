@@ -32,6 +32,7 @@ from app.models.communication_task import CommunicationTask  # noqa: E402
 from app.models.customer_mail import CustomerMail  # noqa: E402
 from app.models.followup_attempt import FollowupAttempt  # noqa: E402
 from app.models.mail_history import MailHistory  # noqa: E402
+from app.models.mail_parse_rule import MailParseRule  # noqa: E402
 from app.models.notification import Notification  # noqa: E402
 from app.models.procurement import ProcurementRecord  # noqa: E402
 from app.models.status_change_log import StatusChangeLog  # noqa: E402
@@ -46,18 +47,18 @@ from app.models.user import User  # noqa: E402
 ORDERED = [
     ("task_activity_logs", TaskActivityLog),
     ("task_comments", TaskComment),
+    ("status_change_log", StatusChangeLog),
+    ("supplier_material_commitments", SupplierMaterialCommitment),
+    ("communication_messages", CommunicationMessage),
+    ("customer_mails", CustomerMail),
     ("communication_tasks", CommunicationTask),
+    ("mail_history", MailHistory),
+    ("followup_attempts", FollowupAttempt),
+    ("notifications", Notification),
+    ("ai_feedback", AIFeedback),
     ("asn_events", AsnEvent),
     ("asn_items", AsnItem),
     ("asns", Asn),
-    ("supplier_material_commitments", SupplierMaterialCommitment),
-    ("communication_messages", CommunicationMessage),
-    ("mail_history", MailHistory),
-    ("followup_attempts", FollowupAttempt),
-    ("status_change_log", StatusChangeLog),
-    ("notifications", Notification),
-    ("customer_mails", CustomerMail),
-    ("ai_feedback", AIFeedback),
     ("procurement_records", ProcurementRecord),
 ]
 
@@ -96,7 +97,10 @@ def main() -> None:
         try:
             for _, model in ORDERED:
                 db.execute(delete(model))
-            # supplier-login users BEFORE supplier_master (users.supplier_id FK)
+            # Supplier-specific mail-parse rules reference supplier_master — drop
+            # them (keep global rules). Then supplier-login users BEFORE
+            # supplier_master (users.supplier_id FK), then suppliers.
+            db.execute(delete(MailParseRule).where(MailParseRule.supplier_id.is_not(None)))
             db.execute(delete(User).where(User.supplier_id.is_not(None)))
             db.execute(delete(SupplierEmail))
             db.execute(delete(SupplierMaster))

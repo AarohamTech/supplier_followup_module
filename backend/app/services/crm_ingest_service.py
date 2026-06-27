@@ -23,6 +23,8 @@ from jose import jwt as jose_jwt
 from sqlalchemy.orm import Session
 
 from ..core.config import settings
+from ..database import SessionLocal
+from ..models.crm_ingest_log import CrmIngestLog
 from ..schemas.procurement import ProcurementSyncSummary
 from .procurement_sync_service import sync_procurement_rows
 
@@ -182,15 +184,50 @@ def map_row(row: dict[str, Any]) -> dict[str, Any]:
 
 
 # ── orchestration ─────────────────────────────────────────────────────────────
-def poll_and_ingest(db: Session) -> dict[str, Any]:
-    """Fetch the desk feed, keep generated POs, and upsert them. Failure-safe."""
+def _log_run(**fields: Any) -> None:
+    """Persist one CRM fetch-history row (own session so it survives failures)."""
+    session = SessionLocal()
+    try:
+        session.add(CrmIngestLog(**fields))
+        session.commit()
+    except Exception:  # noqa: BLE001
+        session.rollback()
+        log.exception("[crm] failed to write ingest log")
+    finally:
+        session.close()
+
+
+def poll_and_ingest(db: Session, trigger: str = "auto") -> dict[str, Any]:
+    """Fetch the desk feed, keep generated POs, and upsert them. Failure-safe.
+
+    Records a CRM fetch-history row each run (admin-visible) with added/changed
+    counts. On error the existing data is left untouched and an ERROR row logged.
+    """
     if not settings.CRM_INGEST_ENABLED:
+        _log_run(status="DISABLED", trigger=trigger, message="CRM_INGEST_ENABLED is false")
         return {"ok": True, "status": "DISABLED", "message": "CRM_INGEST_ENABLED is false"}
 
-    feed = fetch_desk()
-    generated = [r for r in feed if _is_generated(r)]
-    rows = [map_row(r) for r in generated]
-    summary: ProcurementSyncSummary = sync_procurement_rows(db, rows, source="crm")
+    t0 = time.time()
+    try:
+        feed = fetch_desk()
+        generated = [r for r in feed if _is_generated(r)]
+        rows = [map_row(r) for r in generated]
+        summary: ProcurementSyncSummary = sync_procurement_rows(db, rows, source="crm")
+    except Exception as exc:  # noqa: BLE001
+        _log_run(
+            status="ERROR", trigger=trigger, desk=str(settings.CRM_DESK_ID),
+            duration_ms=int((time.time() - t0) * 1000), message=str(exc)[:1000],
+        )
+        raise
+
+    duration_ms = int((time.time() - t0) * 1000)
+    _log_run(
+        status="OK", trigger=trigger, desk=str(settings.CRM_DESK_ID),
+        fetched=len(feed), generated=len(generated),
+        created=summary.created_count, updated=summary.updated_count,
+        skipped=summary.skipped_count, errors=summary.error_count,
+        duration_ms=duration_ms,
+    )
 
     result = {
         "ok": True,
@@ -202,6 +239,7 @@ def poll_and_ingest(db: Session) -> dict[str, Any]:
         "updated": summary.updated_count,
         "skipped": summary.skipped_count,
         "errors": summary.error_count,
+        "duration_ms": duration_ms,
         "records_processed": len(rows),
         "records_success": summary.created_count + summary.updated_count,
         "records_failed": summary.error_count,

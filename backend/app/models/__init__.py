@@ -2,6 +2,7 @@ from .app_setting import AppSetting
 from .asn import Asn, AsnEvent, AsnItem
 from .communication_message import CommunicationMessage
 from .communication_task import CommunicationTask
+from .crm_ingest_log import CrmIngestLog
 from .customer_mail import CustomerMail
 from .engine_job import EngineJob, EngineJobLog
 from .followup_attempt import FollowupAttempt
@@ -24,6 +25,7 @@ __all__ = [
     "AsnItem",
     "CommunicationMessage",
     "CommunicationTask",
+    "CrmIngestLog",
     "CustomerMail",
     "EngineJob",
     "EngineJobLog",

@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Database, Loader2, RefreshCw } from "lucide-react";
 import api from "@/lib/api";
 import { useStore } from "@/lib/store";
+import { useAuth } from "@/lib/auth";
 
 type CrmResult = { ok?: boolean; status?: string; result?: Record<string, unknown> } | null;
 
@@ -17,12 +18,16 @@ function summaryText(r: CrmResult): string {
 }
 
 export default function SyncCard() {
+  const { hasRole } = useAuth();
   const refresh = useStore((s) => s.refresh);
   const loadSuppliers = useStore((s) => s.loadSuppliers);
   const kpis = useStore((s) => s.kpis);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<CrmResult>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // CRM intake is an admin-only control.
+  if (!hasRole("admin")) return null;
 
   const sync = async () => {
     setBusy(true);
