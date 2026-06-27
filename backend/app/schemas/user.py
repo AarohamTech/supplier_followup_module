@@ -22,7 +22,9 @@ class UserOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    email: EmailStr
+    # Plain str (not EmailStr): internal employee accounts use a synthetic
+    # placeholder address and log in by username, not email.
+    email: str
     # Login id for accounts without an email (internal employees).
     username: str | None = None
     full_name: str | None = None
