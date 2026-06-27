@@ -6,6 +6,7 @@ import { Bot, Loader2, SendHorizonal, Sparkles, User, Wrench } from "lucide-reac
 import { api } from "@/lib/api";
 import type { ChatMessage, AiToolUse } from "@/lib/types";
 import PageHeader from "@/components/layout/PageHeader";
+import AiThinkingIndicator from "@/components/AiThinkingIndicator";
 
 type UiMessage = ChatMessage & { tools?: AiToolUse[] };
 
@@ -131,12 +132,7 @@ export default function AssistantPage() {
                 </div>
               </div>
             ))}
-            {sending && (
-              <div className="flex items-center gap-2 text-sm text-brand-muted">
-                <Bot size={14} className="text-signal-red" />
-                <Loader2 size={14} className="animate-spin" /> Thinking…
-              </div>
-            )}
+            {sending && <AiThinkingIndicator />}
             <div ref={endRef} />
           </div>
         )}

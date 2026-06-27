@@ -6,6 +6,7 @@ import { Bot, Loader2, SendHorizonal, Sparkles, User, Wrench } from "lucide-reac
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import type { ChatMessage, AiToolUse } from "@/lib/types";
+import AiThinkingIndicator from "@/components/AiThinkingIndicator";
 
 type UiMessage = ChatMessage & { tools?: AiToolUse[] };
 
@@ -131,10 +132,14 @@ export default function PortalAssistantPage() {
               </div>
             ))}
             {sending && (
-              <div className="flex items-center gap-2 text-sm text-brand-muted">
-                <Bot size={14} className="text-signal-red" />
-                <Loader2 size={14} className="animate-spin" /> Thinking…
-              </div>
+              <AiThinkingIndicator
+                steps={[
+                  "Reading your question…",
+                  "Searching your POs & shipments…",
+                  "Reviewing your order history & messages…",
+                  "Composing the answer…",
+                ]}
+              />
             )}
             <div ref={endRef} />
           </div>
