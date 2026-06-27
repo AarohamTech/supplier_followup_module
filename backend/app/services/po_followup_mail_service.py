@@ -15,7 +15,7 @@ from ..core.config import settings
 from ..models.mail_history import MailHistory
 from ..models.procurement import ProcurementRecord
 from . import ai_service, brand_email, communication_message_service as msg_service
-from . import embeddings_service, po_followup_service, vector_store
+from . import embeddings_service, followup_audit_service, po_followup_service, vector_store
 from .followup_engine import apply_followup_logic
 
 log = logging.getLogger(__name__)
@@ -251,10 +251,14 @@ def _ai_followup_narrative(
     anchor_rec: ProcurementRecord | None,
     materials_summary: str,
     instruction: str | None = None,
-) -> str | None:
-    """The LLM's PROSE follow-up body only (no table — that's added as HTML)."""
+) -> tuple[str | None, str | None]:
+    """The LLM's PROSE follow-up body only (no table — that's added as HTML).
+
+    Returns (narrative, ai_error). narrative is None when AI is disabled or fails;
+    ai_error is the error string only when AI was attempted and errored.
+    """
     if not ai_service.is_enabled():
-        return None
+        return None, None
     try:
         due = group.get("earliest_due_date")
         days_late: int | None = None
@@ -275,10 +279,10 @@ def _ai_followup_narrative(
             precedent=_supplier_precedent(db, group.get("supplier_name")),
             instruction=instruction,
         )
-        return body.strip() if body and body.strip() else None
-    except Exception:  # noqa: BLE001
+        return (body.strip() if body and body.strip() else None), None
+    except Exception as exc:  # noqa: BLE001
         log.exception("AI PO follow-up draft failed; using template")
-        return None
+        return None, str(exc)
 
 
 def _maybe_ai_polish(
@@ -287,18 +291,18 @@ def _maybe_ai_polish(
     anchor_rec: ProcurementRecord | None,
     table_text: str,
     instruction: str | None = None,
-) -> tuple[str, str] | None:
-    """Return (plain_body, intro_html) from the LLM, or None to keep the template.
+) -> tuple[tuple[str, str] | None, str | None]:
+    """Return ((plain_body, intro_html) | None, ai_error). None keeps the template.
 
     The LLM supplies only the prose; the material table (text + HTML) is appended
     by us, so the email always has a clean, structured table — never the model's
     own markdown.
     """
-    narrative = _ai_followup_narrative(db, group, anchor_rec, table_text, instruction)
+    narrative, ai_error = _ai_followup_narrative(db, group, anchor_rec, table_text, instruction)
     if not narrative:
-        return None
+        return None, ai_error
     plain = f"{narrative}\n\n{table_text}\n\n{_commitment_instruction_text(group.get('supplier_po_no'))}"
-    return plain, _ai_intro_html(narrative)
+    return (plain, _ai_intro_html(narrative)), ai_error
 
 
 def _active_window_start() -> datetime:
@@ -389,6 +393,7 @@ def create_po_followup_mail(
     require_mapping: bool = False,
     commit: bool = True,
     instruction: str | None = None,
+    source: str = "manual",
 ) -> PoMailQueueResult:
     group = po_followup_service.get_po_group(db, supplier_name, supplier_po_no)
     if not group:
@@ -404,6 +409,17 @@ def create_po_followup_mail(
     )
 
     if require_mapping and not group.get("mapping_active"):
+        followup_audit_service.record_safe(
+            db,
+            supplier_po_no=group.get("supplier_po_no"),
+            supplier_name=group.get("supplier_name"),
+            signal=group.get("overall_signal"),
+            mail_type=resolved_mail_type,
+            source=source,
+            outcome="SKIPPED",
+            detail="No active supplier email mapping",
+            commit=commit,
+        )
         return PoMailQueueResult(
             created=False,
             skipped_reason="No active supplier email mapping",
@@ -467,14 +483,17 @@ def create_po_followup_mail(
     # AI-polish when (a) the user gave an explicit instruction/command, or
     # (b) it's a high-risk RED/BLACK follow-up and AI polishing is enabled.
     # Keeps the structured material + reply tables; replaces the intro/tone.
+    ai_used = False
+    ai_error: str | None = None
     if (instruction and instruction.strip()) or (
         getattr(settings, "AI_PO_FOLLOWUP_ENABLED", False)
         and (group.get("overall_signal") or "").upper() in {"RED", "BLACK"}
     ):
-        polished = _maybe_ai_polish(db, group, anchor_rec, table_text, instruction=instruction)
+        polished, ai_error = _maybe_ai_polish(db, group, anchor_rec, table_text, instruction=instruction)
         if polished:
             body_plain, intro_html = polished
             body_html = _po_body_html(group, table_html, reply_table_html, intro_html=intro_html)
+            ai_used = True
 
     history = MailHistory(
         procurement_record_id=anchor_id,
@@ -500,6 +519,22 @@ def create_po_followup_mail(
         rec = db.get(ProcurementRecord, rid)
         if rec:
             rec.mail_status = "READY"
+
+    followup_audit_service.record_safe(
+        db,
+        supplier_po_no=group["supplier_po_no"],
+        supplier_name=group.get("supplier_name"),
+        signal=group.get("overall_signal"),
+        mail_type=resolved_mail_type,
+        source=source,
+        outcome="QUEUED",
+        detail=None if group.get("mapping_active") else "No active email mapping",
+        ai_used=ai_used,
+        ai_error=ai_error,
+        history_id=history.id,
+        message_id=getattr(msg, "id", None),
+        commit=False,
+    )
 
     if commit:
         db.commit()
@@ -619,6 +654,11 @@ def queue_due_po_followups(
 
         if not group.get("supplier_name"):
             skipped += 1
+            followup_audit_service.record_safe(
+                db, supplier_po_no=group.get("supplier_po_no"), supplier_name=None,
+                signal=group.get("overall_signal"), mail_type=mail_type, source="auto",
+                outcome="SKIPPED", detail="Supplier name missing", commit=False,
+            )
             results.append({
                 "created": False,
                 "supplier_name": group.get("supplier_name"),
@@ -630,6 +670,12 @@ def queue_due_po_followups(
             continue
         if not group.get("mapping_active"):
             skipped += 1
+            followup_audit_service.record_safe(
+                db, supplier_po_no=group.get("supplier_po_no"),
+                supplier_name=group.get("supplier_name"), signal=group.get("overall_signal"),
+                mail_type=mail_type, source="auto", outcome="SKIPPED",
+                detail="No active supplier email mapping", commit=False,
+            )
             results.append({
                 "created": False,
                 "supplier_name": group.get("supplier_name"),
@@ -678,6 +724,7 @@ def queue_due_po_followups(
             mail_type=mail_type,
             require_mapping=True,
             commit=False,
+            source="auto",
         )
         if result.created:
             queued += 1
@@ -740,6 +787,7 @@ def command_followup(
             require_mapping=True,
             commit=True,
             instruction=instruction,
+            source="command",
         )
         sent = False
         if result.created and result.message_id is not None:
@@ -767,7 +815,7 @@ def command_followup(
     table_html = ctx["materials_table_html"]
     reply_table_html = ctx["reply_table_html"]
     anchor_rec = db.get(ProcurementRecord, group["anchor_record_id"])
-    narrative = _ai_followup_narrative(db, group, anchor_rec, table_text, instruction=instruction)
+    narrative, _ai_err = _ai_followup_narrative(db, group, anchor_rec, table_text, instruction=instruction)
     source = "ai" if narrative else "template"
     if not narrative:
         narrative = (

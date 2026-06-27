@@ -18,16 +18,20 @@ import {
   ArrowDownLeft,
   ThumbsUp,
   ThumbsDown,
+  History as HistoryIcon,
 } from "lucide-react";
 
 import { api } from "@/lib/api";
+import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
 import { Logo } from "@/components/brand/Logo";
 import { DataTable, type Column } from "@/components/ui/DataTable";
+import { fmtDate } from "@/lib/format";
 import type {
   BlackFollowup,
   BlackFollowupThreadItem,
   BlackFollowupCommandResult,
+  FollowupAttempt,
 } from "@/lib/types";
 
 function fmt(at: string | null): string {
@@ -55,6 +59,18 @@ export default function BlackFollowupsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedPo, setSelectedPo] = useState<string | null>(null);
+  const [view, setView] = useState<"active" | "history">("active");
+  const [history, setHistory] = useState<FollowupAttempt[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+
+  const loadHistory = useCallback(() => {
+    setHistoryLoading(true);
+    api
+      .getFollowupHistory({ signal: "BLACK", limit: 200 })
+      .then((r) => setHistory(r.items))
+      .catch((e) => setError((e as Error).message))
+      .finally(() => setHistoryLoading(false));
+  }, []);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -72,6 +88,10 @@ export default function BlackFollowupsPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    if (view === "history") loadHistory();
+  }, [view, loadHistory]);
 
   const received = items.length - chasing;
   const selected = items.find((i) => i.supplier_po_no === selectedPo) ?? null;
@@ -188,8 +208,30 @@ export default function BlackFollowupsPage() {
           </div>
         </div>
         <div className="page-actions">
-          <button onClick={load} disabled={loading} className="btn-outline">
-            {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+          <div className="inline-flex rounded-md border border-brand-border bg-white p-0.5">
+            {(["active", "history"] as const).map((v) => (
+              <button
+                key={v}
+                onClick={() => setView(v)}
+                className={cn(
+                  "rounded px-3 py-1 text-xs font-medium",
+                  view === v ? "bg-signal-red text-white" : "text-brand-muted hover:text-brand-dark",
+                )}
+              >
+                {v === "active" ? "Active" : "History"}
+              </button>
+            ))}
+          </div>
+          <button
+            onClick={view === "active" ? load : loadHistory}
+            disabled={view === "active" ? loading : historyLoading}
+            className="btn-outline"
+          >
+            {(view === "active" ? loading : historyLoading) ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <RefreshCw className="h-3.5 w-3.5" />
+            )}
             Refresh
           </button>
         </div>
@@ -197,30 +239,95 @@ export default function BlackFollowupsPage() {
 
       {error && <div className="rounded-md bg-red-50 px-3 py-2 text-xs text-signal-red">{error}</div>}
 
-      {/* Summary strip */}
-      <div className="grid grid-cols-3 gap-3">
-        <StatCard label="Critical POs" value={items.length} tone="bg-gray-900 text-white" />
-        <StatCard label="AI still chasing" value={chasing} tone="bg-red-50 text-signal-red" />
-        <StatCard label="Commitment received" value={received < 0 ? 0 : received} tone="bg-emerald-50 text-emerald-700" />
-      </div>
+      {view === "active" ? (
+        <>
+          {/* Summary strip */}
+          <div className="grid grid-cols-3 gap-3">
+            <StatCard label="Critical POs" value={items.length} tone="bg-gray-900 text-white" />
+            <StatCard label="AI still chasing" value={chasing} tone="bg-red-50 text-signal-red" />
+            <StatCard label="Commitment received" value={received < 0 ? 0 : received} tone="bg-emerald-50 text-emerald-700" />
+          </div>
 
-      {/* Data table */}
-      <DataTable
-        columns={columns}
-        rows={items}
-        getRowId={(r) => r.supplier_po_no}
-        onRowClick={(r) => setSelectedPo(r.supplier_po_no)}
-        searchText={(r) => `${r.supplier_po_no} ${r.supplier_name ?? ""}`}
-        searchPlaceholder="Search PO or supplier…"
-        initialSort={{ key: "late", dir: "desc" }}
-        pageSize={10}
-        loading={loading}
-        emptyMessage="No BLACK-signal POs right now. 🎉 Nothing critical to chase."
-      />
+          <DataTable
+            columns={columns}
+            rows={items}
+            getRowId={(r) => r.supplier_po_no}
+            onRowClick={(r) => setSelectedPo(r.supplier_po_no)}
+            searchText={(r) => `${r.supplier_po_no} ${r.supplier_name ?? ""}`}
+            searchPlaceholder="Search PO or supplier…"
+            initialSort={{ key: "late", dir: "desc" }}
+            pageSize={10}
+            loading={loading}
+            emptyMessage="No BLACK-signal POs right now. 🎉 Nothing critical to chase."
+          />
 
-      {selected && (
-        <DetailDrawer item={selected} onClose={() => setSelectedPo(null)} onSent={load} />
+          {selected && (
+            <DetailDrawer item={selected} onClose={() => setSelectedPo(null)} onSent={load} />
+          )}
+        </>
+      ) : (
+        <FollowupHistoryTable items={history} loading={historyLoading} />
       )}
+    </div>
+  );
+}
+
+function AttemptBadge({ outcome }: { outcome: string }) {
+  const map: Record<string, string> = {
+    QUEUED: "bg-blue-50 text-blue-600",
+    SKIPPED: "bg-amber-50 text-amber-700",
+    FAILED: "bg-red-50 text-signal-red",
+  };
+  return <span className={"badge " + (map[outcome] || "bg-gray-100 text-gray-600")}>{outcome}</span>;
+}
+
+function SendBadge({ status }: { status: string | null }) {
+  if (!status) return <span className="text-xs text-brand-muted">—</span>;
+  const up = status.toUpperCase();
+  const cls = up === "SENT" ? "bg-emerald-50 text-emerald-700" : up === "FAILED" ? "bg-red-50 text-signal-red" : "bg-gray-100 text-gray-600";
+  return <span className={"badge " + cls}>{up}</span>;
+}
+
+function FollowupHistoryTable({ items, loading }: { items: FollowupAttempt[]; loading: boolean }) {
+  return (
+    <div className="table-shell">
+      <table className="min-w-full text-sm">
+        <thead className="bg-gray-50">
+          <tr>
+            {["When", "PO", "Supplier", "Source", "Outcome", "Harmony Intelligent", "Send", "Detail"].map((h) => (
+              <th key={h} className="px-3 py-3 text-left table-header whitespace-nowrap">{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {loading && <tr><td colSpan={8} className="px-4 py-10 text-center text-brand-muted">Loading…</td></tr>}
+          {!loading && items.length === 0 && (
+            <tr><td colSpan={8} className="px-4 py-10 text-center text-brand-muted">No follow-up attempts recorded yet.</td></tr>
+          )}
+          {items.map((a) => (
+            <tr key={a.id} className="border-t border-brand-border align-top">
+              <td className="px-3 py-3 whitespace-nowrap text-xs">{fmtDate(a.created_at)}{a.created_at ? " " + new Date(a.created_at).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" }) : ""}</td>
+              <td className="px-3 py-3 font-medium text-brand-dark">{a.supplier_po_no || "—"}</td>
+              <td className="px-3 py-3 text-xs text-brand-muted">{a.supplier_name || "—"}</td>
+              <td className="px-3 py-3 text-xs uppercase text-brand-muted">{a.source}</td>
+              <td className="px-3 py-3"><AttemptBadge outcome={a.outcome} /></td>
+              <td className="px-3 py-3">
+                {a.ai_error ? (
+                  <span className="badge bg-red-50 text-signal-red" title={a.ai_error}>HI error → template</span>
+                ) : a.ai_used ? (
+                  <span className="badge bg-violet-50 text-violet-700">HI written</span>
+                ) : (
+                  <span className="text-xs text-brand-muted">Template</span>
+                )}
+              </td>
+              <td className="px-3 py-3"><SendBadge status={a.send_status} /></td>
+              <td className="px-3 py-3 max-w-[280px] text-xs text-brand-muted">
+                {a.send_error || a.ai_error || a.detail || "—"}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -338,7 +445,7 @@ function DetailDrawer({
       />
       {/* Panel — large, near full-screen modal */}
       <div
-        className={`relative flex h-full w-full max-w-5xl flex-col overflow-hidden bg-white shadow-2xl transition-all duration-200 sm:h-[92vh] sm:rounded-2xl ${
+        className={`relative flex h-full w-full max-w-5xl flex-col overflow-hidden bg-white shadow-2xl transition-[transform,opacity] duration-200 ease-out sm:h-[92vh] sm:rounded-2xl ${
           shown ? "scale-100 opacity-100" : "scale-95 opacity-0"
         }`}
       >

@@ -269,5 +269,38 @@ class CommitmentFlowTests(unittest.TestCase):
             self.assertEqual(c.supplier_status, "DELAYED")
 
 
+class FollowupAuditTests(unittest.TestCase):
+    def test_record_and_list(self):
+        from app.services import followup_audit_service as audit
+        with _temp_db() as db:
+            audit.record(db, supplier_po_no="PO-1", supplier_name="ACME", signal="BLACK",
+                         source="auto", outcome="QUEUED", ai_used=True, commit=True)
+            audit.record(db, supplier_po_no="PO-2", supplier_name="ACME", signal="BLACK",
+                         source="auto", outcome="SKIPPED", detail="No active supplier email mapping", commit=True)
+            black = audit.list_attempts(db, signal="BLACK")
+            self.assertEqual(len(black), 2)
+            skipped = audit.list_attempts(db, outcome="SKIPPED")
+            self.assertEqual(len(skipped), 1)
+            self.assertEqual(skipped[0].detail, "No active supplier email mapping")
+
+    def test_create_followup_records_attempt(self):
+        from app.services import po_followup_mail_service as svc
+        from app.services import followup_audit_service as audit
+        with _temp_db() as db:
+            s = _supplier(db)
+            db.add(ProcurementRecord(
+                crm_no="C1", material_name="Widget", supplier_po_no="PO-AUD",
+                supplier_name=s.supplier_name, signal="BLACK"))
+            db.commit()
+            res = svc.create_po_followup_mail(
+                db, supplier_name=s.supplier_name, supplier_po_no="PO-AUD",
+                commit=True, source="auto")
+            self.assertTrue(res.created)
+            attempts = audit.list_attempts(db, supplier_po_no="PO-AUD")
+            self.assertEqual(len(attempts), 1)
+            self.assertEqual(attempts[0].outcome, "QUEUED")
+            self.assertEqual(attempts[0].source, "auto")
+
+
 if __name__ == "__main__":
     unittest.main()

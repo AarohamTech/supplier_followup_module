@@ -4,6 +4,7 @@ from .communication_message import CommunicationMessage
 from .communication_task import CommunicationTask
 from .customer_mail import CustomerMail
 from .engine_job import EngineJob, EngineJobLog
+from .followup_attempt import FollowupAttempt
 from .mail_history import MailHistory
 from .mail_parse_rule import MailParseRule
 from .mail_template import MailTemplate
@@ -26,6 +27,7 @@ __all__ = [
     "CustomerMail",
     "EngineJob",
     "EngineJobLog",
+    "FollowupAttempt",
     "MailHistory",
     "MailParseRule",
     "MailTemplate",

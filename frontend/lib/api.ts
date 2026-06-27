@@ -52,6 +52,7 @@ import type {
   SupplierScorecard,
   AiMemoryStats,
   BlackFollowupResponse,
+  FollowupHistoryResponse,
   BlackFollowupCommandResult,
   AiPromptsMap,
   AiFeedbackInput,
@@ -639,6 +640,14 @@ export const api = {
     http<SupplierScorecard>(`/api/ai/insights/suppliers/${encodeURIComponent(name)}`),
   getBlackFollowups: (limit = 100) =>
     http<BlackFollowupResponse>(`/api/ai/insights/black-followups?limit=${limit}`),
+  getFollowupHistory: (params: { signal?: string; outcome?: string; supplier_po_no?: string; limit?: number } = {}) => {
+    const q = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== "") q.append(k, String(v));
+    });
+    const qs = q.toString();
+    return http<FollowupHistoryResponse>(`/api/ai/insights/followup-history${qs ? `?${qs}` : ""}`);
+  },
   // Editable system prompts (manager)
   getAiPrompts: () => http<{ prompts: AiPromptsMap }>("/api/ai/prompts"),
   saveAiPrompts: (prompts: Record<string, string | null>) =>

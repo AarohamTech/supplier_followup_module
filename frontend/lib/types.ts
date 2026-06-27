@@ -890,6 +890,29 @@ export interface BlackFollowupResponse {
   items: BlackFollowup[];
 }
 
+export interface FollowupAttempt {
+  id: number;
+  created_at: string;
+  supplier_po_no: string | null;
+  supplier_name: string | null;
+  signal: string | null;
+  mail_type: string | null;
+  source: string; // auto | manual | command
+  outcome: string; // QUEUED | SKIPPED | FAILED
+  detail: string | null;
+  ai_used: boolean;
+  ai_error: string | null;
+  history_id: number | null;
+  send_status: string | null;
+  sent_at: string | null;
+  send_error: string | null;
+}
+
+export interface FollowupHistoryResponse {
+  count: number;
+  items: FollowupAttempt[];
+}
+
 export interface AiPrompt {
   label: string;
   value: string;
