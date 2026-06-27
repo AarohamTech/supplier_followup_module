@@ -17,6 +17,7 @@ import OverdueDonut from "@/components/dashboard/OverdueDonut";
 import StatusDonut from "@/components/dashboard/StatusDonut";
 import MailEngineStatusCard from "@/components/dashboard/MailEngineStatusCard";
 import PageHeader from "@/components/layout/PageHeader";
+import LazyMount from "@/components/LazyMount";
 
 export default function DashboardPage() {
   return (
@@ -70,19 +71,23 @@ export default function DashboardPage() {
         </aside>
       </div>
 
-      <section>
-        <div className="mb-3">
-          <h2 className="text-sm font-semibold text-brand-dark">Operational intelligence</h2>
-          <p className="mt-0.5 text-xs text-brand-muted">Risk signals and workload patterns derived from the current queue.</p>
-        </div>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-        <AIInsights />
-        <OverdueDonut />
-        <StatusDonut />
-        </div>
-      </section>
+      <LazyMount minHeight={340}>
+        <section>
+          <div className="mb-3">
+            <h2 className="text-sm font-semibold text-brand-dark">Operational intelligence</h2>
+            <p className="mt-0.5 text-xs text-brand-muted">Risk signals and workload patterns derived from the current queue.</p>
+          </div>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <AIInsights />
+            <OverdueDonut />
+            <StatusDonut />
+          </div>
+        </section>
+      </LazyMount>
 
-      <MailEngineStatusCard />
+      <LazyMount minHeight={120}>
+        <MailEngineStatusCard />
+      </LazyMount>
     </div>
   );
 }
