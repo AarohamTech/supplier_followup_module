@@ -20,13 +20,17 @@ from typing import Any
 
 import requests
 from jose import jwt as jose_jwt
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..core.config import settings
 from ..database import SessionLocal
 from ..models.crm_ingest_log import CrmIngestLog
-from ..schemas.procurement import ProcurementSyncSummary
-from .procurement_sync_service import sync_procurement_rows
+from ..models.procurement import ProcurementRecord
+from ..models.supplier import SupplierMaster
+from ..schemas.procurement import ProcurementCreate
+from .followup_engine import apply_followup_logic
+from .procurement_sync_service import UPDATABLE_FROM_SOURCE, normalize_procurement_row
 
 log = logging.getLogger(__name__)
 
@@ -197,6 +201,81 @@ def _log_run(**fields: Any) -> None:
         session.close()
 
 
+def _bulk_upsert(db: Session, raw_rows: list[dict[str, Any]]) -> tuple[int, int, int]:
+    """Normalize + upsert CRM rows with minimal DB round-trips.
+
+    The Supabase DB is in a different AWS region than this app, so per-row
+    queries (one SELECT + write each) are far too slow at ~1k rows. Instead:
+    normalize in memory, load all existing rows for these CRM numbers in ONE
+    query, then add/update objects and commit once (SQLAlchemy batches the
+    INSERTs/UPDATEs). Returns (created, updated, skipped).
+    """
+    by_key: dict[tuple, dict[str, Any]] = {}
+    skipped = 0
+    for raw in raw_rows:
+        norm, errs = normalize_procurement_row(raw)
+        if errs or norm is None:
+            skipped += 1
+            continue
+        try:
+            payload = ProcurementCreate(**norm).model_dump()
+        except Exception:  # noqa: BLE001
+            skipped += 1
+            continue
+        # Dedupe duplicate feed rows by business key (keep the latest).
+        by_key[(payload["crm_no"], payload["supplier_po_no"], payload["material_name"])] = payload
+    if not by_key:
+        return 0, 0, skipped
+
+    crm_nos = {k[0] for k in by_key}
+    existing: dict[tuple, ProcurementRecord] = {}
+    for r in db.scalars(
+        select(ProcurementRecord).where(ProcurementRecord.crm_no.in_(crm_nos))
+    ).all():
+        existing[(r.crm_no, r.supplier_po_no, r.material_name)] = r
+
+    created = updated = 0
+    new_objs: list[ProcurementRecord] = []
+    for key, payload in by_key.items():
+        rec = existing.get(key)
+        if rec is None:
+            data = dict(payload)
+            data["po_no"] = payload["supplier_po_no"]  # legacy NOT NULL column
+            rec = ProcurementRecord(**data)
+            apply_followup_logic(rec)
+            new_objs.append(rec)
+            created += 1
+            continue
+        changed = False
+        for field in UPDATABLE_FROM_SOURCE:
+            new_val = payload.get(field)
+            if new_val is not None and getattr(rec, field) != new_val:
+                setattr(rec, field, new_val)
+                changed = True
+        if rec.po_no != payload["supplier_po_no"]:
+            rec.po_no = payload["supplier_po_no"]
+            changed = True
+        if changed:
+            apply_followup_logic(rec)
+            updated += 1
+    if new_objs:
+        db.add_all(new_objs)
+
+    # Ensure supplier_master rows exist (one query + bulk add of the missing).
+    names = {p["supplier_name"] for p in by_key.values() if p.get("supplier_name")}
+    if names:
+        have = set(
+            db.scalars(
+                select(SupplierMaster.supplier_name).where(SupplierMaster.supplier_name.in_(names))
+            ).all()
+        )
+        for name in names - have:
+            db.add(SupplierMaster(supplier_name=name, is_active=True))
+
+    db.commit()
+    return created, updated, skipped
+
+
 def poll_and_ingest(db: Session, trigger: str = "auto") -> dict[str, Any]:
     """Fetch the desk feed, keep generated POs, and upsert them. Failure-safe.
 
@@ -212,7 +291,7 @@ def poll_and_ingest(db: Session, trigger: str = "auto") -> dict[str, Any]:
         feed = fetch_desk()
         generated = [r for r in feed if _is_generated(r)]
         rows = [map_row(r) for r in generated]
-        summary: ProcurementSyncSummary = sync_procurement_rows(db, rows, source="crm")
+        created, updated, skipped = _bulk_upsert(db, rows)
     except Exception as exc:  # noqa: BLE001
         _log_run(
             status="ERROR", trigger=trigger, desk=str(settings.CRM_DESK_ID),
@@ -224,8 +303,7 @@ def poll_and_ingest(db: Session, trigger: str = "auto") -> dict[str, Any]:
     _log_run(
         status="OK", trigger=trigger, desk=str(settings.CRM_DESK_ID),
         fetched=len(feed), generated=len(generated),
-        created=summary.created_count, updated=summary.updated_count,
-        skipped=summary.skipped_count, errors=summary.error_count,
+        created=created, updated=updated, skipped=skipped, errors=0,
         duration_ms=duration_ms,
     )
 
@@ -235,14 +313,14 @@ def poll_and_ingest(db: Session, trigger: str = "auto") -> dict[str, Any]:
         "desk": str(settings.CRM_DESK_ID),
         "fetched": len(feed),
         "generated": len(generated),
-        "created": summary.created_count,
-        "updated": summary.updated_count,
-        "skipped": summary.skipped_count,
-        "errors": summary.error_count,
+        "created": created,
+        "updated": updated,
+        "skipped": skipped,
+        "errors": 0,
         "duration_ms": duration_ms,
-        "records_processed": len(rows),
-        "records_success": summary.created_count + summary.updated_count,
-        "records_failed": summary.error_count,
+        "records_processed": created + updated + skipped,
+        "records_success": created + updated,
+        "records_failed": 0,
     }
     log.info(
         "[crm] ingest desk=%s fetched=%d generated=%d created=%d updated=%d skipped=%d errors=%d",
