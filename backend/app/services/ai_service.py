@@ -66,8 +66,12 @@ SYSTEM_PO_FOLLOWUP = (
     "ONLY the facts provided. Do not invent dates, quantities or statuses. Match the "
     "urgency to the risk signal (RED/BLACK = urgent, with a clear ask and a deadline) "
     "while staying courteous and relationship-preserving. Become firmer ONLY if the "
-    "procurement officer's instruction explicitly asks for it. Return ONLY the email "
-    "body, no subject line, signed 'Procurement Team'."
+    "procurement officer's instruction explicitly asks for it. Direct the supplier to "
+    "submit or update their committed dispatch date for each material in the secure "
+    "supplier portal — the portal link is added automatically below your message. Do "
+    "NOT ask them to reply to this email, send a return email, or fill in a table; the "
+    "supplier portal is the only channel they should use to respond. Return ONLY the "
+    "email body, no subject line, signed 'Procurement Team'."
 )
 
 SYSTEM_CUSTOMER_REPLY = (
@@ -475,9 +479,13 @@ def suggest_po_followup(
     # — so the model must NOT include any table, material list or markdown.
     user += (
         '\n\nReturn STRICT JSON only: {"draft": "<the email message as plain prose: '
-        "greeting, the ask, the urgency/deadline, and sign-off>\"}. Do NOT include "
-        "any table, material-wise list, PO summary block, markdown or code fences — "
-        "the material table is appended automatically by the system."
+        "greeting, the ask, the urgency/deadline, and sign-off>\"}. In the ask, direct "
+        "the supplier to submit or update their committed dispatch date for each material "
+        "in the secure supplier portal (the portal link is appended automatically below "
+        "your message). Do NOT ask them to reply by email or to fill in a table. Do NOT "
+        "include any table, material-wise list, PO summary block, markdown or code "
+        "fences — the material table and portal link are appended automatically by the "
+        "system."
     )
     base_prompt = _prompt("po_followup")
     system = base_prompt + ' Output ONLY a strict JSON object {"draft": "..."} and nothing else.'

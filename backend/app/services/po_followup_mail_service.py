@@ -21,7 +21,6 @@ from .followup_engine import apply_followup_logic
 log = logging.getLogger(__name__)
 from .mail_template_service import (
     PO_MAIL_TYPE_BY_SIGNAL,
-    PO_REPLY_INSTRUCTIONS,
     build_po_group_context,
     pick_po_template,
     render,
