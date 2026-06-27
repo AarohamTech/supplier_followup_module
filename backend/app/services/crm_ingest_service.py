@@ -20,7 +20,7 @@ from typing import Any
 
 import requests
 from jose import jwt as jose_jwt
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from ..core.config import settings
@@ -227,6 +227,13 @@ def _bulk_upsert(db: Session, raw_rows: list[dict[str, Any]]) -> tuple[int, int,
     if not by_key:
         return 0, 0, skipped
 
+    # Supabase enforces a per-statement timeout; raise it for this bulk session
+    # (the DB is cross-region, so even batched writes need headroom).
+    try:
+        db.execute(text("SET statement_timeout = '180s'"))
+    except Exception:  # noqa: BLE001
+        pass
+
     crm_nos = {k[0] for k in by_key}
     existing: dict[tuple, ProcurementRecord] = {}
     for r in db.scalars(
@@ -258,8 +265,12 @@ def _bulk_upsert(db: Session, raw_rows: list[dict[str, Any]]) -> tuple[int, int,
         if changed:
             apply_followup_logic(rec)
             updated += 1
-    if new_objs:
-        db.add_all(new_objs)
+    # Insert in chunks so a single INSERT statement can't blow the timeout or
+    # generate a multi-hundred-KB query across the region.
+    chunk = 200
+    for i in range(0, len(new_objs), chunk):
+        db.add_all(new_objs[i : i + chunk])
+        db.flush()
 
     # Ensure supplier_master rows exist (one query + bulk add of the missing).
     names = {p["supplier_name"] for p in by_key.values() if p.get("supplier_name")}
