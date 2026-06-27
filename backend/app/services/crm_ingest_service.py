@@ -1,26 +1,26 @@
 """Live PO ingestion from the Hariom CRM.
 
 Polls the CRM "pending desk" feed on a schedule and upserts generated POs into
-``procurement_records`` via the shared :mod:`procurement_sync_service`. The CRM
-bearer token is short-lived, so we log in once and auto-refresh it before expiry.
+``procurement_records``. The CRM bearer token is short-lived, so we log in once
+and auto-refresh it before expiry.
 
-Design notes:
-- The login response shape is not contractually fixed, so the token is extracted
-  defensively: known field names first, then a recursive scan for a JWT-looking
-  string. The response keys are logged once to ease future debugging.
-- Failure-safe: any network/auth/parse error raises (the caller logs it) and the
-  existing data is never wiped — a bad cycle is simply skipped.
+Performance: the Supabase DB is in a different AWS region than this app, so
+per-row writes are far too slow (~1s/row). Ingestion therefore uses a single
+``INSERT ... ON CONFLICT DO UPDATE`` per chunk (server-side, idempotent), so a
+run stays in the low seconds and concurrent runs can't collide on the unique key.
 """
 from __future__ import annotations
 
 import logging
 import threading
 import time
+from datetime import datetime, timedelta
 from typing import Any
 
 import requests
 from jose import jwt as jose_jwt
-from sqlalchemy import select, text
+from sqlalchemy import case, func, select, text
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from ..core.config import settings
@@ -29,12 +29,11 @@ from ..models.crm_ingest_log import CrmIngestLog
 from ..models.procurement import ProcurementRecord
 from ..models.supplier import SupplierMaster
 from ..schemas.procurement import ProcurementCreate
-from .followup_engine import apply_followup_logic
-from .procurement_sync_service import UPDATABLE_FROM_SOURCE, normalize_procurement_row
+from .followup_engine import get_followup_rule
+from .procurement_sync_service import normalize_procurement_row
 
 log = logging.getLogger(__name__)
 
-# Refresh the token this many seconds before its real expiry.
 _TOKEN_LEEWAY_SECONDS = 300
 
 _lock = threading.Lock()
@@ -77,7 +76,6 @@ def _extract_token(data: Any) -> str | None:
 
 
 def _token_exp(token: str) -> float:
-    """Best-effort unverified `exp` (epoch seconds); 0 if undecodable."""
     try:
         claims = jose_jwt.get_unverified_claims(token)
         return float(claims.get("exp") or 0.0)
@@ -147,6 +145,11 @@ def fetch_desk(desk_id: str | None = None) -> list[dict[str, Any]]:
         resp = _call(get_token(force_refresh=True))
     resp.raise_for_status()
     data = resp.json()
+    if isinstance(data, dict):
+        # Some endpoints wrap the array, e.g. {"success":..,"data":[...]}.
+        for key in ("data", "Data", "result", "Result", "items", "Items"):
+            if isinstance(data.get(key), list):
+                return data[key]
     if not isinstance(data, list):
         raise RuntimeError(f"CRM desk feed returned {type(data).__name__}, expected a list")
     return data
@@ -187,29 +190,55 @@ def map_row(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-# ── orchestration ─────────────────────────────────────────────────────────────
-def _log_run(**fields: Any) -> None:
-    """Persist one CRM fetch-history row (own session so it survives failures)."""
-    session = SessionLocal()
-    try:
-        session.add(CrmIngestLog(**fields))
-        session.commit()
-    except Exception:  # noqa: BLE001
-        session.rollback()
-        log.exception("[crm] failed to write ingest log")
-    finally:
-        session.close()
+# ── bulk upsert ───────────────────────────────────────────────────────────────
+class _SignalShim:
+    """Minimal stand-in for ProcurementRecord so get_followup_rule can read a
+    signal (+ red_since) without an ORM object during bulk value building."""
+
+    __slots__ = ("signal", "red_since")
+
+    def __init__(self, signal: str | None):
+        self.signal = signal
+        self.red_since = datetime.utcnow() if (signal or "").upper() == "RED" else None
+
+
+def _col_values(payload: dict[str, Any]) -> dict[str, Any]:
+    """Build a column-keyed dict for INSERT (schema field `quantity` → column
+    `supplier_quantity`), with insert-time follow-up fields computed."""
+    sig = (payload.get("signal") or "").upper() or None
+    rule = get_followup_rule(_SignalShim(sig))
+    now = datetime.utcnow()
+    return {
+        "crm_no": payload["crm_no"],
+        "material_name": payload["material_name"],
+        "uom": payload.get("uom"),
+        "lead_time": payload.get("lead_time"),
+        "shipment_date": payload.get("shipment_date"),
+        "signal": sig,
+        "stock": payload.get("stock"),
+        "qty": payload.get("qty"),
+        "po_status": payload.get("po_status"),
+        "adv_status": payload.get("adv_status"),
+        "supplier_po_no": payload["supplier_po_no"],
+        "supplier_date": payload.get("supplier_date"),
+        "supplier_name": payload.get("supplier_name"),
+        "supplier_quantity": payload.get("quantity"),
+        "rate": payload.get("rate"),
+        "owner_emp_code": payload.get("owner_emp_code"),
+        "po_no": payload["supplier_po_no"],
+        "followup_status": rule.followup_status,
+        "escalation_level": rule.escalation_level,
+        "ai_required": rule.ai_required,
+        "mail_status": "NOT_SENT",
+        "followup_count": 0,
+        "next_followup_date": now + timedelta(hours=24),
+        "red_since": now if sig == "RED" else None,
+    }
 
 
 def _bulk_upsert(db: Session, raw_rows: list[dict[str, Any]]) -> tuple[int, int, int]:
-    """Normalize + upsert CRM rows with minimal DB round-trips.
-
-    The Supabase DB is in a different AWS region than this app, so per-row
-    queries (one SELECT + write each) are far too slow at ~1k rows. Instead:
-    normalize in memory, load all existing rows for these CRM numbers in ONE
-    query, then add/update objects and commit once (SQLAlchemy batches the
-    INSERTs/UPDATEs). Returns (created, updated, skipped).
-    """
+    """Normalize + bulk-upsert via INSERT ... ON CONFLICT DO UPDATE (one statement
+    per chunk, server-side). Returns (created, updated, skipped)."""
     by_key: dict[tuple, dict[str, Any]] = {}
     skipped = 0
     for raw in raw_rows:
@@ -227,52 +256,73 @@ def _bulk_upsert(db: Session, raw_rows: list[dict[str, Any]]) -> tuple[int, int,
     if not by_key:
         return 0, 0, skipped
 
-    # Supabase enforces a per-statement timeout; raise it for this bulk session
-    # (the DB is cross-region, so even batched writes need headroom).
+    # The DB is cross-region; give bulk statements timeout headroom.
     try:
         db.execute(text("SET statement_timeout = '180s'"))
     except Exception:  # noqa: BLE001
         pass
 
+    # Classify created vs updated with one lightweight key-only query.
     crm_nos = {k[0] for k in by_key}
-    existing: dict[tuple, ProcurementRecord] = {}
-    for r in db.scalars(
-        select(ProcurementRecord).where(ProcurementRecord.crm_no.in_(crm_nos))
+    existing_keys: set[tuple] = set()
+    for row in db.execute(
+        select(
+            ProcurementRecord.crm_no,
+            ProcurementRecord.supplier_po_no,
+            ProcurementRecord.material_name,
+        ).where(ProcurementRecord.crm_no.in_(crm_nos))
     ).all():
-        existing[(r.crm_no, r.supplier_po_no, r.material_name)] = r
+        existing_keys.add((row[0], row[1], row[2]))
+    created = sum(1 for k in by_key if k not in existing_keys)
+    updated = len(by_key) - created
 
-    created = updated = 0
-    new_objs: list[ProcurementRecord] = []
-    for key, payload in by_key.items():
-        rec = existing.get(key)
-        if rec is None:
-            data = dict(payload)
-            data["po_no"] = payload["supplier_po_no"]  # legacy NOT NULL column
-            rec = ProcurementRecord(**data)
-            apply_followup_logic(rec)
-            new_objs.append(rec)
-            created += 1
-            continue
-        changed = False
-        for field in UPDATABLE_FROM_SOURCE:
-            new_val = payload.get(field)
-            if new_val is not None and getattr(rec, field) != new_val:
-                setattr(rec, field, new_val)
-                changed = True
-        if rec.po_no != payload["supplier_po_no"]:
-            rec.po_no = payload["supplier_po_no"]
-            changed = True
-        if changed:
-            apply_followup_logic(rec)
-            updated += 1
-    # Insert in chunks so a single INSERT statement can't blow the timeout or
-    # generate a multi-hundred-KB query across the region.
-    chunk = 200
-    for i in range(0, len(new_objs), chunk):
-        db.add_all(new_objs[i : i + chunk])
-        db.flush()
+    tbl = ProcurementRecord.__table__
+    values = [_col_values(p) for p in by_key.values()]
+    batch = 500
+    for i in range(0, len(values), batch):
+        part = values[i : i + batch]
+        stmt = pg_insert(tbl).values(part)
+        sig = stmt.excluded.signal
+        stmt = stmt.on_conflict_do_update(
+            constraint="uq_procurement_match_latest",
+            set_={
+                "uom": stmt.excluded.uom,
+                "lead_time": stmt.excluded.lead_time,
+                "shipment_date": stmt.excluded.shipment_date,
+                "signal": stmt.excluded.signal,
+                "stock": stmt.excluded.stock,
+                "qty": stmt.excluded.qty,
+                "po_status": stmt.excluded.po_status,
+                "adv_status": stmt.excluded.adv_status,
+                "supplier_date": stmt.excluded.supplier_date,
+                "supplier_name": stmt.excluded.supplier_name,
+                "supplier_quantity": stmt.excluded.supplier_quantity,
+                "rate": stmt.excluded.rate,
+                "owner_emp_code": stmt.excluded.owner_emp_code,
+                "po_no": stmt.excluded.po_no,
+                "followup_status": case(
+                    (sig == "GREEN", "PENDING_ACK"),
+                    (sig == "YELLOW", "REMINDER_DUE"),
+                    (sig == "RED", "URGENT_FOLLOWUP"),
+                    (sig == "BLACK", "CRITICAL_ESCALATION"),
+                    else_="PENDING",
+                ),
+                "escalation_level": case(
+                    (sig == "RED", "LEVEL_1"),
+                    (sig == "BLACK", "CRITICAL"),
+                    else_="NONE",
+                ),
+                "ai_required": case((sig == "BLACK", True), else_=False),
+                "red_since": case(
+                    (sig == "RED", func.coalesce(tbl.c.red_since, func.now())),
+                    else_=None,
+                ),
+                "updated_at": func.now(),
+            },
+        )
+        db.execute(stmt)
 
-    # Ensure supplier_master rows exist (one query + bulk add of the missing).
+    # Ensure supplier_master rows exist (one query + one bulk insert of missing).
     names = {p["supplier_name"] for p in by_key.values() if p.get("supplier_name")}
     if names:
         have = set(
@@ -280,15 +330,34 @@ def _bulk_upsert(db: Session, raw_rows: list[dict[str, Any]]) -> tuple[int, int,
                 select(SupplierMaster.supplier_name).where(SupplierMaster.supplier_name.in_(names))
             ).all()
         )
-        for name in names - have:
-            db.add(SupplierMaster(supplier_name=name, is_active=True))
+        missing = [{"supplier_name": n, "is_active": True} for n in (names - have)]
+        if missing:
+            db.execute(
+                pg_insert(SupplierMaster.__table__)
+                .values(missing)
+                .on_conflict_do_nothing(index_elements=["supplier_name"])
+            )
 
     db.commit()
     return created, updated, skipped
 
 
+# ── orchestration ─────────────────────────────────────────────────────────────
+def _log_run(**fields: Any) -> None:
+    """Persist one CRM fetch-history row (own session so it survives failures)."""
+    session = SessionLocal()
+    try:
+        session.add(CrmIngestLog(**fields))
+        session.commit()
+    except Exception:  # noqa: BLE001
+        session.rollback()
+        log.exception("[crm] failed to write ingest log")
+    finally:
+        session.close()
+
+
 def poll_and_ingest(db: Session, trigger: str = "auto") -> dict[str, Any]:
-    """Fetch the desk feed, keep generated POs, and upsert them. Failure-safe.
+    """Fetch the desk feed, keep generated POs, and bulk-upsert them. Failure-safe.
 
     Records a CRM fetch-history row each run (admin-visible) with added/changed
     counts. On error the existing data is left untouched and an ERROR row logged.
@@ -304,6 +373,10 @@ def poll_and_ingest(db: Session, trigger: str = "auto") -> dict[str, Any]:
         rows = [map_row(r) for r in generated]
         created, updated, skipped = _bulk_upsert(db, rows)
     except Exception as exc:  # noqa: BLE001
+        try:
+            db.rollback()
+        except Exception:  # noqa: BLE001
+            pass
         _log_run(
             status="ERROR", trigger=trigger, desk=str(settings.CRM_DESK_ID),
             duration_ms=int((time.time() - t0) * 1000), message=str(exc)[:1000],
@@ -334,8 +407,8 @@ def poll_and_ingest(db: Session, trigger: str = "auto") -> dict[str, Any]:
         "records_failed": 0,
     }
     log.info(
-        "[crm] ingest desk=%s fetched=%d generated=%d created=%d updated=%d skipped=%d errors=%d",
+        "[crm] ingest desk=%s fetched=%d generated=%d created=%d updated=%d skipped=%d in %dms",
         result["desk"], result["fetched"], result["generated"],
-        result["created"], result["updated"], result["skipped"], result["errors"],
+        result["created"], result["updated"], result["skipped"], duration_ms,
     )
     return result
