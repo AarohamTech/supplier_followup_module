@@ -130,9 +130,9 @@ DEFAULT_ADMIN_DIGEST: dict[str, Any] = {
 }
 
 
-def get_admin_digest(db: Session) -> dict[str, Any]:
-    stored = _get_raw(db, ADMIN_DIGEST_KEY) or {}
-    cfg = {
+def _merge_admin_digest(stored: dict[str, Any]) -> dict[str, Any]:
+    """Merge a stored config dict over defaults, returning a complete config."""
+    return {
         "enabled": bool(stored.get("enabled", DEFAULT_ADMIN_DIGEST["enabled"])),
         "recipients": [e for e in stored.get("recipients", []) if isinstance(e, str)],
         "send_hour": _clamp_int(stored.get("send_hour"), DEFAULT_ADMIN_DIGEST["send_hour"], 0, 23),
@@ -141,7 +141,10 @@ def get_admin_digest(db: Session) -> dict[str, Any]:
         "limits": {**DEFAULT_ADMIN_DIGEST["limits"], **_int_map(stored.get("limits"), lo=1, hi=100)},
         "last_sent_date": stored.get("last_sent_date") or None,
     }
-    return cfg
+
+
+def get_admin_digest(db: Session) -> dict[str, Any]:
+    return _merge_admin_digest(_get_raw(db, ADMIN_DIGEST_KEY) or {})
 
 
 def set_admin_digest(db: Session, values: dict[str, Any]) -> dict[str, Any]:
@@ -163,18 +166,7 @@ def set_admin_digest(db: Session, values: dict[str, Any]) -> dict[str, Any]:
         existing["limits"] = {**existing.get("limits", {}), **_int_map(values["limits"], lo=1, hi=100)}
     _set_raw(db, ADMIN_DIGEST_KEY, existing)
     db.commit()
-
-    # Return merged config built from persisted state + defaults
-    cfg = {
-        "enabled": bool(existing.get("enabled", DEFAULT_ADMIN_DIGEST["enabled"])),
-        "recipients": [e for e in existing.get("recipients", []) if isinstance(e, str)],
-        "send_hour": _clamp_int(existing.get("send_hour"), DEFAULT_ADMIN_DIGEST["send_hour"], 0, 23),
-        "timezone": str(existing.get("timezone") or DEFAULT_ADMIN_DIGEST["timezone"]),
-        "sections": {**DEFAULT_ADMIN_DIGEST["sections"], **_bool_map(existing.get("sections"))},
-        "limits": {**DEFAULT_ADMIN_DIGEST["limits"], **_int_map(existing.get("limits"), lo=1, hi=100)},
-        "last_sent_date": existing.get("last_sent_date") or None,
-    }
-    return cfg
+    return _merge_admin_digest(existing)
 
 
 def mark_admin_digest_sent(db: Session, day_iso: str) -> None:
