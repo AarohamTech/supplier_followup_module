@@ -44,13 +44,15 @@ class SendIfDueTests(unittest.TestCase):
         self.assertEqual(out["skipped"], "no recipients")
 
     def test_skips_before_send_hour(self):
-        with patch.object(svc.settings_service, "get_admin_digest", return_value=_cfg()):
+        with patch.object(svc.settings_service, "get_admin_digest", return_value=_cfg()), \
+             patch.object(svc.settings, "SMTP_ENABLED", True):
             out = svc.send_digest_if_due(MagicMock(), now=BEFORE)
         self.assertEqual(out["skipped"], "before send_hour")
 
     def test_skips_when_already_sent_today(self):
         with patch.object(svc.settings_service, "get_admin_digest",
-                          return_value=_cfg(last_sent_date="2026-06-27")):
+                          return_value=_cfg(last_sent_date="2026-06-27")), \
+             patch.object(svc.settings, "SMTP_ENABLED", True):
             out = svc.send_digest_if_due(MagicMock(), now=AFTER)
         self.assertEqual(out["skipped"], "already sent today")
 
