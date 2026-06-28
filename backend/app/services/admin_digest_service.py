@@ -9,13 +9,14 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import case, func, or_, select
 from sqlalchemy.orm import Session
 
 from ..models.communication_message import CommunicationMessage
 from ..models.procurement import ProcurementRecord
-from . import ai_service
+from . import ai_service, brand_email
 
 log = logging.getLogger(__name__)
 
@@ -243,3 +244,165 @@ def _score_tone(db: Session, candidate) -> tuple[str, float, str | None]:
         log.exception("admin digest tone scoring failed; using heuristic")
         tone = "tense" if candidate.recent_count >= 3 else "neutral"
         return tone, min(0.6, 0.2 + candidate.recent_count * 0.1), quote
+
+
+# ---------------------------------------------------------------------------
+# Task 5: HTML rendering
+# ---------------------------------------------------------------------------
+
+INK = brand_email.BRAND_INK      # "#1f2937"
+MUTED = brand_email.BRAND_MUTED  # "#6B7280"
+RED = brand_email.BRAND_RED      # "#E11D2E"
+HAIR = brand_email.BRAND_BORDER  # "#ECECEC"
+
+_LABEL = (f'font-size:11px;font-weight:700;letter-spacing:1.5px;'
+          f'text-transform:uppercase;color:{MUTED};padding-bottom:12px;')
+_SECTION = f'padding:24px 32px 0;'
+_DIVIDER = f'border-top:1px solid {HAIR};padding-top:20px;'
+
+
+def digest_subject(data: dict) -> str:
+    date_part = data["generated_at_local"].split(" · ")[0]
+    return f"Harmony Intelligence Summary — {date_part}"
+
+
+def _esc(v: Any) -> str:
+    s = "" if v is None else str(v)
+    return (s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
+
+
+def _section(label: str, inner: str, *, first: bool = False) -> str:
+    div = "" if first else _DIVIDER
+    return (f'<div style="{_SECTION}"><div style="{div}">'
+            f'<div style="{_LABEL}">{label}</div>{inner}</div></div>')
+
+
+def _counts_html(c: dict) -> str:
+    tiles = [("Active POs", c["active"], INK), ("Open follow-ups", c["open_followups"], INK),
+             ("Overdue", c["overdue"], RED), ("Critical", c["critical"], INK),
+             ("New replies", c["new_replies"], INK)]
+    cells = "".join(
+        f'<td style="padding:0 16px;border-right:1px solid {HAIR};">'
+        f'<div style="font-size:28px;font-weight:700;color:{color};">{val}</div>'
+        f'<div style="font-size:12px;color:{MUTED};padding-top:3px;">{_esc(lbl)}</div></td>'
+        for lbl, val, color in tiles)
+    s = c["signals"]
+    sig = (f'<div style="font-size:13px;color:{MUTED};padding-top:16px;">'
+           f'<span style="color:{INK};">Signal mix</span>&nbsp;&nbsp;'
+           f'Green <b style="color:{INK};">{s["GREEN"]}</b> &middot; '
+           f'Yellow <b style="color:{INK};">{s["YELLOW"]}</b> &middot; '
+           f'Red <b style="color:{INK};">{s["RED"]}</b> &middot; '
+           f'Black <b style="color:{INK};">{s["BLACK"]}</b></div>')
+    return (f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0">'
+            f'<tr>{cells}</tr></table>{sig}')
+
+
+def _table(headers: list[tuple[str, str]], rows: list[str]) -> str:
+    head = "".join(
+        f'<td style="font-size:11px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;'
+        f'color:#9aa0a6;padding:0 0 8px;{align}">{_esc(h)}</td>' for h, align in headers)
+    return (f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+            f'style="border-collapse:collapse;"><tr style="border-bottom:1px solid {HAIR};">'
+            f'{head}</tr>{"".join(rows)}</table>')
+
+
+def _critical_html(items: list[dict]) -> str:
+    rows = []
+    for it in items:
+        late = "—" if it["days_late"] is None else it["days_late"]
+        rows.append(
+            f'<tr style="border-bottom:1px solid #F4F4F5;">'
+            f'<td style="padding:13px 0;font-size:13px;color:{INK};"><b>{_esc(it["po"])}</b><br>'
+            f'<span style="font-size:12px;color:{MUTED};">{_esc(it["supplier"])} &middot; {_esc(it["material"])}</span></td>'
+            f'<td style="padding:13px 0;font-size:12px;font-weight:700;color:{INK};">{_esc(it["signal"])}</td>'
+            f'<td style="padding:13px 0;font-size:13px;font-weight:700;color:{RED};text-align:right;">{late}</td>'
+            f'<td style="padding:13px 0;font-size:13px;font-weight:700;color:{INK};text-align:right;">{_esc(it["risk"])}</td></tr>')
+    return _table([("PO / Supplier", ""), ("Signal", ""),
+                   ("Days late", "text-align:right;"), ("Risk", "text-align:right;")], rows)
+
+
+def _heated_html(items: list[dict]) -> str:
+    blocks = []
+    for it in items:
+        blocks.append(
+            f'<div style="padding-bottom:14px;">'
+            f'<table role="presentation" width="100%"><tr>'
+            f'<td style="font-size:13px;font-weight:700;color:{INK};">{_esc(it["supplier"])} &middot; {_esc(it["po"])}</td>'
+            f'<td style="text-align:right;font-size:12px;color:{RED};font-weight:700;">{_esc(it["tone"])} &middot; {it["score"]}</td>'
+            f'</tr></table>'
+            f'<div style="font-size:12px;color:{MUTED};padding-top:5px;line-height:1.55;">'
+            f'{it["msg_count"]} messages, {it["recent_count"]} in the last 24h.'
+            + (f' &ldquo;<i>{_esc(it["quote"])}</i>&rdquo;' if it.get("quote") else "")
+            + '</div></div>')
+    return "".join(blocks)
+
+
+def _risk_html(items: list[dict]) -> str:
+    rows = [
+        f'<tr style="border-bottom:1px solid #F4F4F5;">'
+        f'<td style="padding:12px 0;font-size:13px;color:{INK};"><b>{_esc(it["po"])}</b> &middot; '
+        f'<span style="color:{MUTED};">{_esc(it["supplier"])}</span></td>'
+        f'<td style="padding:12px 0;font-size:12px;color:{MUTED};">{_esc(it["reason"])}</td>'
+        f'<td style="padding:12px 0;font-size:13px;font-weight:700;color:{INK};text-align:right;">{_esc(it["score"])}</td></tr>'
+        for it in items]
+    return _table([("PO / Supplier", ""), ("Why", ""), ("Score", "text-align:right;")], rows)
+
+
+def _overdue_html(items: list[dict]) -> str:
+    rows = [
+        f'<tr style="border-bottom:1px solid #F4F4F5;">'
+        f'<td style="padding:12px 0;font-size:13px;color:{INK};"><b>{_esc(it["po"])}</b> &middot; '
+        f'<span style="color:{MUTED};">{_esc(it["supplier"])}</span></td>'
+        f'<td style="padding:12px 0;font-size:12px;font-weight:700;color:{RED};">{_esc(it["shipment"])}</td>'
+        f'<td style="padding:12px 0;font-size:12px;color:{MUTED};text-align:right;">{_esc(it["status"])}</td></tr>'
+        for it in items]
+    return _table([("PO / Supplier", ""), ("Shipment", ""), ("Status", "text-align:right;")], rows)
+
+
+def render_digest_html(data: dict, cfg: dict) -> str:
+    sec = cfg.get("sections", {})
+    parts = [
+        f'<div style="padding:28px 32px 0;">'
+        f'<div style="font-size:22px;font-weight:700;letter-spacing:-.2px;color:{INK};">Harmony Intelligence Summary</div>'
+        f'<div style="font-size:13px;color:{MUTED};padding-top:5px;">{_esc(data["generated_at_local"])} &middot; covering the last 24 hours</div></div>'
+    ]
+    if sec.get("counts", True):
+        parts.append(_section("At a glance", _counts_html(data["counts"]), first=True))
+    if sec.get("summary", True) and data.get("summary"):
+        parts.append(_section("Summary",
+                     f'<div style="font-size:14px;line-height:1.6;color:{INK};">{_esc(data["summary"])}</div>'))
+    if sec.get("critical", True) and data.get("critical"):
+        parts.append(_section("Most critical", _critical_html(data["critical"])))
+    if sec.get("heated", True) and data.get("heated"):
+        parts.append(_section("Heated conversations", _heated_html(data["heated"])))
+    if sec.get("risk", True) and data.get("risk"):
+        parts.append(_section("Top delay-risk POs", _risk_html(data["risk"])))
+    if sec.get("overdue", True) and data.get("overdue"):
+        parts.append(_section("Overdue &amp; due today", _overdue_html(data["overdue"])))
+    parts.append('<div style="padding:28px 32px;"></div>')
+    inner = (brand_email.header_html("Intelligence Summary") + "".join(parts)
+             + brand_email.footer_html(
+                 "You receive this because you are on the Harmony Intelligence Summary list. "
+                 "Manage recipients, send time, and sections in Settings &rarr; Daily Summary."))
+    return brand_email.shell(inner)
+
+
+def build_digest_data(db: "Session", cfg: dict) -> dict:  # type: ignore[name-defined]
+    sec = cfg.get("sections", {})
+    lim = cfg.get("limits", {})
+    now_local = datetime.utcnow().replace(tzinfo=ZoneInfo("UTC")).astimezone(
+        ZoneInfo(cfg.get("timezone", "Asia/Kolkata")))
+    tz_abbr = "IST" if cfg.get("timezone") == "Asia/Kolkata" else now_local.tzname() or ""
+    counts = _gather_counts(db) if sec.get("counts", True) else None
+    critical = _gather_critical(db, lim.get("critical", 10)) if sec.get("critical", True) else []
+    heated = _gather_heated(db, lim.get("heated", 5)) if sec.get("heated", True) else []
+    risk = _gather_risk(db, lim.get("risk", 10)) if sec.get("risk", True) else []
+    overdue = _gather_overdue(db, lim.get("overdue", 15)) if sec.get("overdue", True) else []
+    summary = (_ai_summary(counts, critical, heated)
+               if sec.get("summary", True) and counts else "")
+    return {
+        "generated_at_local": now_local.strftime(f"%d %B %Y · %H:%M {tz_abbr}").lstrip("0"),
+        "counts": counts or {"active": 0, "open_followups": 0, "overdue": 0, "critical": 0,
+                             "new_replies": 0, "signals": {"GREEN": 0, "YELLOW": 0, "RED": 0, "BLACK": 0}},
+        "summary": summary, "critical": critical, "heated": heated, "risk": risk, "overdue": overdue,
+    }
