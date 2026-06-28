@@ -16,7 +16,9 @@ from sqlalchemy.orm import Session
 
 from ..models.communication_message import CommunicationMessage
 from ..models.procurement import ProcurementRecord
-from . import ai_service, brand_email
+from . import ai_service, brand_email, settings_service
+from ..core.config import settings
+from ..workers import mail_send_worker
 
 log = logging.getLogger(__name__)
 
@@ -408,3 +410,39 @@ def build_digest_data(db: "Session", cfg: dict) -> dict:  # type: ignore[name-de
                              "new_replies": 0, "signals": {"GREEN": 0, "YELLOW": 0, "RED": 0, "BLACK": 0}},
         "summary": summary, "critical": critical, "heated": heated, "risk": risk, "overdue": overdue,
     }
+
+
+# ---------------------------------------------------------------------------
+# Task 6: Send orchestration + once-per-day due gating
+# ---------------------------------------------------------------------------
+
+def send_digest_if_due(db: Session, *, now: datetime | None = None) -> dict:
+    cfg = settings_service.get_admin_digest(db)
+    if not cfg["enabled"]:
+        return {"skipped": "disabled"}
+    if not cfg["recipients"]:
+        return {"skipped": "no recipients"}
+    if not getattr(settings, "SMTP_ENABLED", False):
+        return {"skipped": "smtp disabled"}
+    now_utc = now or datetime.utcnow()
+    local = now_utc.replace(tzinfo=ZoneInfo("UTC")).astimezone(ZoneInfo(cfg["timezone"]))
+    if local.hour < int(cfg["send_hour"]):
+        return {"skipped": "before send_hour"}
+    today_iso = local.date().isoformat()
+    if cfg.get("last_sent_date") == today_iso:
+        return {"skipped": "already sent today"}
+
+    data = build_digest_data(db, cfg)
+    html = render_digest_html(data, cfg)
+    result = mail_send_worker.send_html_email(cfg["recipients"], digest_subject(data), html)
+    if not result.get("sent"):
+        return {"error": True, "reason": result.get("reason", "send failed")}
+    settings_service.mark_admin_digest_sent(db, today_iso)
+    return {"sent": result.get("recipients", len(cfg["recipients"])), "date": today_iso}
+
+
+def send_test_digest(db: Session, to_email: str) -> dict:
+    cfg = settings_service.get_admin_digest(db)
+    data = build_digest_data(db, cfg)
+    html = render_digest_html(data, cfg)
+    return mail_send_worker.send_html_email([to_email], digest_subject(data), html)
