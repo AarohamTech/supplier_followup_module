@@ -19,7 +19,7 @@ class AdminDigestRouteTests(unittest.TestCase):
         with patch.object(settings_router.settings_service, "set_admin_digest",
                           return_value={"enabled": True, "recipients": ["a@x.com"]}) as setter:
             out = settings_router.update_admin_digest_settings(payload, db=db)
-        setter.assert_called_once()
+        setter.assert_called_once_with(db, {"enabled": True, "recipients": ["a@x.com"]})
         self.assertTrue(out["admin_digest"]["enabled"])
 
     def test_test_endpoint_sends_to_caller(self):
