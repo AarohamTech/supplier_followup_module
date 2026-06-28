@@ -10,11 +10,12 @@ import logging
 from datetime import datetime, timedelta
 from typing import Any
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import case, func, or_, select
 from sqlalchemy.orm import Session
 
 from ..models.communication_message import CommunicationMessage
 from ..models.procurement import ProcurementRecord
+from . import ai_service
 
 log = logging.getLogger(__name__)
 
@@ -125,3 +126,116 @@ def _gather_overdue(db: Session, limit: int) -> list[dict]:
         .limit(limit)
     ).all()
     return format_overdue(rows, today)
+
+
+HEAT_TONE_LABELS = {"frustrated", "tense", "angry", "calm", "neutral"}
+
+
+def _fallback_summary(counts: dict) -> str:
+    s = counts["signals"]
+    return (
+        f"{counts['critical']} critical POs need attention and "
+        f"{counts['overdue']} shipments are overdue. Signal mix is "
+        f"{s['GREEN']} green / {s['YELLOW']} yellow / {s['RED']} red / {s['BLACK']} black "
+        f"across {counts['active']} active POs, with {counts['open_followups']} open "
+        f"follow-ups and {counts['new_replies']} new supplier replies in the last 24 hours."
+    )
+
+
+def _ai_summary(counts: dict, critical: list[dict], heated: list[dict]) -> str:
+    if not ai_service.is_enabled():
+        return _fallback_summary(counts)
+    try:
+        crit = "; ".join(f"{c['po']} {c['supplier']} ({c['signal']}, risk {c['risk']})"
+                         for c in critical[:5]) or "none"
+        heat = "; ".join(f"{h['supplier']} {h['po']} ({h['tone']})" for h in heated[:5]) or "none"
+        result = ai_service.complete_json(
+            system=("You are Harmony Intelligence, a procurement analyst. Write ONE concise "
+                    "paragraph (max 60 words) summarizing the day's supplier delivery state. "
+                    "Return JSON {\"summary\": \"...\"}. No markdown, no lists."),
+            user=(f"Counts: {counts}. Most critical: {crit}. Heated threads: {heat}."),
+            temperature=0.3,
+        )
+        text = (result or {}).get("summary", "").strip()
+        return text or _fallback_summary(counts)
+    except Exception:  # noqa: BLE001
+        log.exception("admin digest AI summary failed; using fallback")
+        return _fallback_summary(counts)
+
+
+def rank_heated_candidates(rows) -> list:
+    """rows: objects with .recent_count, .msg_count, .escalation_level."""
+    esc_weight = {"CRITICAL": 3, "LEVEL_2": 2, "LEVEL_1": 1, "NONE": 0}
+    return sorted(
+        rows,
+        key=lambda r: (r.recent_count * 2 + r.msg_count
+                       + esc_weight.get(getattr(r, "escalation_level", "NONE"), 0)),
+        reverse=True,
+    )
+
+
+def _gather_heated(db: Session, limit: int) -> list[dict]:
+    """Rank PO threads by recent activity, then LLM-score tone (fallback: heuristic)."""
+    since = datetime.utcnow() - timedelta(hours=24)
+    # Aggregate per-PO message activity.
+    agg = db.execute(
+        select(
+            CommunicationMessage.supplier_po_no,
+            CommunicationMessage.supplier_name,
+            func.count().label("msg_count"),
+            func.sum(case((CommunicationMessage.received_at >= since, 1), else_=0)
+                     ).label("recent_count"),
+        )
+        .where(CommunicationMessage.supplier_po_no.isnot(None))
+        .group_by(CommunicationMessage.supplier_po_no, CommunicationMessage.supplier_name)
+        .order_by(func.count().desc())
+        .limit(max(limit * 3, 6))
+    ).all()
+    candidates = [
+        type("C", (), {"supplier_po_no": a[0], "supplier_name": a[1],
+                       "msg_count": int(a[2] or 0), "recent_count": int(a[3] or 0),
+                       "escalation_level": "NONE"})()
+        for a in agg
+    ]
+    ranked = rank_heated_candidates(candidates)[:limit]
+    out: list[dict] = []
+    for c in ranked:
+        tone, score, quote = _score_tone(db, c)
+        if tone in ("frustrated", "tense", "angry"):
+            out.append({"supplier": c.supplier_name or "—", "po": c.supplier_po_no or "—",
+                        "tone": tone.title(), "score": score,
+                        "msg_count": c.msg_count, "recent_count": c.recent_count, "quote": quote})
+    return out
+
+
+def _score_tone(db: Session, candidate) -> tuple[str, float, str | None]:
+    """Return (tone, score, quote). LLM if enabled, else heuristic by activity."""
+    last = db.scalars(
+        select(CommunicationMessage)
+        .where(CommunicationMessage.supplier_po_no == candidate.supplier_po_no,
+               CommunicationMessage.direction == "INCOMING")
+        .order_by(CommunicationMessage.received_at.desc().nullslast())
+        .limit(1)
+    ).first()
+    quote = (last.body or "")[:160].strip() if last and last.body else None
+    if not ai_service.is_enabled() or not quote:
+        # Heuristic: lots of recent back-and-forth reads as tense.
+        tone = "tense" if candidate.recent_count >= 3 else "neutral"
+        return tone, min(0.6, 0.2 + candidate.recent_count * 0.1), quote
+    try:
+        result = ai_service.complete_json(
+            system=("Classify the tone of this supplier message. Return JSON "
+                    "{\"tone\": one of [calm, neutral, tense, frustrated, angry], "
+                    "\"score\": 0..1}."),
+            user=quote,
+            temperature=0.0,
+        )
+        tone = str((result or {}).get("tone", "neutral")).lower()
+        if tone not in HEAT_TONE_LABELS:
+            tone = "neutral"
+        score = float((result or {}).get("score", 0.5) or 0.5)
+        return tone, round(score, 2), quote
+    except Exception:  # noqa: BLE001
+        log.exception("admin digest tone scoring failed; using heuristic")
+        tone = "tense" if candidate.recent_count >= 3 else "neutral"
+        return tone, min(0.6, 0.2 + candidate.recent_count * 0.1), quote
