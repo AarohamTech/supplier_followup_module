@@ -1045,6 +1045,10 @@ def escalate(
         )
     mapping = _find_email(db, rec.supplier_name)
 
+    # Ensure role accounts exist BEFORE any DB write so ensure_role_accounts's
+    # internal commit doesn't prematurely commit a half-built escalation.
+    _roles = seed_mod.ensure_role_accounts(db)
+
     subject = (
         f"Critical Escalation | PO No. {rec.supplier_po_no} | "
         f"{rec.material_name} | {rec.supplier_name or ''}"
@@ -1093,7 +1097,6 @@ def escalate(
     )
     rec.mail_status = "READY"
 
-    _roles = seed_mod.ensure_role_accounts(db)
     task = CommunicationTask(
         supplier_id=supplier.id if supplier else None,
         supplier_name=rec.supplier_name,

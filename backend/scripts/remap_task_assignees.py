@@ -37,27 +37,55 @@ def main(apply: bool) -> None:
 
         tasks = db.scalars(select(CommunicationTask)).all()
         matched = unmatched = already = 0
+        watchers_rewritten = 0
         unmatched_names: set[str] = set()
 
         for t in tasks:
+            # ── assignee remap ──────────────────────────────────────────────
             if t.assigned_to_user_id:
                 already += 1
+            else:
+                name = (t.assigned_to or "").strip().lower()
+                uid = idx.get(name)
+                if uid:
+                    if apply:
+                        user = db.get(User, uid)
+                        t.assigned_to_user_id = uid
+                        t.assigned_to = assign.display_name(user)
+                    matched += 1
+                elif name:
+                    unmatched += 1
+                    unmatched_names.add(t.assigned_to)
+
+            # ── watchers remap ──────────────────────────────────────────────
+            raw: list = t.watchers or []
+            # If already all ints, nothing to do (idempotent).
+            if all(isinstance(w, int) for w in raw):
                 continue
-            name = (t.assigned_to or "").strip().lower()
-            uid = idx.get(name)
-            if uid:
+            new_watchers: list[int] = []
+            changed = False
+            for w in raw:
+                if isinstance(w, int):
+                    new_watchers.append(w)
+                else:
+                    key = str(w).strip().lower()
+                    wid = idx.get(key)
+                    if wid:
+                        new_watchers.append(wid)
+                        changed = True
+                    else:
+                        changed = True  # dropping unmatched string → still a change
+            if changed:
+                watchers_rewritten += 1
                 if apply:
-                    user = db.get(User, uid)
-                    t.assigned_to_user_id = uid
-                    t.assigned_to = assign.display_name(user)
-                matched += 1
-            elif name:
-                unmatched += 1
-                unmatched_names.add(t.assigned_to)
+                    t.watchers = new_watchers
 
         if apply:
             db.commit()
-        print(f"tasks={len(tasks)} already_mapped={already} matched={matched} unmatched={unmatched}")
+        print(
+            f"tasks={len(tasks)} already_mapped={already} matched={matched} "
+            f"unmatched={unmatched} watchers_rewritten={watchers_rewritten}"
+        )
         if unmatched_names:
             print("unmatched assignee strings (left as-is):")
             for n in sorted(unmatched_names):

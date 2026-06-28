@@ -63,3 +63,13 @@ class TaskSchemaTests(unittest.TestCase):
     def test_activity_vocab_extended(self) -> None:
         self.assertIn("PROGRESS_CHANGED", TASK_ACTIVITY_TYPES)
         self.assertIn("AI_SUMMARY_GENERATED", TASK_ACTIVITY_TYPES)
+
+    def test_out_schema_tolerates_legacy_string_watchers(self) -> None:
+        from app.schemas.communication_task import CommunicationTaskOut
+        with _temp_db() as db:
+            t = CommunicationTask(title="x", watchers=["Sourcing Head", 5])
+            db.add(t)
+            db.commit()
+            db.refresh(t)
+            out = CommunicationTaskOut.model_validate(t)
+            self.assertEqual(out.watchers, [5])

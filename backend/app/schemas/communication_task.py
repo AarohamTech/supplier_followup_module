@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 TaskStatus = Literal[
@@ -66,6 +66,19 @@ class CommunicationTaskUpdate(BaseModel):
 
 class CommunicationTaskOut(CommunicationTaskBase):
     model_config = ConfigDict(from_attributes=True)
+
+    @field_validator("watchers", mode="before")
+    @classmethod
+    def _coerce_watchers(cls, v):
+        if not v:
+            return []
+        out: list[int] = []
+        for item in v:
+            try:
+                out.append(int(item))
+            except (TypeError, ValueError):
+                continue  # drop legacy free-text watcher names (pre-migration data)
+        return out
 
     id: int
     comments_count: int = 0

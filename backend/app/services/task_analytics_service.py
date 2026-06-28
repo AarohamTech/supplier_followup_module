@@ -3,7 +3,7 @@ and the append-only activity log."""
 from __future__ import annotations
 
 import io
-from collections import Counter, defaultdict
+from collections import Counter
 from datetime import datetime
 
 from sqlalchemy import select
