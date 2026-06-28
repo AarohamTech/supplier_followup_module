@@ -44,6 +44,7 @@ from ..services import agent_subscription_service as agent_subs
 from ..services import communication_message_service as msg_service
 from ..services import hi_agent_service
 from ..services import notification_service as notif
+from ..services import user_service
 from ..services import po_followup_mail_service
 from ..services import po_followup_service
 from ..services.reply_table_parser import parse_reply_table
@@ -1389,6 +1390,45 @@ class HubAgentConfirmIn(BaseModel):
     id: int
 
 
+def _notify_agent_recipient(db: Session, msg: CommunicationMessage) -> bool:
+    """Create an in-app notification for the recipient of a confirmed HI-agent send.
+
+    Resolves an internal teammate by their email first (so @teammate sends show up
+    in the app bell); falls back to the supplier audience for supplier-bound mail.
+    Best-effort — never raises."""
+    emails: list[str] = [e for e in (msg.to_emails or []) if e]
+    if msg.receiver_email and msg.receiver_email not in emails:
+        emails.append(msg.receiver_email)
+    body = (msg.subject or msg.body or "New message")[:140]
+
+    for e in emails:
+        user = user_service.get_by_email(db, e)
+        if user is not None and user.supplier_id is None:
+            notif.safe(
+                notif.notify_users, db, [user.id],
+                type="HI_MESSAGE",
+                title=msg.subject or "New message from the HI agent",
+                body=body,
+                link="/mail-history",
+                supplier_po_no=msg.supplier_po_no,
+                procurement_record_id=msg.procurement_record_id,
+            )
+            return True
+    if msg.supplier_id:
+        notif.safe(
+            notif.notify_supplier, db, msg.supplier_id,
+            type="HI_MESSAGE",
+            title="New message from your buyer",
+            body=body,
+            link="/portal/pos",
+            supplier_id=msg.supplier_id,
+            supplier_po_no=msg.supplier_po_no,
+            procurement_record_id=msg.procurement_record_id,
+        )
+        return True
+    return False
+
+
 def _confirm_action(db: Session, *, action_type: str, action_id: int) -> dict[str, Any]:
     """Promote a pending HI-agent action. Drafts → READY + send now; subs → ACTIVE."""
     if action_type == "draft":
@@ -1403,8 +1443,10 @@ def _confirm_action(db: Session, *, action_type: str, action_id: int) -> dict[st
 
         result = mail_send_worker.send_message_now(db, msg.id)
         db.refresh(msg)
+        notified = _notify_agent_recipient(db, msg)
         return {"ok": True, "action": "draft", "message_id": msg.id,
-                "status": msg.status, "sent": bool(result.get("sent"))}
+                "status": msg.status, "sent": bool(result.get("sent")),
+                "notified": notified}
     if action_type == "subscription":
         sub = agent_subs.confirm(db, action_id, now=datetime.utcnow())
         if sub is None:
