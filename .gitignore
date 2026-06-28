@@ -10,3 +10,6 @@ out/
 .DS_Store
 
 sfa.db
+
+# Employee PII (DOB, mobile) — never commit
+docs/Hariom Employee details.xlsx

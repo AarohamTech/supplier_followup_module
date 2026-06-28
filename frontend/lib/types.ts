@@ -96,6 +96,18 @@ export interface SupplierEmail {
   provisioning?: LoginProvisioningSummary | null;
 }
 
+export interface SupplierEmailAudit {
+  id: number;
+  supplier_email_id: number | null;
+  supplier_id: number | null;
+  supplier_name: string | null;
+  action: "CREATE" | "UPDATE" | "DELETE";
+  changed_by_id: number | null;
+  changed_by: string | null;
+  changes: Record<string, { old: unknown; new: unknown }> | null;
+  created_at: string;
+}
+
 export interface SupplierLogin {
   id: number;
   email: string;

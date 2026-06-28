@@ -14,6 +14,7 @@ from .procurement import ProcurementRecord
 from .status_change_log import StatusChangeLog
 from .supplier import SupplierMaster
 from .supplier_email import SupplierEmail
+from .supplier_email_audit import SupplierEmailAudit
 from .supplier_material_commitment import SupplierMaterialCommitment
 from .task_collaboration import TaskActivityLog, TaskComment
 from .user import User
@@ -37,6 +38,7 @@ __all__ = [
     "ProcurementRecord",
     "StatusChangeLog",
     "SupplierEmail",
+    "SupplierEmailAudit",
     "SupplierMaster",
     "SupplierMaterialCommitment",
     "TaskActivityLog",

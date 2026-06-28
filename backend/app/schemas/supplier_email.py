@@ -61,6 +61,20 @@ class SupplierEmailOut(SupplierEmailBase):
     provisioning: Optional[LoginProvisioningSummary] = None
 
 
+class SupplierEmailAuditOut(BaseModel):
+    """One change-log entry for a supplier email mapping (admin-only view)."""
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    supplier_email_id: Optional[int] = None
+    supplier_id: Optional[int] = None
+    supplier_name: Optional[str] = None
+    action: str
+    changed_by_id: Optional[int] = None
+    changed_by: Optional[str] = None
+    changes: Optional[dict] = None
+    created_at: datetime
+
+
 class SupplierLoginOut(BaseModel):
     """A supplier portal login account (subset of User) for admin review."""
     model_config = ConfigDict(from_attributes=True)

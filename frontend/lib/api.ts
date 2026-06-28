@@ -7,6 +7,7 @@ import type {
   DashboardKpis,
   SupplierMaster,
   SupplierEmail,
+  SupplierEmailAudit,
   MailDraft,
   MailDraftPo,
   MailHistory,
@@ -163,6 +164,8 @@ export const api = {
     http<SupplierEmail>(`/api/supplier-emails/${id}`, { method: "PUT", body: JSON.stringify(body) }),
   deleteSupplierEmail: (id: number) =>
     http<void>(`/api/supplier-emails/${id}`, { method: "DELETE" }),
+  supplierEmailAudit: (limit = 200) =>
+    http<SupplierEmailAudit[]>(`/api/supplier-emails/audit?limit=${limit}`),
 
   generateMailDraft: (procurement_record_id: number) =>
     http<MailDraft>("/api/mail-drafts/generate", {

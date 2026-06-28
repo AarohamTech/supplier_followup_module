@@ -5,9 +5,10 @@ import { useStore } from "@/lib/store";
 import { useAuth } from "@/lib/auth";
 import api from "@/lib/api";
 import type { LoginProvisioningSummary, SupplierEmail } from "@/lib/types";
-import { Mail, Pencil, Trash2, Plus, X, Save, KeyRound } from "lucide-react";
+import { Mail, Pencil, Trash2, Plus, X, Save, KeyRound, History } from "lucide-react";
 import PageHeader from "@/components/layout/PageHeader";
 import SupplierLoginsModal from "@/components/emails/SupplierLoginsModal";
+import EmailAuditModal from "@/components/emails/EmailAuditModal";
 
 const EMPTY: Partial<SupplierEmail> = {
   supplier_id: undefined,
@@ -28,6 +29,8 @@ export default function Page() {
   const reload = useStore((s) => s.loadSuppliers);
   const { hasRole } = useAuth();
   const isAdmin = hasRole("admin");
+  const canEdit = hasRole("user"); // admin/manager/user (writers); viewers read-only
+  const [showAudit, setShowAudit] = useState(false);
   const [editing, setEditing] = useState<Partial<SupplierEmail> | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -106,9 +109,18 @@ export default function Page() {
         description="Maintain supplier recipient, CC, BCC and escalation mappings."
         icon={Mail}
         actions={
-          <button onClick={() => { setError(null); setEditing({ ...EMPTY }); }} className="btn-primary">
-            <Plus size={14} /> Add Mapping
-          </button>
+          <div className="flex items-center gap-2">
+            {isAdmin && (
+              <button onClick={() => setShowAudit(true)} className="btn-ghost" title="View who changed what">
+                <History size={14} /> Change Log
+              </button>
+            )}
+            {canEdit && (
+              <button onClick={() => { setError(null); setEditing({ ...EMPTY }); }} className="btn-primary">
+                <Plus size={14} /> Add Mapping
+              </button>
+            )}
+          </div>
         }
       />
       {error && !editing && (
@@ -201,12 +213,16 @@ export default function Page() {
                         <KeyRound size={14} />
                       </button>
                     )}
-                    <button title="Edit" onClick={() => edit(mapping)} className="p-1 rounded hover:bg-gray-100">
-                      <Pencil size={14} />
-                    </button>
-                    <button title="Delete" onClick={() => remove(mapping.id)} className="p-1 rounded hover:bg-red-50 text-signal-red">
-                      <Trash2 size={14} />
-                    </button>
+                    {canEdit && (
+                      <button title="Edit" onClick={() => edit(mapping)} className="p-1 rounded hover:bg-gray-100">
+                        <Pencil size={14} />
+                      </button>
+                    )}
+                    {isAdmin && (
+                      <button title="Delete (admin only)" onClick={() => remove(mapping.id)} className="p-1 rounded hover:bg-red-50 text-signal-red">
+                        <Trash2 size={14} />
+                      </button>
+                    )}
                   </div>
                 </td>
               </tr>
@@ -279,6 +295,7 @@ export default function Page() {
       )}
 
       {loginsFor && <SupplierLoginsModal mapping={loginsFor} onClose={() => setLoginsFor(null)} />}
+      {showAudit && <EmailAuditModal onClose={() => setShowAudit(false)} />}
     </div>
   );
 }

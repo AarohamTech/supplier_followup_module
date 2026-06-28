@@ -1,19 +1,55 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from ..core.deps import get_current_staff, require_admin
 from ..database import get_db
 from ..models.supplier import SupplierMaster
 from ..models.supplier_email import SupplierEmail
+from ..models.supplier_email_audit import SupplierEmailAudit
+from ..models.user import User
 from ..schemas.supplier_email import (
     SupplierEmailCreate,
     SupplierEmailUpdate,
     SupplierEmailOut,
+    SupplierEmailAuditOut,
     LoginProvisioningSummary,
 )
 from ..services import supplier_account_service
 
 router = APIRouter(prefix="/api/supplier-emails", tags=["supplier-emails"])
+
+# Fields whose changes are tracked in the audit log.
+_AUDITED = (
+    "supplier_name", "to_emails", "cc_emails", "bcc_emails", "escalation_emails",
+    "contact_person", "phone", "remarks", "is_active",
+)
+
+
+def _snapshot(row: SupplierEmail) -> dict:
+    return {f: getattr(row, f) for f in _AUDITED}
+
+
+def _actor_label(user: User) -> str:
+    return user.full_name or user.username or user.email or f"user#{user.id}"
+
+
+def _log_audit(
+    db: Session, *, action: str, row: SupplierEmail, actor: User,
+    changes: dict | None,
+) -> None:
+    """Append a change-log entry. For CREATE/DELETE `changes` is the full
+    snapshot as {field: {"old"/"new": value}}; for UPDATE it's the diff."""
+    db.add(SupplierEmailAudit(
+        supplier_email_id=row.id,
+        supplier_id=row.supplier_id,
+        supplier_name=row.supplier_name,
+        action=action,
+        changed_by_id=actor.id,
+        changed_by=_actor_label(actor),
+        changes=changes or {},
+    ))
+    db.commit()
 
 
 def _provision_logins(db: Session, row: SupplierEmail) -> LoginProvisioningSummary:
@@ -66,8 +102,24 @@ def list_emails(db: Session = Depends(get_db)):
     return db.scalars(select(SupplierEmail).order_by(SupplierEmail.supplier_name)).all()
 
 
+@router.get("/audit", response_model=list[SupplierEmailAuditOut])
+def list_audit(
+    db: Session = Depends(get_db),
+    _admin: User = Depends(require_admin),  # admin-only change log
+    limit: int = Query(200, ge=1, le=1000),
+):
+    """Who changed which mapping, and what changed. Admin-only."""
+    return db.scalars(
+        select(SupplierEmailAudit).order_by(SupplierEmailAudit.created_at.desc()).limit(limit)
+    ).all()
+
+
 @router.post("", response_model=SupplierEmailOut, status_code=201)
-def create(payload: SupplierEmailCreate, db: Session = Depends(get_db)):
+def create(
+    payload: SupplierEmailCreate,
+    db: Session = Depends(get_db),
+    actor: User = Depends(get_current_staff),
+):
     data = payload.model_dump(mode="json")
     supplier = _load_supplier(db, data["supplier_id"])
     if not data.get("to_emails"):
@@ -80,16 +132,26 @@ def create(payload: SupplierEmailCreate, db: Session = Depends(get_db)):
     db.add(row)
     db.commit()
     db.refresh(row)
+    _log_audit(
+        db, action="CREATE", row=row, actor=actor,
+        changes={f: {"old": None, "new": v} for f, v in _snapshot(row).items()},
+    )
     summary = _provision_logins(db, row)
     return _out_with_provisioning(row, summary)
 
 
 @router.put("/{eid}", response_model=SupplierEmailOut)
-def update(eid: int, payload: SupplierEmailUpdate, db: Session = Depends(get_db)):
+def update(
+    eid: int,
+    payload: SupplierEmailUpdate,
+    db: Session = Depends(get_db),
+    actor: User = Depends(get_current_staff),
+):
     row = db.get(SupplierEmail, eid)
     if not row:
         raise HTTPException(404, "Not found")
 
+    before = _snapshot(row)
     data = payload.model_dump(exclude_unset=True, mode="json")
     supplier_id = data.get("supplier_id", row.supplier_id)
     supplier = _load_supplier(db, supplier_id)
@@ -105,16 +167,27 @@ def update(eid: int, payload: SupplierEmailUpdate, db: Session = Depends(get_db)
         setattr(row, key, value)
     db.commit()
     db.refresh(row)
+    after = _snapshot(row)
+    diff = {f: {"old": before[f], "new": after[f]} for f in _AUDITED if before[f] != after[f]}
+    if diff:
+        _log_audit(db, action="UPDATE", row=row, actor=actor, changes=diff)
     summary = _provision_logins(db, row)
     return _out_with_provisioning(row, summary)
 
 
 @router.delete("/{eid}", status_code=204)
-def delete(eid: int, db: Session = Depends(get_db)):
+def delete(
+    eid: int,
+    db: Session = Depends(get_db),
+    actor: User = Depends(require_admin),  # delete is admin-only
+):
     row = db.get(SupplierEmail, eid)
     if not row:
         raise HTTPException(404, "Not found")
     supplier_id = row.supplier_id
+    snapshot = {f: {"old": v, "new": None} for f, v in _snapshot(row).items()}
+    # Log before the delete so the audit row carries the mapping's id + details.
+    _log_audit(db, action="DELETE", row=row, actor=actor, changes=snapshot)
     db.delete(row)
     db.commit()
     # No mapping left → the supplier has no portal contacts; disable their logins.
