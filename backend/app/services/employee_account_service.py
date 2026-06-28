@@ -21,7 +21,7 @@ from ..core.roles import Role
 from ..models.user import User
 from . import user_service
 from .supplier_account_service import generate_temp_password
-from .user_service import EmailTakenError, UsernameTakenError
+from .user_service import EmailTakenError, UsernameTakenError, get_by_email
 
 log = logging.getLogger(__name__)
 
@@ -157,6 +157,29 @@ def create_employee(
         "emp_code": emp_code,
         "temp_password": temp_password,
     }
+
+
+def update_employee(
+    db: Session, user: User, *, email: str | None = None, full_name: str | None = None
+) -> User:
+    """Admin edit of an employee login's profile fields (email + name).
+
+    Employees are provisioned with a synthetic placeholder email; this lets an
+    admin set a real address. Email must stay unique across all accounts.
+    """
+    if email is not None:
+        normalized = email.strip().lower()
+        if not normalized:
+            raise ValueError("Email cannot be empty")
+        existing = get_by_email(db, normalized)
+        if existing is not None and existing.id != user.id:
+            raise EmailTakenError(f"A user with email '{normalized}' already exists")
+        user.email = normalized
+    if full_name is not None:
+        user.full_name = full_name.strip() or None
+    db.commit()
+    db.refresh(user)
+    return user
 
 
 def reset_employee_password(db: Session, user: User) -> dict[str, Any]:

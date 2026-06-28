@@ -8,7 +8,7 @@ on first login. Admins can add/remove/reset/activate here.
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -30,6 +30,11 @@ class EmployeeCreate(BaseModel):
     username: str = Field(min_length=1, max_length=64)
     full_name: str | None = Field(default=None, max_length=255)
     emp_code: str | None = Field(default=None, max_length=32)
+
+
+class EmployeeUpdate(BaseModel):
+    email: EmailStr | None = None
+    full_name: str | None = Field(default=None, max_length=255)
 
 
 class CredItem(BaseModel):
@@ -87,6 +92,19 @@ def download_credentials(items: list[CredItem], db: Session = Depends(get_db)) -
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": "attachment; filename=employee_credentials.xlsx"},
     )
+
+
+@router.patch("/{user_id}", response_model=UserOut)
+def update_one(user_id: int, payload: EmployeeUpdate, db: Session = Depends(get_db)) -> User:
+    user = _load_employee_user(db, user_id)
+    try:
+        return svc.update_employee(
+            db, user, email=payload.email, full_name=payload.full_name
+        )
+    except EmailTakenError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
 
 
 @router.post("/{user_id}/reset-password")

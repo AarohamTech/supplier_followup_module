@@ -828,6 +828,11 @@ export const api = {
       "/api/employee-accounts",
       { method: "POST", body: JSON.stringify(body) },
     ),
+  updateEmployeeLogin: (userId: number, body: { email?: string; full_name?: string | null }) =>
+    http<AuthUser>(`/api/employee-accounts/${userId}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
   resetEmployeeLogin: (userId: number) =>
     http<{ ok: boolean; id: number; username: string | null; full_name: string | null; temp_password: string }>(
       `/api/employee-accounts/${userId}/reset-password`,
