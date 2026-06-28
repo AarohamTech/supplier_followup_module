@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
+  Activity,
   BarChart3,
   Database,
   FileSpreadsheet,
@@ -61,6 +62,7 @@ const groups: { label: string; items: NavItem[] }[] = [
       { href: "/customer-mails", label: "Customer Mails", icon: Inbox },
       { href: "/approvals", label: "Approvals", icon: MailCheck, minRole: "manager" },
       { href: "/tasks", label: "Tasks", icon: ListChecks },
+      { href: "/tasks/analytics", label: "Task Analytics", icon: Activity, minRole: "viewer" },
       { href: "/reports", label: "Reports", icon: BarChart3 },
     ],
   },
