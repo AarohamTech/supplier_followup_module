@@ -311,6 +311,7 @@ export interface TaskComment {
   task_id: number;
   comment: string;
   created_by?: string | null;
+  created_by_id?: number | null;
   created_at: string;
 }
 
@@ -321,7 +322,25 @@ export interface TaskActivity {
   old_value?: string | null;
   new_value?: string | null;
   created_by?: string | null;
+  created_by_id?: number | null;
   created_at: string;
+}
+
+export interface TaskAssignee {
+  id: number;
+  label: string;
+  role: string;
+  type: "staff" | "employee";
+}
+
+export interface TaskAnalytics {
+  totals: { total: number; open: number; overdue: number; done: number; due_today: number };
+  by_status: Record<string, number>;
+  by_priority: Record<string, number>;
+  by_source: Record<string, number>;
+  by_assignee: { user_id: number; name: string; open: number; overdue: number; done: number }[];
+  avg_cycle_hours: number | null;
+  throughput: { date: string; created: number; completed: number }[];
 }
 
 export interface CommunicationTask {
@@ -339,7 +358,13 @@ export interface CommunicationTask {
   created_from_mail_id?: number | null;
   assigned_to?: string | null;
   assigned_by?: string | null;
-  watchers: string[];
+  assigned_to_user_id?: number | null;
+  assigned_at?: string | null;
+  watchers: number[];
+  progress_percent?: number;
+  ai_summary?: string | null;
+  ai_summary_at?: string | null;
+  ai_summary_by?: string | null;
   priority: TaskPriority;
   status: TaskStatus;
   signal: TaskSignal;
@@ -366,7 +391,9 @@ export interface CommunicationTaskCreate {
   task_source?: TaskSource;
   assigned_to?: string | null;
   assigned_by?: string | null;
-  watchers?: string[];
+  assigned_to_user_id?: number | null;
+  watchers?: number[];
+  progress_percent?: number;
   priority?: TaskPriority;
   status?: TaskStatus;
   signal?: TaskSignal;
@@ -378,7 +405,9 @@ export interface CommunicationTaskUpdate {
   title?: string;
   description?: string | null;
   assigned_to?: string | null;
-  watchers?: string[];
+  assigned_to_user_id?: number | null;
+  watchers?: number[];
+  progress_percent?: number;
   priority?: TaskPriority;
   status?: TaskStatus;
   signal?: TaskSignal;

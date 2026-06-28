@@ -75,7 +75,9 @@ export default function CustomerTaskModal({
   );
   const [status, setStatus] = useState<TaskStatus>("TODO");
   const [assignedTo, setAssignedTo] = useState(mail.assigned_to || ASSIGNEES[0]);
-  const [watchers, setWatchers] = useState<string[]>([]);
+  // watcherNames holds display-only string names for UI; watchers (number[]) will be
+  // wired to real user IDs by Task 11's assignee picker.
+  const [watcherNames, setWatcherNames] = useState<string[]>([]);
   const [dueDate, setDueDate] = useState("");
   const [reminder, setReminder] = useState("");
 
@@ -95,7 +97,7 @@ export default function CustomerTaskModal({
       material_name: material || null,
       assigned_to: assignedTo || null,
       assigned_by: "Admin User",
-      watchers,
+      watchers: [],
       priority,
       status,
       signal,
@@ -262,13 +264,13 @@ export default function CustomerTaskModal({
           <Field label="Watchers" full>
             <div className="flex flex-wrap gap-1.5">
               {watcherOptions.map((a) => {
-                const on = watchers.includes(a);
+                const on = watcherNames.includes(a);
                 return (
                   <button
                     key={a}
                     type="button"
                     onClick={() =>
-                      setWatchers((prev) =>
+                      setWatcherNames((prev) =>
                         on ? prev.filter((x) => x !== a) : [...prev, a],
                       )
                     }

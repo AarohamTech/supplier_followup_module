@@ -1497,7 +1497,9 @@ function AssignModal({
   const [status, setStatus] = useState<TaskStatus>((seed.status as TaskStatus) ?? "TODO");
   const [signal, setSignal] = useState<TaskSignal>((seed.signal as TaskSignal) ?? "YELLOW");
   const [assignedTo, setAssignedTo] = useState(seed.assigned_to ?? ASSIGNEES[0]);
-  const [watchers, setWatchers] = useState<string[]>(seed.watchers ?? []);
+  // watcherNames holds display-only string names for UI; watchers (number[]) will be
+  // wired to real user IDs by Task 11's assignee picker.
+  const [watcherNames, setWatcherNames] = useState<string[]>([]);
   const [dueDate, setDueDate] = useState<string>(seed.due_date ? toDatetimeLocal(seed.due_date) : "");
   const [reminder, setReminder] = useState<string>("");
   const [submitting, setSubmitting] = useState(false);
@@ -1517,7 +1519,7 @@ function AssignModal({
     linked_mail_id: linkedMailId ?? null,
     assigned_to: assignedTo || null,
     assigned_by: "Admin User",
-    watchers,
+    watchers: [],
     priority,
     status,
     signal,
@@ -1620,12 +1622,12 @@ function AssignModal({
           <Field label="Watchers" full>
             <div className="flex flex-wrap gap-1.5">
               {ASSIGNEES.filter((a) => a !== assignedTo).map((a) => {
-                const on = watchers.includes(a);
+                const on = watcherNames.includes(a);
                 return (
                   <button
                     key={a}
                     type="button"
-                    onClick={() => setWatchers((prev) => (on ? prev.filter((x) => x !== a) : [...prev, a]))}
+                    onClick={() => setWatcherNames((prev) => (on ? prev.filter((x) => x !== a) : [...prev, a]))}
                     className={`rounded-full border px-2 py-1 text-[11px] ${
                       on ? "border-signal-red/30 bg-red-50 text-signal-red" : "border-brand-border text-brand-muted hover:bg-gray-50"
                     }`}

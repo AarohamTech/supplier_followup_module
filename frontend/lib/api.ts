@@ -22,6 +22,8 @@ import type {
   CommunicationTaskFilters,
   TaskComment,
   TaskActivity,
+  TaskAssignee,
+  TaskAnalytics,
   CommunicationDashboard,
   CommHubDashboard,
   CommHubSupplier,
@@ -555,6 +557,15 @@ export const api = {
 
   listTaskActivity: (taskId: number) =>
     http<TaskActivity[]>(`/api/tasks/${taskId}/activity`),
+
+  listAssignees: () => http<TaskAssignee[]>("/api/communication/assignees"),
+
+  generateTaskAiSummary: (taskId: number) =>
+    http<CommunicationTask>(`/api/tasks/${taskId}/ai-summary`, { method: "POST" }),
+
+  taskAnalytics: () => http<TaskAnalytics>("/api/communication/analytics"),
+
+  taskAnalyticsExportUrl: () => `/api/communication/analytics/export`,
 
   // ─── Auth ─────────────────────────────────────────────────────────────
   login: (identifier: string, password: string) => {
