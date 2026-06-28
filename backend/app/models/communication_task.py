@@ -52,6 +52,12 @@ class CommunicationTask(Base):
     # Assignment
     assigned_to: Mapped[str | None] = mapped_column(String(128), index=True)
     assigned_by: Mapped[str | None] = mapped_column(String(128))
+    # Real-user assignment (FK is source of truth; `assigned_to` keeps the
+    # denormalized display name so cards render without a join).
+    assigned_to_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id"), index=True
+    )
+    assigned_at: Mapped[datetime | None] = mapped_column(DateTime)
     watchers: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
 
     # Workflow
@@ -59,6 +65,7 @@ class CommunicationTask(Base):
     status: Mapped[str] = mapped_column(String(32), default="TODO", index=True)
     signal: Mapped[str] = mapped_column(String(16), default="YELLOW", index=True)
     escalation_level: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    progress_percent: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
     # Timing
     due_date: Mapped[datetime | None] = mapped_column(DateTime, index=True)
@@ -68,6 +75,11 @@ class CommunicationTask(Base):
     # Counters (kept simple, denormalized for now)
     comments_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     attachment_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+    # AI summary (cached; regenerated on demand)
+    ai_summary: Mapped[str | None] = mapped_column(Text)
+    ai_summary_at: Mapped[datetime | None] = mapped_column(DateTime)
+    ai_summary_by: Mapped[str | None] = mapped_column(String(128))
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(

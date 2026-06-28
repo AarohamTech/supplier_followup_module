@@ -13,7 +13,9 @@ TASK_ACTIVITY_TYPES = (
     "ASSIGNEE_CHANGED",
     "PRIORITY_CHANGED",
     "DUE_DATE_CHANGED",
+    "PROGRESS_CHANGED",
     "COMMENT_ADDED",
+    "AI_SUMMARY_GENERATED",
     "ESCALATED",
 )
 
@@ -27,6 +29,7 @@ class TaskComment(Base):
     )
     comment: Mapped[str] = mapped_column(Text, nullable=False)
     created_by: Mapped[str | None] = mapped_column(String(128), index=True)
+    created_by_id: Mapped[int | None] = mapped_column(Integer, index=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False
     )
@@ -43,6 +46,7 @@ class TaskActivityLog(Base):
     old_value: Mapped[str | None] = mapped_column(String(500))
     new_value: Mapped[str | None] = mapped_column(String(500))
     created_by: Mapped[str | None] = mapped_column(String(128), index=True)
+    created_by_id: Mapped[int | None] = mapped_column(Integer, index=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False
     )
