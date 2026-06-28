@@ -16,8 +16,9 @@ from pydantic import BaseModel
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
-from ..core.deps import require_manager
+from ..core.deps import get_current_user, require_manager
 from ..database import get_db
+from ..models.user import User
 from ..models.communication_task import (
     TASK_PRIORITIES,
     TASK_SIGNALS,
@@ -39,7 +40,9 @@ from ..services.followup_engine import apply_followup_logic, get_followup_rule
 from ..services.mail_template_service import build_context, pick_template, render
 from ..services import ai_service
 from .. import seed as seed_mod
+from ..services import agent_subscription_service as agent_subs
 from ..services import communication_message_service as msg_service
+from ..services import hi_agent_service
 from ..services import notification_service as notif
 from ..services import po_followup_mail_service
 from ..services import po_followup_service
@@ -1369,3 +1372,72 @@ def discard_message(message_id: int, db: Session = Depends(get_db)) -> dict[str,
     db.delete(msg)
     db.commit()
     return {"ok": True, "discarded_id": message_id}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 12. HI Agent (/hi) — propose-only assistant on the current thread
+# ─────────────────────────────────────────────────────────────────────────────
+class HubAgentIn(BaseModel):
+    message: str
+    supplier_id: int | None = None
+    procurement_record_id: int | None = None
+    supplier_po_no: str | None = None
+
+
+class HubAgentConfirmIn(BaseModel):
+    action_type: str  # "draft" | "subscription"
+    id: int
+
+
+def _confirm_action(db: Session, *, action_type: str, action_id: int) -> dict[str, Any]:
+    """Promote a pending HI-agent action. Drafts → READY + send now; subs → ACTIVE."""
+    if action_type == "draft":
+        msg = db.get(CommunicationMessage, action_id)
+        if msg is None:
+            return {"ok": False, "error": "Draft not found"}
+        if msg.direction != "OUTGOING" or msg.status != "DRAFT":
+            return {"ok": False, "error": "Only an OUTGOING DRAFT can be confirmed"}
+        msg.status = "READY"
+        db.commit()
+        from ..workers import mail_send_worker
+
+        result = mail_send_worker.send_message_now(db, msg.id)
+        db.refresh(msg)
+        return {"ok": True, "action": "draft", "message_id": msg.id,
+                "status": msg.status, "sent": bool(result.get("sent"))}
+    if action_type == "subscription":
+        sub = agent_subs.confirm(db, action_id, now=datetime.utcnow())
+        if sub is None:
+            return {"ok": False, "error": "Subscription not found or not pending"}
+        return {"ok": True, "action": "subscription", "subscription_id": sub.id,
+                "status": sub.status}
+    return {"ok": False, "error": f"Unknown action_type: {action_type}"}
+
+
+@router.post("/agent")
+def run_agent(
+    payload: HubAgentIn,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Run the /hi agent on the current thread. Returns a reply + pending actions
+    (drafts/subscriptions awaiting confirmation). Never sends anything itself."""
+    if not (payload.message or "").strip():
+        raise HTTPException(422, "message is required")
+    return hi_agent_service.run(
+        db, user=user, message=payload.message,
+        supplier_id=payload.supplier_id,
+        procurement_record_id=payload.procurement_record_id,
+        supplier_po_no=payload.supplier_po_no,
+    )
+
+
+@router.post("/agent/confirm")
+def confirm_agent_action(
+    payload: HubAgentConfirmIn, db: Session = Depends(get_db)
+) -> dict[str, Any]:
+    """Confirm a pending HI-agent draft (send) or subscription (activate)."""
+    out = _confirm_action(db, action_type=payload.action_type, action_id=payload.id)
+    if not out["ok"]:
+        raise HTTPException(409, out.get("error") or "Could not confirm action")
+    return out

@@ -1,0 +1,70 @@
+"""Endpoint-level tests for the HI agent confirm flow (service-call level)."""
+from __future__ import annotations
+
+import unittest
+from contextlib import contextmanager
+from unittest.mock import patch
+
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
+from app.database import Base
+from app.models import AgentSubscription, CommunicationMessage  # noqa: F401
+from app.models.communication_message import CommunicationMessage as CM
+from app.routers import communication_hub as hub
+from app.services import agent_subscription_service as subs
+
+
+@contextmanager
+def _temp_db():
+    engine = create_engine("sqlite:///:memory:", future=True)
+    Base.metadata.create_all(bind=engine)
+    Session = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+    db = Session()
+    try:
+        yield db
+    finally:
+        db.close()
+        engine.dispose()
+
+
+class ConfirmEndpointTests(unittest.TestCase):
+    def test_confirm_draft_promotes_and_sends(self) -> None:
+        with _temp_db() as db:
+            msg = CM(direction="OUTGOING", status="DRAFT", channel="EMAIL",
+                     to_emails=["a@x.com"], subject="s", body="b",
+                     mail_type="HI_AGENT_SEND")
+            db.add(msg); db.commit(); db.refresh(msg)
+            sent = {"called": False}
+
+            def fake_send(_db, mid):
+                sent["called"] = True
+                m = _db.get(CM, mid); m.status = "SENT"; _db.commit()
+                return {"sent": True}
+
+            with patch("app.workers.mail_send_worker.send_message_now", side_effect=fake_send):
+                out = hub._confirm_action(db, action_type="draft", action_id=msg.id)
+            self.assertTrue(sent["called"])
+            self.assertTrue(out["ok"])
+            db.refresh(msg)
+            self.assertEqual(msg.status, "SENT")
+
+    def test_confirm_subscription_activates(self) -> None:
+        with _temp_db() as db:
+            sub = subs.create_pending(
+                db, kind="FOLLOWUP", supplier_id=1, procurement_record_id=10,
+                supplier_po_no="PO-1", recipient_user_id=5, recipient_email="a@x.com",
+                recipient_label="A", created_by_user_id=2,
+            )
+            out = hub._confirm_action(db, action_type="subscription", action_id=sub.id)
+            self.assertTrue(out["ok"])
+            db.refresh(sub)
+            self.assertEqual(sub.status, "ACTIVE")
+
+    def test_confirm_rejects_non_draft_message(self) -> None:
+        with _temp_db() as db:
+            msg = CM(direction="OUTGOING", status="SENT", channel="EMAIL",
+                     to_emails=["a@x.com"], subject="s", body="b")
+            db.add(msg); db.commit(); db.refresh(msg)
+            out = hub._confirm_action(db, action_type="draft", action_id=msg.id)
+            self.assertFalse(out["ok"])

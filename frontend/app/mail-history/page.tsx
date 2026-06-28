@@ -296,6 +296,11 @@ export default function Page() {
   const [composer, setComposer] = useState("");
   const [sendAsEmail, setSendAsEmail] = useState(true);
   const [replying, setReplying] = useState(false);
+  const [agentBusy, setAgentBusy] = useState(false);
+  const [agentReply, setAgentReply] = useState<string | null>(null);
+  const [agentActions, setAgentActions] = useState<
+    Array<{ type: "draft" | "subscription"; message_id?: number; subscription_id?: number; recipient?: string; subject?: string; kind?: string; schedule?: string | null }>
+  >([]);
   const threadEndRef = useRef<HTMLDivElement | null>(null);
   const [assignOpen, setAssignOpen] = useState(false);
   const [assignSeed, setAssignSeed] = useState<Partial<CommunicationTaskCreate>>({});
@@ -657,9 +662,37 @@ export default function Page() {
     }
   };
 
+  const handleAgent = async (message: string) => {
+    if (!activePo || agentBusy) return;
+    setAgentBusy(true);
+    setAgentReply(null);
+    setAgentActions([]);
+    try {
+      const res = await api.hubAgent({
+        message,
+        supplier_id: activePo.supplier_id,
+        procurement_record_id: activePo.procurement_record_id,
+        supplier_po_no: activePo.supplier_po_no,
+      });
+      setAgentReply(res.reply || "(no response)");
+      setAgentActions(res.pending_actions ?? []);
+      setComposer("");
+    } catch (e: unknown) {
+      setAgentReply(e instanceof Error ? e.message : "HI agent could not respond.");
+    } finally {
+      setAgentBusy(false);
+    }
+  };
+
   const handleSendReply = async () => {
     const text = composer.trim();
     if (!text || !activePo || replying) return;
+    // /hi → route to the HI agent instead of posting a supplier message.
+    if (/^\/hi\b/i.test(text)) {
+      const message = text.replace(/^\/hi\b/i, "").trim() || "help";
+      await handleAgent(message);
+      return;
+    }
     setReplying(true);
     try {
       const res = await api.hubReply({
@@ -914,6 +947,78 @@ export default function Page() {
 
               {/* Composer — minimal */}
               <div className="border-t border-brand-border px-5 py-3">
+                {/* HI agent response + confirm cards */}
+                {(agentReply || agentBusy) && (
+                  <div className="mb-2 rounded-lg border border-signal-red/30 bg-red-50/70 p-3 text-sm">
+                    <div className="mb-1 flex items-center gap-1.5 font-semibold text-signal-red">
+                      <Sparkles size={13} /> HI agent
+                      <button
+                        className="ml-auto text-[11px] font-normal text-brand-muted hover:text-brand-dark"
+                        onClick={() => { setAgentReply(null); setAgentActions([]); }}
+                      >
+                        dismiss
+                      </button>
+                    </div>
+                    {agentBusy ? (
+                      <div className="text-brand-muted">Thinking…</div>
+                    ) : (
+                      <div className="whitespace-pre-wrap text-brand-dark">{agentReply}</div>
+                    )}
+                    {agentActions.map((a, i) => (
+                      <div key={i} className="mt-2 flex items-center justify-between gap-2 rounded border border-brand-border bg-white p-2">
+                        <span className="min-w-0 truncate text-brand-dark">
+                          {a.type === "draft"
+                            ? `✉️ Email${a.recipient ? ` to ${a.recipient}` : ""}${a.subject ? `: ${a.subject}` : ""}`
+                            : `🔔 ${a.kind === "SCHEDULED_SUMMARY" ? "Scheduled summary" : "Followup"}${a.recipient ? ` for ${a.recipient}` : ""}${a.schedule ? ` (${a.schedule})` : ""}`}
+                        </span>
+                        <span className="flex shrink-0 gap-1.5">
+                          <button
+                            className="rounded-md bg-signal-red px-3 py-1 text-xs font-semibold text-white hover:opacity-90"
+                            onClick={async () => {
+                              try {
+                                await api.hubAgentConfirm({ action_type: a.type, id: (a.message_id ?? a.subscription_id) as number });
+                                pushToast("ok", a.type === "draft" ? "Sent" : "Confirmed");
+                                setAgentActions((prev) => prev.filter((_, j) => j !== i));
+                                if (activePo) await loadThread(activePo.procurement_record_id);
+                              } catch (e: unknown) {
+                                pushToast("err", e instanceof Error ? e.message : "Confirm failed");
+                              }
+                            }}
+                          >
+                            {a.type === "draft" ? "Send" : "Confirm"}
+                          </button>
+                          <button
+                            className="rounded-md border border-brand-border px-3 py-1 text-xs text-brand-muted hover:bg-gray-50"
+                            onClick={() => setAgentActions((prev) => prev.filter((_, j) => j !== i))}
+                          >
+                            Cancel
+                          </button>
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {/* /hi command hint */}
+                {/^\/hi\b/i.test(composer) && (
+                  <div className="mb-2 rounded-lg border border-signal-red/20 bg-white p-2 text-[11px] text-brand-muted">
+                    <span className="font-semibold text-signal-red">HI agent</span> — try:{" "}
+                    {[
+                      "summarise this",
+                      "send a summary to @username",
+                      "give followup to @username",
+                      "schedule a daily summary to @username",
+                      "what's pending here",
+                    ].map((ex) => (
+                      <button
+                        key={ex}
+                        onClick={() => setComposer(`/hi ${ex}`)}
+                        className="mr-1 mb-1 inline-block rounded-full border border-brand-border px-2 py-0.5 hover:bg-red-50 hover:text-signal-red"
+                      >
+                        {ex}
+                      </button>
+                    ))}
+                  </div>
+                )}
                 <div className="mb-2 flex flex-wrap items-center gap-1.5">
                   <span className="text-[10px] font-semibold uppercase tracking-wide text-brand-muted">Templates</span>
                   {TEMPLATES.map((t) => (
@@ -930,7 +1035,7 @@ export default function Page() {
                   <textarea
                     value={composer}
                     onChange={(e) => setComposer(e.target.value)}
-                    placeholder="Type your message…"
+                    placeholder="Type your message…  (tip: start with /hi to ask the HI agent)"
                     className="h-24 w-full resize-none rounded-lg border border-brand-border bg-gray-50 p-3 pr-28 text-sm outline-none focus:border-signal-red/40 focus:bg-white"
                   />
                   <div className="absolute bottom-3 right-3 flex items-center gap-1.5">
@@ -943,9 +1048,15 @@ export default function Page() {
                     </button>
                     <button
                       className="rounded-md bg-signal-red p-2 text-white shadow-sm hover:opacity-90 disabled:opacity-50"
-                      disabled={!composer.trim() || replying}
+                      disabled={!composer.trim() || replying || agentBusy}
                       onClick={() => void handleSendReply()}
-                      title={sendAsEmail ? "Send by email + post to portal" : "Post to supplier portal only"}
+                      title={
+                        /^\/hi\b/i.test(composer.trim())
+                          ? "Ask the HI agent"
+                          : sendAsEmail
+                            ? "Send by email + post to portal"
+                            : "Post to supplier portal only"
+                      }
                     >
                       <Send size={16} />
                     </button>

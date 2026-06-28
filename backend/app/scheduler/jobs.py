@@ -13,6 +13,7 @@ from typing import Any
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from sqlalchemy import select
+from sqlalchemy import select as _select
 from sqlalchemy.orm import Session
 
 from ..core.config import settings
@@ -21,9 +22,13 @@ from ..models.communication_message import CommunicationMessage
 from ..models.engine_job import EngineJob
 from ..models.status_change_log import StatusChangeLog
 from ..services import (
+    agent_subscription_service as agent_subs,
     ai_insights_service,
+    communication_message_service as msg_service,
     engine_registry,
+    hi_agent_tools,
     knowledge_indexer,
+    notification_service as notif,
     po_followup_mail_service,
     settings_service,
 )
@@ -201,6 +206,108 @@ def crm_ingestion_runner() -> dict[str, Any]:
         db.close()
 
 
+def _dispatch_followups(db: Session) -> int:
+    """Forward each new thread message to every ACTIVE FOLLOWUP subscriber."""
+    forwarded = 0
+    for sub in agent_subs.list_active(db, "FOLLOWUP"):
+        hwm = sub.last_forwarded_message_id or 0
+        stmt = _select(CommunicationMessage).where(CommunicationMessage.id > hwm)
+        if sub.procurement_record_id is not None and sub.supplier_po_no:
+            stmt = stmt.where(
+                (CommunicationMessage.procurement_record_id == sub.procurement_record_id)
+                | (CommunicationMessage.supplier_po_no == sub.supplier_po_no)
+            )
+        elif sub.procurement_record_id is not None:
+            stmt = stmt.where(CommunicationMessage.procurement_record_id == sub.procurement_record_id)
+        elif sub.supplier_po_no:
+            stmt = stmt.where(CommunicationMessage.supplier_po_no == sub.supplier_po_no)
+        else:
+            continue
+        new_msgs = list(db.scalars(stmt.order_by(CommunicationMessage.id.asc())).all())
+        if not new_msgs:
+            continue
+        for m in new_msgs:
+            if not sub.recipient_email:
+                continue
+            who = "Supplier" if m.direction == "INCOMING" else "Procurement"
+            fwd = msg_service.queue_outgoing_message(
+                db,
+                procurement_record_id=sub.procurement_record_id,
+                supplier_po_no=sub.supplier_po_no,
+                subject=f"[Followup] PO {sub.supplier_po_no}: {m.subject or 'new message'}",
+                body=f"New message from {who} on PO {sub.supplier_po_no}:\n\n{(m.body or '').strip()}",
+                to_emails=[sub.recipient_email],
+                mail_type="HI_FOLLOWUP_FORWARD",
+                commit=True,
+            )
+            mail_send_worker.send_message_now(db, fwd.id)
+            if sub.recipient_user_id:
+                notif.safe(
+                    notif.notify_users, db, [sub.recipient_user_id],
+                    type="HI_FOLLOWUP",
+                    title=f"New message on PO {sub.supplier_po_no}",
+                    body=(m.body or "")[:140],
+                    link="/mail-history",
+                    supplier_po_no=sub.supplier_po_no,
+                    procurement_record_id=sub.procurement_record_id,
+                )
+            forwarded += 1
+        agent_subs.advance_followup(db, sub, new_msgs[-1].id)
+    return forwarded
+
+
+def _dispatch_summaries(db: Session, now: datetime) -> int:
+    """Send a thread summary to each due SCHEDULED_SUMMARY subscriber."""
+    sent = 0
+    for sub in agent_subs.due_summaries(db, now):
+        ctx = hi_agent_tools.ToolContext(
+            db=db, user=None, supplier_id=sub.supplier_id,
+            procurement_record_id=sub.procurement_record_id,
+            supplier_po_no=sub.supplier_po_no,
+        )
+        summary = hi_agent_tools.tool_summarize(ctx, {}).get("summary") or "No new activity."
+        if sub.recipient_email:
+            msg = msg_service.queue_outgoing_message(
+                db,
+                procurement_record_id=sub.procurement_record_id,
+                supplier_po_no=sub.supplier_po_no,
+                subject=f"[Summary] PO {sub.supplier_po_no}",
+                body=summary,
+                to_emails=[sub.recipient_email],
+                mail_type="HI_SCHEDULED_SUMMARY",
+                commit=True,
+            )
+            mail_send_worker.send_message_now(db, msg.id)
+            if sub.recipient_user_id:
+                notif.safe(
+                    notif.notify_users, db, [sub.recipient_user_id],
+                    type="HI_SUMMARY",
+                    title=f"Scheduled summary: PO {sub.supplier_po_no}",
+                    body=summary[:140], link="/mail-history",
+                    supplier_po_no=sub.supplier_po_no,
+                    procurement_record_id=sub.procurement_record_id,
+                )
+        agent_subs.mark_summary_dispatched(db, sub, now)
+        sent += 1
+    return sent
+
+
+def agent_dispatch_runner() -> dict[str, Any]:
+    """Forward followup messages and send due scheduled summaries."""
+    db: Session = SessionLocal()
+    try:
+        now = datetime.utcnow()
+        forwarded = _dispatch_followups(db)
+        summaries = _dispatch_summaries(db, now)
+        return {"ran_at": now.isoformat(), "forwarded": forwarded, "summaries": summaries}
+    except Exception:  # noqa: BLE001
+        db.rollback()
+        log.exception("agent_dispatch_runner failed")
+        return {"forwarded": 0, "summaries": 0, "error": True}
+    finally:
+        db.close()
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Registry bootstrapping
 # ─────────────────────────────────────────────────────────────────────────────
@@ -268,6 +375,14 @@ JOB_SPECS: list[EngineJobSpec] = [
         default_interval_minutes=int(getattr(settings, "CRM_INGEST_INTERVAL_MINUTES", 3) or 3),
         runner=crm_ingestion_runner,
         category="PROCUREMENT",
+    ),
+    EngineJobSpec(
+        job_name="agent_dispatch_cron",
+        display_name="HI Agent Dispatch",
+        description="Forward followup messages and send due scheduled summaries.",
+        default_interval_minutes=int(getattr(settings, "AGENT_DISPATCH_INTERVAL_MINUTES", 5) or 5),
+        runner=agent_dispatch_runner,
+        category="OTHER",
     ),
 ]
 

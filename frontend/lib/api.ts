@@ -352,6 +352,35 @@ export const api = {
       { method: "POST" },
     ),
 
+  hubAgent: (body: {
+    message: string;
+    supplier_id?: number | null;
+    procurement_record_id?: number | null;
+    supplier_po_no?: string | null;
+  }) =>
+    http<{
+      reply: string;
+      pending_actions: Array<{
+        type: "draft" | "subscription";
+        message_id?: number;
+        subscription_id?: number;
+        recipient?: string;
+        subject?: string;
+        kind?: string;
+        schedule?: string | null;
+      }>;
+      tools_used: Array<{ name: string }>;
+    }>("/api/communication-hub/agent", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  hubAgentConfirm: (body: { action_type: "draft" | "subscription"; id: number }) =>
+    http<{ ok: boolean; status?: string; sent?: boolean }>(
+      "/api/communication-hub/agent/confirm",
+      { method: "POST", body: JSON.stringify(body) },
+    ),
+
   getSchedulerSettings: () =>
     http<{
       scheduler_intervals_minutes: Record<string, number>;

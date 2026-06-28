@@ -1,3 +1,4 @@
+from .agent_subscription import AgentSubscription
 from .app_setting import AppSetting
 from .asn import Asn, AsnEvent, AsnItem
 from .communication_message import CommunicationMessage
@@ -20,6 +21,7 @@ from .task_collaboration import TaskActivityLog, TaskComment
 from .user import User
 
 __all__ = [
+    "AgentSubscription",
     "AppSetting",
     "Asn",
     "AsnEvent",
