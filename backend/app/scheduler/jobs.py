@@ -206,6 +206,23 @@ def crm_ingestion_runner() -> dict[str, Any]:
         db.close()
 
 
+def admin_digest_runner() -> dict[str, Any]:
+    """Send the Harmony Intelligence Summary if it is due (once per local day)."""
+    db: Session = SessionLocal()
+    try:
+        from ..services import admin_digest_service
+
+        result = admin_digest_service.send_digest_if_due(db)
+        log.info("[cron] admin_digest_runner done: %s", result)
+        return result
+    except Exception:  # noqa: BLE001
+        db.rollback()
+        log.exception("admin_digest_runner failed")
+        return {"sent": 0, "error": True}
+    finally:
+        db.close()
+
+
 def _dispatch_followups(db: Session) -> int:
     """Forward each new thread message to every ACTIVE FOLLOWUP subscriber."""
     forwarded = 0
@@ -382,6 +399,14 @@ JOB_SPECS: list[EngineJobSpec] = [
         description="Forward followup messages and send due scheduled summaries.",
         default_interval_minutes=int(getattr(settings, "AGENT_DISPATCH_INTERVAL_MINUTES", 5) or 5),
         runner=agent_dispatch_runner,
+        category="OTHER",
+    ),
+    EngineJobSpec(
+        job_name="admin_digest_cron",
+        display_name="Harmony Intelligence Summary",
+        description="Email the daily admin digest to configured recipients at the set hour.",
+        default_interval_minutes=15,
+        runner=admin_digest_runner,
         category="OTHER",
     ),
 ]
