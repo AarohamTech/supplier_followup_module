@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import type {
+  AdminDigestConfig,
   CronJobLog,
   CronJobRow,
   DraftRule,
@@ -74,17 +75,20 @@ export default function SettingsPage() {
   const [imapTest, setImapTest] = useState<TestResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [busyKey, setBusyKey] = useState<string | null>(null);
+  const [digest, setDigest] = useState<AdminDigestConfig | null>(null);
+  const [digestRecipients, setDigestRecipients] = useState("");
 
   const refreshAll = useCallback(async () => {
     setLoading(true);
     try {
-      const [snap, jobsResp, sch, logs, healthSnap, draftResp] = await Promise.all([
+      const [snap, jobsResp, sch, logs, healthSnap, draftResp, digestResp] = await Promise.all([
         api.getMailEngineSnapshot(),
         api.listCronJobs(),
         api.getSchedulerSettings(),
         api.getCronJobLogs({ limit: 20 }),
         api.getEngineHealth().catch(() => null),
         api.listDraftRules(),
+        api.getAdminDigest().catch(() => null),
       ]);
       setSnapshot(snap);
       setCronJobs(jobsResp.jobs || []);
@@ -93,6 +97,10 @@ export default function SettingsPage() {
       setCronLogs(logs.logs || []);
       setHealth(healthSnap);
       setDraftRules(draftResp.rules || []);
+      if (digestResp) {
+        setDigest(digestResp.admin_digest);
+        setDigestRecipients((digestResp.admin_digest.recipients || []).join(", "));
+      }
     } catch (err) {
       setMessage((err as Error).message);
     } finally {
@@ -158,6 +166,25 @@ export default function SettingsPage() {
       const res = await api.updateFollowupIntervals(values);
       setFollowup(res.followup_intervals_hours);
       setMessage("Follow-up intervals saved.");
+    });
+  }
+
+  async function handleSaveDigest() {
+    if (!digest) return;
+    await runWithBusy("save-digest", async () => {
+      const recipients = digestRecipients
+        .split(",").map((s) => s.trim()).filter(Boolean);
+      const res = await api.updateAdminDigest({ ...digest, recipients });
+      setDigest(res.admin_digest);
+      setDigestRecipients((res.admin_digest.recipients || []).join(", "));
+      setMessage("Daily Summary settings saved.");
+    });
+  }
+
+  async function handleTestDigest() {
+    await runWithBusy("test-digest", async () => {
+      const res = await api.sendAdminDigestTest();
+      setMessage(res.sent ? "Test summary sent to your email." : `Not sent: ${res.reason}`);
     });
   }
 
@@ -660,6 +687,120 @@ export default function SettingsPage() {
           </button>
         </div>
       </div>
+
+      {/* Daily Summary (Admin Digest) */}
+      {digest && (
+        <div className="card p-5 space-y-3">
+          <div>
+            <div className="font-semibold text-sm">Daily Summary</div>
+            <p className="text-xs text-brand-muted">
+              Harmony Intelligence Summary — emailed to the recipients below each day at the set hour.
+            </p>
+          </div>
+
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={digest.enabled}
+              onChange={(e) => setDigest({ ...digest, enabled: e.target.checked })}
+            />
+            Enabled
+          </label>
+
+          <label className="block text-sm">
+            Recipients (comma-separated)
+            <input
+              className="mt-1 w-full border border-brand-border rounded px-2 py-1 text-sm"
+              value={digestRecipients}
+              onChange={(e) => setDigestRecipients(e.target.value)}
+              placeholder="ops@hariom.com, lead@hariom.com"
+            />
+          </label>
+
+          <div className="flex gap-4">
+            <label className="text-sm flex flex-col gap-1">
+              <span className="text-xs text-brand-muted">Send hour (0–23)</span>
+              <input
+                type="number"
+                min={0}
+                max={23}
+                className="border border-brand-border rounded px-2 py-1 w-20 text-sm"
+                value={digest.send_hour}
+                onChange={(e) => setDigest({ ...digest, send_hour: Number(e.target.value) })}
+              />
+            </label>
+            <label className="text-sm flex flex-col gap-1">
+              <span className="text-xs text-brand-muted">Timezone</span>
+              <input
+                className="border border-brand-border rounded px-2 py-1 w-44 text-sm"
+                value={digest.timezone}
+                onChange={(e) => setDigest({ ...digest, timezone: e.target.value })}
+              />
+            </label>
+          </div>
+
+          <div>
+            <div className="text-xs text-brand-muted font-medium mb-1">Sections</div>
+            <div className="flex flex-wrap gap-3">
+              {["counts", "summary", "critical", "heated", "risk", "overdue"].map((key) => (
+                <label key={key} className="flex items-center gap-1 text-sm capitalize">
+                  <input
+                    type="checkbox"
+                    checked={!!digest.sections[key]}
+                    onChange={(e) =>
+                      setDigest({ ...digest, sections: { ...digest.sections, [key]: e.target.checked } })
+                    }
+                  />
+                  {key}
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <div className="text-xs text-brand-muted font-medium mb-1">Row limits</div>
+            <div className="flex flex-wrap gap-3">
+              {["critical", "heated", "risk", "overdue"].map((key) => (
+                <label key={key} className="text-sm capitalize flex flex-col gap-1">
+                  <span className="text-xs text-brand-muted">{key}</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={100}
+                    className="border border-brand-border rounded px-2 py-1 w-16 text-sm"
+                    value={digest.limits[key] ?? 10}
+                    onChange={(e) =>
+                      setDigest({ ...digest, limits: { ...digest.limits, [key]: Number(e.target.value) } })
+                    }
+                  />
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex gap-2 pt-1">
+            <button
+              type="button"
+              onClick={handleSaveDigest}
+              disabled={busyKey === "save-digest"}
+              className="btn-dark"
+            >
+              {busyKey === "save-digest" ? "Saving…" : "Save"}
+            </button>
+            <button
+              type="button"
+              onClick={handleTestDigest}
+              disabled={busyKey === "test-digest"}
+              className="btn-outline"
+            >
+              {busyKey === "test-digest" ? "Sending…" : "Send test to me"}
+            </button>
+          </div>
+          {digest.last_sent_date && (
+            <p className="text-xs text-brand-muted">Last sent: {digest.last_sent_date}</p>
+          )}
+        </div>
+      )}
 
       {/* Health + recent logs */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

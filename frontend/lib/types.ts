@@ -1272,6 +1272,17 @@ export interface PortalMe {
   must_change_password: boolean;
 }
 
+// ─── Admin Digest ────────────────────────────────────────────────────────────
+export interface AdminDigestConfig {
+  enabled: boolean;
+  recipients: string[];
+  send_hour: number;
+  timezone: string;
+  sections: Record<string, boolean>;
+  limits: Record<string, number>;
+  last_sent_date: string | null;
+}
+
 // ─── Notifications ───────────────────────────────────────────────────────────
 export interface AppNotification {
   id: number;
