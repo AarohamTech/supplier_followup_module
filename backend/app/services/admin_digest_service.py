@@ -200,7 +200,11 @@ def _gather_heated(db: Session, limit: int) -> list[dict]:
     ranked = rank_heated_candidates(candidates)[:limit]
     out: list[dict] = []
     for c in ranked:
-        tone, score, quote = _score_tone(db, c)
+        try:
+            tone, score, quote = _score_tone(db, c)
+        except Exception:  # noqa: BLE001
+            log.exception("_score_tone failed for %s; skipping", c.supplier_po_no)
+            continue
         if tone in ("frustrated", "tense", "angry"):
             out.append({"supplier": c.supplier_name or "—", "po": c.supplier_po_no or "—",
                         "tone": tone.title(), "score": score,

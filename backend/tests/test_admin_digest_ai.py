@@ -1,5 +1,7 @@
 import unittest
-from unittest.mock import patch
+from datetime import datetime
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 
 from app.services import admin_digest_service as svc
 
@@ -34,3 +36,17 @@ class HeatedAndSummaryTests(unittest.TestCase):
              patch.object(svc.ai_service, "complete_json", side_effect=RuntimeError("boom")):
             text = svc._ai_summary(counts, critical=[], heated=[])
         self.assertTrue(len(text) > 0)   # fell back, no raise
+
+    def test_score_tone_falls_back_to_heuristic_on_llm_exception(self):
+        candidate = SimpleNamespace(supplier_po_no="PO-1", supplier_name="Acme",
+                                    msg_count=4, recent_count=4, escalation_level="NONE")
+        last = SimpleNamespace(body="we are very upset", direction="INCOMING",
+                               received_at=datetime.utcnow())
+        db = MagicMock()
+        db.scalars.return_value.first.return_value = last
+        with patch.object(svc.ai_service, "is_enabled", return_value=True), \
+             patch.object(svc.ai_service, "complete_json", side_effect=RuntimeError("boom")):
+            tone, score, quote = svc._score_tone(db, candidate)
+        self.assertEqual(tone, "tense")   # heuristic: recent_count >= 3
+        self.assertTrue(0 <= score <= 1)
+        self.assertEqual(quote, "we are very upset")
