@@ -85,6 +85,7 @@ def format_risk(rows) -> list[dict]:
 def _gather_counts(db: Session) -> dict:
     today = datetime.utcnow()
     active = list(db.scalars(select(ProcurementRecord)).all())
+    # NOTE: "today" here is UTC; the digest is gated/stamped in the configured local tz, so near a tz/day boundary the overdue count may differ from the local calendar day by one. Acceptable for a daily ops digest.
     overdue = sum(1 for r in active if r.shipment_date and r.shipment_date.date() < today.date())
     critical = sum(1 for r in active
                    if r.signal == "BLACK" or r.escalation_level in CRITICAL_ESCALATIONS)
@@ -391,10 +392,10 @@ def render_digest_html(data: dict, cfg: dict) -> str:
     return brand_email.shell(inner)
 
 
-def build_digest_data(db: "Session", cfg: dict) -> dict:  # type: ignore[name-defined]
+def build_digest_data(db: "Session", cfg: dict, *, now: datetime | None = None) -> dict:  # type: ignore[name-defined]
     sec = cfg.get("sections", {})
     lim = cfg.get("limits", {})
-    now_local = datetime.utcnow().replace(tzinfo=ZoneInfo("UTC")).astimezone(
+    now_local = (now or datetime.utcnow()).replace(tzinfo=ZoneInfo("UTC")).astimezone(
         ZoneInfo(cfg.get("timezone", "Asia/Kolkata")))
     tz_abbr = "IST" if cfg.get("timezone") == "Asia/Kolkata" else now_local.tzname() or ""
     counts = _gather_counts(db) if sec.get("counts", True) else None
@@ -432,7 +433,7 @@ def send_digest_if_due(db: Session, *, now: datetime | None = None) -> dict:
     if cfg.get("last_sent_date") == today_iso:
         return {"skipped": "already sent today"}
 
-    data = build_digest_data(db, cfg)
+    data = build_digest_data(db, cfg, now=now_utc)
     html = render_digest_html(data, cfg)
     result = mail_send_worker.send_html_email(cfg["recipients"], digest_subject(data), html)
     if not result.get("sent"):

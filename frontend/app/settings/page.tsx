@@ -184,7 +184,7 @@ export default function SettingsPage() {
   async function handleTestDigest() {
     await runWithBusy("test-digest", async () => {
       const res = await api.sendAdminDigestTest();
-      setMessage(res.sent ? "Test summary sent to your email." : `Not sent: ${res.reason}`);
+      setMessage(res.sent ? "Test summary sent to your email." : `Not sent: ${res.reason ?? "unknown reason"}`);
     });
   }
 
