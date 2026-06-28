@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
@@ -20,8 +20,13 @@ import {
   Mail,
   Link2,
   ArrowUpCircle,
+  ChevronDown,
+  ChevronRight,
+  Sparkles,
+  Lock,
 } from "lucide-react";
 import { api } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import PageHeader from "@/components/layout/PageHeader";
 import { AssigneePicker, WatcherPicker } from "@/components/tasks/AssigneePicker";
 import type {
@@ -565,30 +570,37 @@ function TaskDrawer({
   onChanged: (t: CommunicationTask) => void | Promise<void>;
   onMove: (t: CommunicationTask, s: TaskStatus) => void | Promise<void>;
 }) {
+  const { hasRole } = useAuth();
+  const isAdmin = hasRole("admin");
+
   const [comments, setComments] = useState<TaskComment[]>([]);
   const [activity, setActivity] = useState<TaskActivity[]>([]);
   const [newComment, setNewComment] = useState("");
   const [busy, setBusy] = useState(false);
   const [summarizing, setSummarizing] = useState(false);
   const [watcherIds, setWatcherIds] = useState<number[]>(task.watchers ?? []);
+  const [progressLocal, setProgressLocal] = useState<number>(task.progress_percent ?? 0);
+  const [showActivity, setShowActivity] = useState(false); // admin-only change log, collapsed by default
 
-  // Robustness fix #1: keep watcherIds in sync if parent refreshes the task object
-  useEffect(() => {
-    setWatcherIds(task.watchers ?? []);
-  }, [task.watchers]);
+  // Keep local UI state in sync if the parent refreshes the task object.
+  useEffect(() => setWatcherIds(task.watchers ?? []), [task.watchers]);
+  useEffect(() => setProgressLocal(task.progress_percent ?? 0), [task.progress_percent]);
 
   const load = useCallback(async () => {
     try {
-      const [c, a] = await Promise.all([
-        api.listTaskComments(task.id),
-        api.listTaskActivity(task.id),
-      ]);
+      const c = await api.listTaskComments(task.id);
       setComments(c);
-      setActivity(a);
     } catch {
       /* ignore */
     }
-  }, [task.id]);
+    // The activity log is admin-only (backend enforces it too).
+    if (!isAdmin) return;
+    try {
+      setActivity(await api.listTaskActivity(task.id));
+    } catch {
+      /* ignore */
+    }
+  }, [task.id, isAdmin]);
 
   useEffect(() => {
     void load();
@@ -625,233 +637,271 @@ function TaskDrawer({
     });
   }
 
+  const statusCol = COLUMNS.find((c) => c.key === task.status);
+  const sortedComments = [...comments].sort((a, b) => +new Date(a.created_at) - +new Date(b.created_at));
+  const sortedActivity = [...activity].sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at));
+
+  const Field = ({ label, children }: { label: string; children: ReactNode }) => (
+    <div>
+      <div className="text-[11px] font-medium uppercase tracking-wide text-brand-muted mb-1">{label}</div>
+      {children}
+    </div>
+  );
+
   return (
-    <div className="fixed inset-0 z-50 flex justify-end">
-      <div className="absolute inset-0 bg-black/30" onClick={onClose} />
-      <div className="relative w-full max-w-md bg-white h-full shadow-2xl flex flex-col">
-        <div className="px-4 py-3 border-b border-brand-border flex items-start justify-between gap-2">
-          <div>
-            <div className="text-[11px] text-brand-muted">Task #{task.id}</div>
-            <div className="text-base font-semibold leading-snug">{task.title}</div>
+    <div className="fixed inset-0 z-50 grid place-items-center p-3 sm:p-6 bg-black/50" onClick={onClose}>
+      <div
+        className="relative w-full max-w-4xl max-h-[90vh] bg-white rounded-xl shadow-2xl flex flex-col overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="px-5 py-3 border-b border-brand-border flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 text-[11px] text-brand-muted">
+              <span className="font-mono">TASK-{task.id}</span>
+              <span className="text-gray-300">•</span>
+              <span className="inline-flex items-center gap-1">
+                <span className={`h-2 w-2 rounded-full ${statusCol?.dot ?? "bg-slate-400"}`} />
+                {statusCol?.label ?? task.status}
+              </span>
+            </div>
+            <h2 className="text-lg font-semibold text-brand-dark leading-snug truncate">{task.title}</h2>
           </div>
-          <button onClick={onClose} className="p-1 rounded hover:bg-gray-100">
-            <X size={16} />
+          <button onClick={onClose} className="p-1.5 rounded hover:bg-gray-100 text-brand-muted">
+            <X size={18} />
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          {/* Status row */}
-          <div>
-            <div className="text-[11px] text-brand-muted mb-1">Status</div>
-            <select
-              value={task.status}
-              onChange={(e) => onMove(task, e.target.value as TaskStatus)}
-              className="border border-brand-border rounded px-2 py-1.5 text-sm w-full"
-            >
-              {COLUMNS.map((c) => (
-                <option key={c.key} value={c.key}>{c.label}</option>
-              ))}
-            </select>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <div className="text-[11px] text-brand-muted mb-1">Priority</div>
-              <select
-                value={task.priority}
-                onChange={(e) => patch({ priority: e.target.value as CommunicationTask["priority"] })}
-                className="border border-brand-border rounded px-2 py-1.5 text-sm w-full"
-              >
-                {PRIORITY_OPTS.map((p) => (
-                  <option key={p} value={p}>{p}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <div className="text-[11px] text-brand-muted mb-1">Assignee</div>
-              <AssigneePicker
-                value={task.assigned_to_user_id ?? null}
-                assignees={assignees}
-                onChange={(id) => patch({ assigned_to_user_id: id })}
-              />
-            </div>
-          </div>
-
-          <div>
-            <div className="text-[11px] text-brand-muted mb-1">Watchers</div>
-            <WatcherPicker
-              value={watcherIds}
-              assignees={assignees}
-              onChange={(ids) => {
-                setWatcherIds(ids);
-                void patch({ watchers: ids });
-              }}
-            />
-          </div>
-
-          <div>
-            <label className="text-[11px] font-medium text-brand-muted">
-              Progress: {task.progress_percent ?? 0}%
-            </label>
-            <input
-              type="range"
-              min={0}
-              max={100}
-              step={5}
-              value={task.progress_percent ?? 0}
-              onChange={(e) => patch({ progress_percent: Number(e.target.value) })}
-              className="w-full mt-1"
-            />
-          </div>
-
-          {/* AI Summary panel */}
-          <div className="rounded-md border border-brand-border bg-slate-50 p-3">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-brand-dark">AI Summary</span>
-              <button
-                className="text-xs text-brand-primary disabled:opacity-50"
-                disabled={summarizing}
-                onClick={async () => {
-                  setSummarizing(true);
-                  try {
-                    const updated = await api.generateTaskAiSummary(task.id);
-                    await onChanged(updated);
-                  } catch {
-                    alert("AI summary unavailable (LLM may be disabled).");
-                  } finally {
-                    setSummarizing(false);
-                  }
-                }}
-              >
-                {summarizing ? "Generating…" : task.ai_summary ? "Regenerate" : "Summarize"}
-              </button>
-            </div>
-            <p className="mt-1 text-xs text-brand-muted">
-              {task.ai_summary || "No summary yet."}
-            </p>
-            {task.ai_summary_at && (
-              <p className="mt-1 text-[10px] text-brand-muted">
-                by {task.ai_summary_by} · {fmtDateTime(task.ai_summary_at)}
-              </p>
-            )}
-          </div>
-
-          {task.description && (
-            <div>
-              <div className="text-[11px] text-brand-muted mb-1">Description</div>
-              <p className="text-sm whitespace-pre-wrap">{task.description}</p>
-            </div>
-          )}
-
-          {/* Linked context */}
-          <div className="rounded-lg border border-brand-border p-3 space-y-1.5 bg-gray-50">
-            <div className="text-[11px] font-semibold text-brand-muted flex items-center gap-1">
-              <Link2 size={12} /> Linked context
-            </div>
-            <div className="text-xs flex flex-col gap-1">
-              <span>Source: <b>{task.task_source || "SUPPLIER"}</b></span>
-              {task.supplier_name && <span>Supplier: {task.supplier_name}</span>}
-              {task.supplier_po_no && <span>PO: {task.supplier_po_no}</span>}
-              {task.material_name && <span>Material: {task.material_name}</span>}
-              {task.linked_mail_id && (
-                <Link href={`/mail-history`} className="text-signal-red underline">
-                  Linked supplier mail #{task.linked_mail_id}
-                </Link>
-              )}
-              {task.customer_mail_id && (
-                <Link href={`/customer-mails?focus=${task.customer_mail_id}`} className="text-signal-red underline">
-                  Customer mail #{task.customer_mail_id}
-                </Link>
-              )}
-              <span>Due: {fmtDate(task.due_date)}</span>
-            </div>
-          </div>
-
-          <button
-            type="button"
-            onClick={escalate}
-            disabled={busy}
-            className="w-full text-sm px-3 py-1.5 rounded-md border border-rose-300 text-rose-700 bg-rose-50 flex items-center justify-center gap-1 disabled:opacity-50"
-          >
-            <ArrowUpCircle size={14} /> Escalate (L{(task.escalation_level ?? 0) + 1})
-          </button>
-
-          {/* Unified timeline */}
-          <div className="border-t border-brand-border pt-3">
-            <div className="flex items-center gap-1.5 mb-3">
-              <MessageSquare size={12} className="text-brand-muted" />
-              <History size={12} className="text-brand-muted" />
-              <span className="text-xs font-semibold text-brand-muted">
-                Activity &amp; Comments ({comments.length + activity.length})
-              </span>
-            </div>
-
-            {(() => {
-              type FeedItem = { kind: "comment" | "activity"; id: number; at: string; who: string | null | undefined; text: string };
-              const feed: FeedItem[] = [
-                ...comments.map((c) => ({
-                  kind: "comment" as const,
-                  id: c.id,
-                  at: c.created_at,
-                  who: c.created_by,
-                  text: c.comment,
-                })),
-                ...activity.map((a) => ({
-                  kind: "activity" as const,
-                  id: a.id,
-                  at: a.created_at,
-                  who: a.created_by,
-                  text: `${a.activity_type.replace(/_/g, " ").toLowerCase()}${
-                    a.new_value ? `: ${a.old_value ? `${a.old_value} → ` : ""}${a.new_value}` : ""
-                  }`,
-                })),
-              ].sort((x, y) => +new Date(y.at) - +new Date(x.at));
-
-              return (
-                <div className="space-y-2">
-                  {feed.length === 0 && (
-                    <div className="text-xs text-brand-muted">No activity yet.</div>
-                  )}
-                  {feed.map((item) =>
-                    item.kind === "comment" ? (
-                      <div key={`c-${item.id}`} className="rounded-lg border border-brand-border p-2">
-                        <div className="flex items-center justify-between text-[11px] text-brand-muted">
-                          <span className="font-medium text-brand-dark">{item.who || "system"}</span>
-                          <span>{fmtDateTime(item.at)}</span>
-                        </div>
-                        <p className="text-sm mt-1 whitespace-pre-wrap">{item.text}</p>
-                      </div>
-                    ) : (
-                      <div key={`a-${item.id}`} className="flex gap-2 text-xs">
-                        <div className="h-2 w-2 rounded-full bg-brand-dark mt-1.5 flex-shrink-0" />
-                        <div>
-                          <span className="text-brand-muted">{item.text}</span>
-                          {item.who && <span className="text-brand-muted"> · {item.who}</span>}
-                          <div className="text-[10px] text-brand-muted">{fmtDateTime(item.at)}</div>
-                        </div>
-                      </div>
-                    )
-                  )}
-                  <div className="flex gap-2 pt-1">
-                    <input
-                      type="text"
-                      value={newComment}
-                      onChange={(e) => setNewComment(e.target.value)}
-                      onKeyDown={(e) => e.key === "Enter" && submitComment()}
-                      placeholder="Add a comment…"
-                      className="border border-brand-border rounded px-2 py-1.5 text-sm flex-1"
-                    />
-                    <button
-                      onClick={submitComment}
-                      disabled={busy || !newComment.trim()}
-                      className="text-xs px-3 py-1.5 rounded bg-brand-dark text-white disabled:opacity-50"
-                    >
-                      Send
-                    </button>
-                  </div>
+        {/* Body: main + sidebar */}
+        <div className="flex-1 overflow-y-auto">
+          <div className="grid md:grid-cols-3">
+            {/* MAIN */}
+            <div className="md:col-span-2 p-5 space-y-5 md:border-r border-brand-border">
+              {task.description && (
+                <div>
+                  <div className="text-[11px] font-medium uppercase tracking-wide text-brand-muted mb-1">Description</div>
+                  <p className="text-sm whitespace-pre-wrap text-brand-dark">{task.description}</p>
                 </div>
-              );
-            })()}
+              )}
+
+              {/* AI Summary */}
+              <div className="rounded-lg border border-indigo-100 bg-indigo-50/50 p-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-indigo-900 flex items-center gap-1.5">
+                    <Sparkles size={13} /> AI Summary
+                  </span>
+                  <button
+                    className="text-xs font-medium text-indigo-700 hover:text-indigo-900 disabled:opacity-50"
+                    disabled={summarizing}
+                    onClick={async () => {
+                      setSummarizing(true);
+                      try {
+                        const updated = await api.generateTaskAiSummary(task.id);
+                        await onChanged(updated);
+                      } catch {
+                        alert("AI summary unavailable (LLM may be disabled).");
+                      } finally {
+                        setSummarizing(false);
+                      }
+                    }}
+                  >
+                    {summarizing ? "Generating…" : task.ai_summary ? "Regenerate" : "Summarize"}
+                  </button>
+                </div>
+                <p className="mt-1.5 text-xs text-brand-dark whitespace-pre-wrap">
+                  {task.ai_summary || "No summary yet — click Summarize to generate one from the comments & activity."}
+                </p>
+                {task.ai_summary_at && (
+                  <p className="mt-1 text-[10px] text-brand-muted">
+                    by {task.ai_summary_by} · {fmtDateTime(task.ai_summary_at)}
+                  </p>
+                )}
+              </div>
+
+              {/* Comments — visible to all staff */}
+              <div>
+                <div className="flex items-center gap-1.5 mb-2">
+                  <MessageSquare size={14} className="text-brand-muted" />
+                  <span className="text-sm font-semibold text-brand-dark">Comments</span>
+                  <span className="text-xs text-brand-muted">({sortedComments.length})</span>
+                </div>
+
+                <div className="flex gap-2 mb-3">
+                  <input
+                    type="text"
+                    value={newComment}
+                    onChange={(e) => setNewComment(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && submitComment()}
+                    placeholder="Add a comment…"
+                    className="border border-brand-border rounded-md px-3 py-1.5 text-sm flex-1"
+                  />
+                  <button
+                    onClick={submitComment}
+                    disabled={busy || !newComment.trim()}
+                    className="text-xs px-3 py-1.5 rounded-md bg-brand-dark text-white disabled:opacity-50"
+                  >
+                    Send
+                  </button>
+                </div>
+
+                <div className="space-y-2">
+                  {sortedComments.length === 0 && (
+                    <div className="text-xs text-brand-muted">No comments yet.</div>
+                  )}
+                  {sortedComments.map((c) => (
+                    <div key={c.id} className="rounded-lg border border-brand-border p-2.5">
+                      <div className="flex items-center justify-between text-[11px] text-brand-muted">
+                        <span className="font-medium text-brand-dark">{c.created_by || "system"}</span>
+                        <span>{fmtDateTime(c.created_at)}</span>
+                      </div>
+                      <p className="text-sm mt-1 whitespace-pre-wrap text-brand-dark">{c.comment}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Activity log — admin-only, collapsed dropdown */}
+              {isAdmin && (
+                <div className="border-t border-brand-border pt-3">
+                  <button
+                    type="button"
+                    onClick={() => setShowActivity((s) => !s)}
+                    className="flex items-center gap-1.5 text-sm font-semibold text-brand-dark w-full"
+                  >
+                    {showActivity ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
+                    <History size={14} className="text-brand-muted" />
+                    Activity log
+                    <span className="text-xs font-normal text-brand-muted">({sortedActivity.length})</span>
+                    <span className="ml-auto inline-flex items-center gap-1 text-[10px] font-normal text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded">
+                      <Lock size={10} /> Admin only
+                    </span>
+                  </button>
+
+                  {showActivity && (
+                    <div className="mt-3 space-y-2 max-h-72 overflow-y-auto pr-1">
+                      {sortedActivity.length === 0 && (
+                        <div className="text-xs text-brand-muted">No activity recorded.</div>
+                      )}
+                      {sortedActivity.map((a) => (
+                        <div key={a.id} className="flex gap-2 text-xs">
+                          <div className="h-1.5 w-1.5 rounded-full bg-brand-muted mt-1.5 flex-shrink-0" />
+                          <div className="min-w-0">
+                            <span className="text-brand-dark">
+                              {a.activity_type.replace(/_/g, " ").toLowerCase()}
+                              {a.new_value ? `: ${a.old_value ? `${a.old_value} → ` : ""}${a.new_value}` : ""}
+                            </span>
+                            {a.created_by && <span className="text-brand-muted"> · {a.created_by}</span>}
+                            <div className="text-[10px] text-brand-muted">{fmtDateTime(a.created_at)}</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* SIDEBAR — fields */}
+            <aside className="p-4 space-y-4 bg-slate-50">
+              <Field label="Status">
+                <select
+                  value={task.status}
+                  onChange={(e) => onMove(task, e.target.value as TaskStatus)}
+                  className="border border-brand-border rounded-md px-2 py-1.5 text-sm w-full bg-white"
+                >
+                  {COLUMNS.map((c) => (
+                    <option key={c.key} value={c.key}>{c.label}</option>
+                  ))}
+                </select>
+              </Field>
+
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Priority">
+                  <select
+                    value={task.priority}
+                    onChange={(e) => patch({ priority: e.target.value as CommunicationTask["priority"] })}
+                    className="border border-brand-border rounded-md px-2 py-1.5 text-sm w-full bg-white"
+                  >
+                    {PRIORITY_OPTS.map((p) => (
+                      <option key={p} value={p}>{p}</option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="Signal">
+                  <div className="px-2 py-1.5 text-sm rounded-md border border-brand-border bg-white">{task.signal}</div>
+                </Field>
+              </div>
+
+              <Field label="Assignee">
+                <AssigneePicker
+                  value={task.assigned_to_user_id ?? null}
+                  assignees={assignees}
+                  onChange={(id) => patch({ assigned_to_user_id: id })}
+                />
+              </Field>
+
+              <Field label="Watchers">
+                <WatcherPicker
+                  value={watcherIds}
+                  assignees={assignees}
+                  onChange={(ids) => {
+                    setWatcherIds(ids);
+                    void patch({ watchers: ids });
+                  }}
+                />
+              </Field>
+
+              <Field label={`Progress — ${progressLocal}%`}>
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  step={5}
+                  value={progressLocal}
+                  onChange={(e) => setProgressLocal(Number(e.target.value))}
+                  onMouseUp={(e) => patch({ progress_percent: Number((e.target as HTMLInputElement).value) })}
+                  onTouchEnd={() => patch({ progress_percent: progressLocal })}
+                  onKeyUp={(e) => patch({ progress_percent: Number((e.target as HTMLInputElement).value) })}
+                  className="w-full"
+                />
+                <div className="mt-1 h-1.5 w-full rounded-full bg-gray-200">
+                  <div className="h-1.5 rounded-full bg-emerald-500" style={{ width: `${progressLocal}%` }} />
+                </div>
+              </Field>
+
+              {/* Linked context */}
+              <div className="rounded-lg border border-brand-border p-3 space-y-1.5 bg-white">
+                <div className="text-[11px] font-semibold uppercase tracking-wide text-brand-muted flex items-center gap-1">
+                  <Link2 size={12} /> Linked context
+                </div>
+                <div className="text-xs flex flex-col gap-1 text-brand-dark">
+                  <span>Source: <b>{task.task_source || "SUPPLIER"}</b></span>
+                  {task.supplier_name && <span>Supplier: {task.supplier_name}</span>}
+                  {task.supplier_po_no && <span>PO: {task.supplier_po_no}</span>}
+                  {task.material_name && <span>Material: {task.material_name}</span>}
+                  {task.linked_mail_id && (
+                    <Link href={`/mail-history`} className="text-signal-red underline">
+                      Linked supplier mail #{task.linked_mail_id}
+                    </Link>
+                  )}
+                  {task.customer_mail_id && (
+                    <Link href={`/customer-mails?focus=${task.customer_mail_id}`} className="text-signal-red underline">
+                      Customer mail #{task.customer_mail_id}
+                    </Link>
+                  )}
+                  <span>Due: {fmtDate(task.due_date)}</span>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={escalate}
+                disabled={busy}
+                className="w-full text-sm px-3 py-1.5 rounded-md border border-rose-300 text-rose-700 bg-rose-50 hover:bg-rose-100 flex items-center justify-center gap-1 disabled:opacity-50"
+              >
+                <ArrowUpCircle size={14} /> Escalate (L{(task.escalation_level ?? 0) + 1})
+              </button>
+            </aside>
           </div>
         </div>
       </div>

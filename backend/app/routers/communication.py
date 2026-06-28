@@ -6,7 +6,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from ..core.deps import get_current_staff
+from ..core.deps import get_current_staff, require_admin
 from ..database import get_db
 from ..models.communication_task import (
     TASK_PRIORITIES,
@@ -345,7 +345,11 @@ def add_task_comment(
 
 
 @tasks_router.get("/{task_id}/activity")
-def task_activity(task_id: int, db: Session = Depends(get_db)):
+def task_activity(
+    task_id: int,
+    db: Session = Depends(get_db),
+    _admin: User = Depends(require_admin),  # change log is admin-only
+):
     if db.get(CommunicationTask, task_id) is None:
         raise HTTPException(404, "Task not found")
     return [_activity_out(a) for a in collab.list_activity(db, task_id)]
