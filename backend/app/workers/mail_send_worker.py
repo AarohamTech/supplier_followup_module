@@ -100,6 +100,34 @@ def _send_one(em: EmailMessage) -> None:
         client.send_message(em)
 
 
+def send_html_email(
+    to_emails: list[str],
+    subject: str,
+    html: str,
+    *,
+    text: str | None = None,
+) -> dict:
+    """Send a standalone branded HTML email (not tied to a CommunicationMessage).
+
+    Used by the admin digest. Returns a status dict; never raises on SMTP-disabled.
+    """
+    ok, reason = _config_ready()
+    if not ok:
+        return {"sent": False, "recipients": 0, "reason": reason}
+    recipients = [e for e in (to_emails or []) if e]
+    if not recipients:
+        return {"sent": False, "recipients": 0, "reason": "no recipients"}
+
+    em = EmailMessage()
+    em["From"] = settings.SMTP_FROM
+    em["To"] = ", ".join(recipients)
+    em["Subject"] = subject or "(no subject)"
+    em.set_content(text or _html_to_text(html) or "")
+    em.add_alternative(html, subtype="html")
+    _send_one(em)
+    return {"sent": True, "recipients": len(recipients), "reason": ""}
+
+
 def _linked_mail_history_id(msg: CommunicationMessage) -> int | None:
     payload = msg.raw_payload if isinstance(msg.raw_payload, dict) else None
     value = payload.get("mail_history_id") if payload else None
