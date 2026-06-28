@@ -20,6 +20,7 @@ from ..schemas.communication_task import (
     CommunicationTaskOut,
     CommunicationTaskUpdate,
 )
+from ..services import ai_service
 from ..services import task_assignment_service as assign
 from ..services import task_collaboration_service as collab
 
@@ -330,6 +331,38 @@ def task_activity(task_id: int, db: Session = Depends(get_db)):
     if db.get(CommunicationTask, task_id) is None:
         raise HTTPException(404, "Task not found")
     return [_activity_out(a) for a in collab.list_activity(db, task_id)]
+
+
+@tasks_router.post("/{task_id}/ai-summary", response_model=CommunicationTaskOut)
+def generate_ai_summary(
+    task_id: int,
+    db: Session = Depends(get_db),
+    actor: User = Depends(get_current_staff),
+):
+    row = db.get(CommunicationTask, task_id)
+    if not row:
+        raise HTTPException(404, "Task not found")
+    if not ai_service.is_enabled():
+        raise HTTPException(503, "AI is not enabled")
+    transcript = collab.build_transcript(db, row)
+    try:
+        summary = ai_service.summarize_thread(transcript)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"AI summary failed: {e}")
+    row.ai_summary = (summary or "").strip()
+    row.ai_summary_at = datetime.utcnow()
+    row.ai_summary_by = assign.display_name(actor)
+    collab.log_activity(
+        db,
+        task_id=row.id,
+        activity_type="AI_SUMMARY_GENERATED",
+        new_value=row.ai_summary[:120],
+        created_by=row.ai_summary_by,
+        created_by_id=actor.id,
+    )
+    db.commit()
+    db.refresh(row)
+    return row
 
 
 # ──────────────────────────────────────────────────────────────────────────────
