@@ -322,6 +322,7 @@ def run() -> dict:
             "admin_seeded": seed_admin(db),
             "templates_added": seed_templates(db),
             "supplier_emails_added": seed_supplier_emails(db),
+            "role_accounts": ensure_role_accounts(db),
         }
         # Demo procurement rows are only seeded in DEBUG/dev — never auto-injected
         # into a production database.
@@ -333,6 +334,34 @@ def run() -> dict:
         return result
     finally:
         db.close()
+
+
+_ESCALATION_ROLE_TITLES = ("Purchase Head", "Sourcing Head")
+
+
+def ensure_role_accounts(db: Session) -> dict[str, int]:
+    """Create real manager-role users for the escalation role-titles so
+    escalation assigns a real user id. Idempotent (matched by full_name)."""
+    from .core.security import hash_password
+
+    mapping: dict[str, int] = {}
+    for title in _ESCALATION_ROLE_TITLES:
+        user = db.scalar(select(User).where(User.full_name == title))
+        if user is None:
+            slug = title.lower().replace(" ", "")
+            user = User(
+                email=f"{slug}@internal.local-disabled",
+                username=slug,
+                full_name=title,
+                hashed_password=hash_password("disabled-login"),
+                role="manager",
+                is_active=True,
+            )
+            db.add(user)
+            db.flush()
+        mapping[title] = user.id
+    db.commit()
+    return mapping
 
 
 if __name__ == "__main__":

@@ -38,6 +38,7 @@ import logging
 from ..services.followup_engine import apply_followup_logic, get_followup_rule
 from ..services.mail_template_service import build_context, pick_template, render
 from ..services import ai_service
+from .. import seed as seed_mod
 from ..services import communication_message_service as msg_service
 from ..services import notification_service as notif
 from ..services import po_followup_mail_service
@@ -1092,6 +1093,7 @@ def escalate(
     )
     rec.mail_status = "READY"
 
+    _roles = seed_mod.ensure_role_accounts(db)
     task = CommunicationTask(
         supplier_id=supplier.id if supplier else None,
         supplier_name=rec.supplier_name,
@@ -1104,9 +1106,10 @@ def escalate(
         priority="P0",
         status="TODO",
         signal="BLACK",
+        assigned_to_user_id=_roles.get("Purchase Head"),
         assigned_to="Purchase Head",
         assigned_by="System",
-        watchers=["Sourcing Head"],
+        watchers=[wid for wid in [_roles.get("Sourcing Head")] if wid],
     )
     db.add(task)
 
