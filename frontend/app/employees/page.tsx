@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Download, KeyRound, Loader2, Power, ShieldCheck, Trash2, Upload, UserPlus } from "lucide-react";
+import { Download, KeyRound, Loader2, Pencil, Power, ShieldCheck, Trash2, Upload, UserPlus, X } from "lucide-react";
 
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
@@ -28,6 +28,10 @@ export default function EmployeesAdminPage() {
   const [newUsername, setNewUsername] = useState("");
   const [newName, setNewName] = useState("");
   const [newEmpCode, setNewEmpCode] = useState("");
+
+  const [editUser, setEditUser] = useState<AuthUser | null>(null);
+  const [editEmail, setEditEmail] = useState("");
+  const [editName, setEditName] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -88,6 +92,30 @@ export default function EmployeesAdminPage() {
       setNewUsername("");
       setNewName("");
       setNewEmpCode("");
+      await load();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const openEdit = (u: AuthUser) => {
+    setEditUser(u);
+    setEditEmail(u.email?.endsWith("@employee.local") ? "" : u.email || "");
+    setEditName(u.full_name || "");
+    setError(null);
+  };
+
+  const onSaveEdit = async () => {
+    if (!editUser) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const body: { email?: string; full_name?: string | null } = { full_name: editName.trim() || null };
+      if (editEmail.trim()) body.email = editEmail.trim();
+      await api.updateEmployeeLogin(editUser.id, body);
+      setEditUser(null);
       await load();
     } catch (e) {
       setError((e as Error).message);
@@ -229,6 +257,7 @@ export default function EmployeesAdminPage() {
             <tr>
               <th className="px-3 py-2">Username</th>
               <th className="px-3 py-2">Name</th>
+              <th className="px-3 py-2">Email</th>
               <th className="px-3 py-2">Emp code</th>
               <th className="px-3 py-2">Status</th>
               <th className="px-3 py-2">Last login</th>
@@ -238,13 +267,13 @@ export default function EmployeesAdminPage() {
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={6} className="px-3 py-6 text-center text-brand-muted">
+                <td colSpan={7} className="px-3 py-6 text-center text-brand-muted">
                   <Loader2 size={16} className="mx-auto animate-spin" />
                 </td>
               </tr>
             ) : list.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-3 py-6 text-center text-brand-muted">
+                <td colSpan={7} className="px-3 py-6 text-center text-brand-muted">
                   No employee logins yet — import the sheet above.
                 </td>
               </tr>
@@ -253,6 +282,13 @@ export default function EmployeesAdminPage() {
                 <tr key={u.id} className="border-t border-brand-border">
                   <td className="px-3 py-2 font-medium text-brand-dark">{u.username}</td>
                   <td className="px-3 py-2">{u.full_name || "—"}</td>
+                  <td className="px-3 py-2 text-xs">
+                    {u.email?.endsWith("@employee.local") ? (
+                      <span className="text-brand-muted italic">no email set</span>
+                    ) : (
+                      u.email || "—"
+                    )}
+                  </td>
                   <td className="px-3 py-2 font-mono text-xs">{u.emp_code || "—"}</td>
                   <td className="px-3 py-2">
                     <span
@@ -271,6 +307,9 @@ export default function EmployeesAdminPage() {
                   <td className="px-3 py-2 text-xs text-brand-muted">{fmtDate(u.last_login_at)}</td>
                   <td className="px-3 py-2">
                     <div className="flex items-center justify-end gap-1">
+                      <button onClick={() => openEdit(u)} disabled={busy} title="Edit email / name" className="rounded p-1.5 text-brand-muted hover:bg-gray-100 hover:text-brand-dark">
+                        <Pencil size={15} />
+                      </button>
                       <button onClick={() => onReset(u)} disabled={busy} title="Reset password" className="rounded p-1.5 text-brand-muted hover:bg-gray-100 hover:text-brand-dark">
                         <KeyRound size={15} />
                       </button>
@@ -292,6 +331,53 @@ export default function EmployeesAdminPage() {
       <div className="flex items-center gap-2 text-[11px] text-brand-muted">
         <ShieldCheck size={13} /> Employees log in at the same sign-in page using their username and the temporary password, then set their own password.
       </div>
+
+      {/* Edit employee modal */}
+      {editUser && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4" onClick={() => setEditUser(null)}>
+          <div className="w-full max-w-md rounded-xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between border-b border-brand-border px-5 py-3">
+              <div className="text-sm font-semibold text-brand-dark">
+                Edit {editUser.username}
+              </div>
+              <button onClick={() => setEditUser(null)} className="rounded p-1 text-brand-muted hover:bg-gray-100">
+                <X size={16} />
+              </button>
+            </div>
+            <div className="space-y-3 p-5">
+              <div>
+                <label className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-brand-muted">Email</label>
+                <input
+                  type="email"
+                  className="input w-full"
+                  placeholder="name@company.com"
+                  value={editEmail}
+                  onChange={(e) => setEditEmail(e.target.value)}
+                />
+                <p className="mt-1 text-[10px] text-brand-muted">
+                  Leave blank to keep the current placeholder. Employees still sign in with their username.
+                </p>
+              </div>
+              <div>
+                <label className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-brand-muted">Full name</label>
+                <input
+                  type="text"
+                  className="input w-full"
+                  placeholder="Full name"
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 border-t border-brand-border px-5 py-3">
+              <button onClick={() => setEditUser(null)} className="btn-ghost text-xs">Cancel</button>
+              <button onClick={onSaveEdit} disabled={busy} className="btn-primary text-xs">
+                {busy ? <Loader2 size={14} className="animate-spin" /> : null} Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
