@@ -458,6 +458,12 @@ export default function TasksPage() {
                             <span className="text-[11px] text-brand-muted truncate">{task.assigned_to}</span>
                           </div>
                         )}
+                        <div className="mt-2 h-1.5 w-full rounded-full bg-gray-100">
+                          <div
+                            className="h-1.5 rounded-full bg-emerald-500"
+                            style={{ width: `${task.progress_percent ?? 0}%` }}
+                          />
+                        </div>
                       </button>
                     );
                   })}
@@ -562,9 +568,14 @@ function TaskDrawer({
   const [comments, setComments] = useState<TaskComment[]>([]);
   const [activity, setActivity] = useState<TaskActivity[]>([]);
   const [newComment, setNewComment] = useState("");
-  const [tab, setTab] = useState<"comments" | "activity">("comments");
   const [busy, setBusy] = useState(false);
+  const [summarizing, setSummarizing] = useState(false);
   const [watcherIds, setWatcherIds] = useState<number[]>(task.watchers ?? []);
+
+  // Robustness fix #1: keep watcherIds in sync if parent refreshes the task object
+  useEffect(() => {
+    setWatcherIds(task.watchers ?? []);
+  }, [task.watchers]);
 
   const load = useCallback(async () => {
     try {
@@ -678,6 +689,53 @@ function TaskDrawer({
             />
           </div>
 
+          <div>
+            <label className="text-[11px] font-medium text-brand-muted">
+              Progress: {task.progress_percent ?? 0}%
+            </label>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              step={5}
+              value={task.progress_percent ?? 0}
+              onChange={(e) => patch({ progress_percent: Number(e.target.value) })}
+              className="w-full mt-1"
+            />
+          </div>
+
+          {/* AI Summary panel */}
+          <div className="rounded-md border border-brand-border bg-slate-50 p-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-brand-dark">AI Summary</span>
+              <button
+                className="text-xs text-brand-primary disabled:opacity-50"
+                disabled={summarizing}
+                onClick={async () => {
+                  setSummarizing(true);
+                  try {
+                    const updated = await api.generateTaskAiSummary(task.id);
+                    await onChanged(updated);
+                  } catch {
+                    alert("AI summary unavailable (LLM may be disabled).");
+                  } finally {
+                    setSummarizing(false);
+                  }
+                }}
+              >
+                {summarizing ? "Generating…" : task.ai_summary ? "Regenerate" : "Summarize"}
+              </button>
+            </div>
+            <p className="mt-1 text-xs text-brand-muted">
+              {task.ai_summary || "No summary yet."}
+            </p>
+            {task.ai_summary_at && (
+              <p className="mt-1 text-[10px] text-brand-muted">
+                by {task.ai_summary_by} · {fmtDateTime(task.ai_summary_at)}
+              </p>
+            )}
+          </div>
+
           {task.description && (
             <div>
               <div className="text-[11px] text-brand-muted mb-1">Description</div>
@@ -718,71 +776,82 @@ function TaskDrawer({
             <ArrowUpCircle size={14} /> Escalate (L{(task.escalation_level ?? 0) + 1})
           </button>
 
-          {/* Tabs */}
+          {/* Unified timeline */}
           <div className="border-t border-brand-border pt-3">
-            <div className="flex gap-2 mb-2">
-              <button
-                onClick={() => setTab("comments")}
-                className={`text-xs px-2.5 py-1 rounded flex items-center gap-1 ${tab === "comments" ? "bg-brand-dark text-white" : "bg-gray-100"}`}
-              >
-                <MessageSquare size={12} /> Comments ({comments.length})
-              </button>
-              <button
-                onClick={() => setTab("activity")}
-                className={`text-xs px-2.5 py-1 rounded flex items-center gap-1 ${tab === "activity" ? "bg-brand-dark text-white" : "bg-gray-100"}`}
-              >
-                <History size={12} /> Activity ({activity.length})
-              </button>
+            <div className="flex items-center gap-1.5 mb-3">
+              <MessageSquare size={12} className="text-brand-muted" />
+              <History size={12} className="text-brand-muted" />
+              <span className="text-xs font-semibold text-brand-muted">
+                Activity &amp; Comments ({comments.length + activity.length})
+              </span>
             </div>
 
-            {tab === "comments" ? (
-              <div className="space-y-2">
-                {comments.map((c) => (
-                  <div key={c.id} className="rounded-lg border border-brand-border p-2">
-                    <div className="flex items-center justify-between text-[11px] text-brand-muted">
-                      <span className="font-medium text-brand-dark">{c.created_by || "system"}</span>
-                      <span>{fmtDateTime(c.created_at)}</span>
-                    </div>
-                    <p className="text-sm mt-1 whitespace-pre-wrap">{c.comment}</p>
-                  </div>
-                ))}
-                {comments.length === 0 && <div className="text-xs text-brand-muted">No comments yet.</div>}
-                <div className="flex gap-2 pt-1">
-                  <input
-                    type="text"
-                    value={newComment}
-                    onChange={(e) => setNewComment(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && submitComment()}
-                    placeholder="Add a comment…"
-                    className="border border-brand-border rounded px-2 py-1.5 text-sm flex-1"
-                  />
-                  <button
-                    onClick={submitComment}
-                    disabled={busy || !newComment.trim()}
-                    className="text-xs px-3 py-1.5 rounded bg-brand-dark text-white disabled:opacity-50"
-                  >
-                    Send
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {activity.map((a) => (
-                  <div key={a.id} className="flex gap-2 text-xs">
-                    <div className="h-2 w-2 rounded-full bg-brand-dark mt-1.5 flex-shrink-0" />
-                    <div>
-                      <div className="font-medium">{a.activity_type.replace(/_/g, " ")}</div>
-                      <div className="text-brand-muted">
-                        {a.old_value ? `${a.old_value} → ` : ""}
-                        {a.new_value || ""}
+            {(() => {
+              type FeedItem = { kind: "comment" | "activity"; id: number; at: string; who: string | null | undefined; text: string };
+              const feed: FeedItem[] = [
+                ...comments.map((c) => ({
+                  kind: "comment" as const,
+                  id: c.id,
+                  at: c.created_at,
+                  who: c.created_by,
+                  text: c.comment,
+                })),
+                ...activity.map((a) => ({
+                  kind: "activity" as const,
+                  id: a.id,
+                  at: a.created_at,
+                  who: a.created_by,
+                  text: `${a.activity_type.replace(/_/g, " ").toLowerCase()}${
+                    a.new_value ? `: ${a.old_value ? `${a.old_value} → ` : ""}${a.new_value}` : ""
+                  }`,
+                })),
+              ].sort((x, y) => +new Date(y.at) - +new Date(x.at));
+
+              return (
+                <div className="space-y-2">
+                  {feed.length === 0 && (
+                    <div className="text-xs text-brand-muted">No activity yet.</div>
+                  )}
+                  {feed.map((item) =>
+                    item.kind === "comment" ? (
+                      <div key={`c-${item.id}`} className="rounded-lg border border-brand-border p-2">
+                        <div className="flex items-center justify-between text-[11px] text-brand-muted">
+                          <span className="font-medium text-brand-dark">{item.who || "system"}</span>
+                          <span>{fmtDateTime(item.at)}</span>
+                        </div>
+                        <p className="text-sm mt-1 whitespace-pre-wrap">{item.text}</p>
                       </div>
-                      <div className="text-[10px] text-brand-muted">{fmtDateTime(a.created_at)}</div>
-                    </div>
+                    ) : (
+                      <div key={`a-${item.id}`} className="flex gap-2 text-xs">
+                        <div className="h-2 w-2 rounded-full bg-brand-dark mt-1.5 flex-shrink-0" />
+                        <div>
+                          <span className="text-brand-muted">{item.text}</span>
+                          {item.who && <span className="text-brand-muted"> · {item.who}</span>}
+                          <div className="text-[10px] text-brand-muted">{fmtDateTime(item.at)}</div>
+                        </div>
+                      </div>
+                    )
+                  )}
+                  <div className="flex gap-2 pt-1">
+                    <input
+                      type="text"
+                      value={newComment}
+                      onChange={(e) => setNewComment(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && submitComment()}
+                      placeholder="Add a comment…"
+                      className="border border-brand-border rounded px-2 py-1.5 text-sm flex-1"
+                    />
+                    <button
+                      onClick={submitComment}
+                      disabled={busy || !newComment.trim()}
+                      className="text-xs px-3 py-1.5 rounded bg-brand-dark text-white disabled:opacity-50"
+                    >
+                      Send
+                    </button>
                   </div>
-                ))}
-                {activity.length === 0 && <div className="text-xs text-brand-muted">No activity yet.</div>}
-              </div>
-            )}
+                </div>
+              );
+            })()}
           </div>
         </div>
       </div>
