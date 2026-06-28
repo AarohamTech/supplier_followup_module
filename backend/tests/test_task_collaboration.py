@@ -89,5 +89,39 @@ class TaskActivityTests(unittest.TestCase):
             self.assertLessEqual(len(entry.new_value), 500)
 
 
+class TaskCollabExtrasTests(unittest.TestCase):
+    def test_progress_change_logged_with_actor_id(self) -> None:
+        with _temp_db() as db:
+            task = _make_task(db)
+            entries = collab.record_task_changes(
+                db, task, {"progress_percent": (0, 50)}, created_by="ops", created_by_id=9
+            )
+            db.commit()
+            self.assertEqual(len(entries), 1)
+            self.assertEqual(entries[0].activity_type, "PROGRESS_CHANGED")
+            self.assertEqual(entries[0].created_by_id, 9)
+
+    def test_comment_stores_actor_id(self) -> None:
+        with _temp_db() as db:
+            task = _make_task(db)
+            c = collab.add_comment(
+                db, task_id=task.id, comment="hi", created_by="ops", created_by_id=9
+            )
+            self.assertEqual(c.created_by_id, 9)
+
+    def test_build_transcript_includes_desc_comments_activity(self) -> None:
+        with _temp_db() as db:
+            task = _make_task(db)
+            task.description = "Chase the PO"
+            db.commit()
+            collab.add_comment(db, task_id=task.id, comment="Called supplier", created_by="ops")
+            collab.record_task_changes(db, task, {"status": ("TODO", "IN_PROGRESS")})
+            db.commit()
+            text = collab.build_transcript(db, task)
+            self.assertIn("Chase the PO", text)
+            self.assertIn("Called supplier", text)
+            self.assertIn("IN_PROGRESS", text)
+
+
 if __name__ == "__main__":
     unittest.main()

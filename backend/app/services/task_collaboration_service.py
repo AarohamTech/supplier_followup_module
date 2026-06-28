@@ -19,6 +19,7 @@ def log_activity(
     old_value: Any = None,
     new_value: Any = None,
     created_by: str | None = None,
+    created_by_id: int | None = None,
     commit: bool = False,
 ) -> TaskActivityLog:
     entry = TaskActivityLog(
@@ -27,6 +28,7 @@ def log_activity(
         old_value=None if old_value is None else str(old_value)[:500],
         new_value=None if new_value is None else str(new_value)[:500],
         created_by=created_by,
+        created_by_id=created_by_id,
     )
     db.add(entry)
     if commit:
@@ -41,6 +43,7 @@ def record_task_changes(
     changes: dict[str, Any],
     *,
     created_by: str | None = None,
+    created_by_id: int | None = None,
 ) -> list[TaskActivityLog]:
     """Translate a dict of changed fields into activity-log rows.
 
@@ -49,8 +52,10 @@ def record_task_changes(
     field_map = {
         "status": "STATUS_CHANGED",
         "assigned_to": "ASSIGNEE_CHANGED",
+        "assigned_to_user_id": "ASSIGNEE_CHANGED",
         "priority": "PRIORITY_CHANGED",
         "due_date": "DUE_DATE_CHANGED",
+        "progress_percent": "PROGRESS_CHANGED",
         "escalation_level": "ESCALATED",
     }
     entries: list[TaskActivityLog] = []
@@ -66,6 +71,7 @@ def record_task_changes(
                 old_value=old,
                 new_value=new,
                 created_by=created_by,
+                created_by_id=created_by_id,
             )
         )
     return entries
@@ -77,12 +83,15 @@ def add_comment(
     task_id: int,
     comment: str,
     created_by: str | None = None,
+    created_by_id: int | None = None,
     commit: bool = True,
 ) -> TaskComment:
     task = db.get(CommunicationTask, task_id)
     if task is None:
         raise ValueError("Task not found")
-    row = TaskComment(task_id=task_id, comment=comment, created_by=created_by)
+    row = TaskComment(
+        task_id=task_id, comment=comment, created_by=created_by, created_by_id=created_by_id
+    )
     db.add(row)
     db.flush()
     task.comments_count = (task.comments_count or 0) + 1
@@ -92,6 +101,7 @@ def add_comment(
         activity_type="COMMENT_ADDED",
         new_value=comment[:120],
         created_by=created_by,
+        created_by_id=created_by_id,
     )
     if commit:
         db.commit()
@@ -118,3 +128,19 @@ def list_activity(db: Session, task_id: int, limit: int = 100) -> list[TaskActiv
             .limit(limit)
         ).all()
     )
+
+
+def build_transcript(db: Session, task: CommunicationTask) -> str:
+    """Flatten a task's description + comments + activity into a transcript
+    suitable for AI summarization (oldest → newest)."""
+    lines: list[str] = [f"Task: {task.title}"]
+    if task.description:
+        lines.append(f"Description: {task.description}")
+    for c in list_comments(db, task.id):
+        who = c.created_by or "unknown"
+        lines.append(f"[comment] {who}: {c.comment}")
+    activity = list(reversed(list_activity(db, task.id)))  # list_activity is desc
+    for a in activity:
+        change = f"{a.old_value or '—'} -> {a.new_value or '—'}"
+        lines.append(f"[{a.activity_type}] {a.created_by or 'system'}: {change}")
+    return "\n".join(lines)
