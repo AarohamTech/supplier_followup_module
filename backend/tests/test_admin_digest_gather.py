@@ -1,6 +1,7 @@
 import unittest
 from datetime import datetime
 from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 
 from app.services import admin_digest_service as svc
 
@@ -46,3 +47,17 @@ class GatherFormatTests(unittest.TestCase):
         self.assertEqual(counts["signals"]["BLACK"], 1)
         self.assertEqual(counts["overdue"], 3)
         self.assertEqual(counts["new_replies"], 5)
+
+    def test_gather_counts_overdue_is_strictly_past_not_due_today(self):
+        # due today (not overdue), strictly past (overdue), future (not overdue)
+        active = [rec(supplier_po_no="DUE", shipment_date=datetime(2026, 6, 27)),
+                  rec(supplier_po_no="PAST", shipment_date=datetime(2026, 6, 26)),
+                  rec(supplier_po_no="FUTURE", shipment_date=datetime(2026, 6, 28))]
+        db = MagicMock()
+        db.scalars.return_value.all.return_value = active
+        db.scalar.return_value = 0
+        with patch.object(svc, "datetime") as mock_dt:
+            mock_dt.utcnow.return_value = TODAY
+            counts = svc._gather_counts(db)
+        # only the strictly-past record counts; due-today is excluded
+        self.assertEqual(counts["overdue"], 1)

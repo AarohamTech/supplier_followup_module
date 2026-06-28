@@ -10,7 +10,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import Any
 
-from sqlalchemy import case, func, or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from ..models.communication_message import CommunicationMessage
@@ -81,7 +81,7 @@ def format_risk(rows) -> list[dict]:
 def _gather_counts(db: Session) -> dict:
     today = datetime.utcnow()
     active = list(db.scalars(select(ProcurementRecord)).all())
-    overdue = sum(1 for r in active if r.shipment_date and r.shipment_date.date() <= today.date())
+    overdue = sum(1 for r in active if r.shipment_date and r.shipment_date.date() < today.date())
     critical = sum(1 for r in active
                    if r.signal == "BLACK" or r.escalation_level in CRITICAL_ESCALATIONS)
     since = today - timedelta(hours=24)
