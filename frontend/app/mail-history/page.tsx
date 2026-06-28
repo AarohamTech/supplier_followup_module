@@ -14,6 +14,7 @@ import type {
   CommunicationTaskCreate,
   PoFollowupMaterial,
   SupplierMaterialCommitment,
+  TaskAssignee,
   TaskPriority,
   TaskSignal,
   TaskStatus,
@@ -301,6 +302,9 @@ export default function Page() {
   const [agentActions, setAgentActions] = useState<
     Array<{ type: "draft" | "subscription"; message_id?: number; subscription_id?: number; recipient?: string; subject?: string; kind?: string; schedule?: string | null }>
   >([]);
+  const [mentionList, setMentionList] = useState<TaskAssignee[]>([]);
+  const [mentionIdx, setMentionIdx] = useState(0);
+  const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const threadEndRef = useRef<HTMLDivElement | null>(null);
   const [assignOpen, setAssignOpen] = useState(false);
   const [assignSeed, setAssignSeed] = useState<Partial<CommunicationTaskCreate>>({});
@@ -308,6 +312,34 @@ export default function Page() {
   const [commitments, setCommitments] = useState<SupplierMaterialCommitment[]>([]);
   const [showMaterials, setShowMaterials] = useState(false);
   const selectPoGroup = useStore((s) => s.selectPoGroup);
+
+  // ── @mention autocomplete (reuses the task-assignee directory) ──
+  useEffect(() => {
+    api.listAssignees().then(setMentionList).catch(() => setMentionList([]));
+  }, []);
+
+  // Active "@query" token at the end of the composer (only while typing a /hi command).
+  const mentionQuery = useMemo(() => {
+    if (!/^\/hi\b/i.test(composer)) return null;
+    const m = composer.match(/@([^\s@]*)$/);
+    return m ? m[1] : null;
+  }, [composer]);
+
+  const mentionMatches = useMemo(() => {
+    if (mentionQuery === null) return [];
+    const q = mentionQuery.toLowerCase();
+    return mentionList
+      .filter((a) => !q || a.label.toLowerCase().includes(q))
+      .slice(0, 6);
+  }, [mentionQuery, mentionList]);
+
+  useEffect(() => setMentionIdx(0), [mentionQuery]);
+
+  const insertMention = useCallback((label: string) => {
+    setComposer((prev) => prev.replace(/@([^\s@]*)$/, `@${label} `));
+    // Refocus so the user keeps typing in the textarea.
+    requestAnimationFrame(() => composerRef.current?.focus());
+  }, []);
 
   // ── Derived ──
   const activeSupplier = supplierList.find((s) => s.supplier_name === selectedSupplierName) ?? null;
@@ -1032,9 +1064,39 @@ export default function Page() {
                   ))}
                 </div>
                 <div className="relative">
+                  {/* @mention autocomplete dropdown (above the textarea) */}
+                  {mentionQuery !== null && mentionMatches.length > 0 && (
+                    <div className="absolute bottom-full left-0 z-20 mb-1 w-72 overflow-hidden rounded-lg border border-brand-border bg-white shadow-lg">
+                      <div className="border-b border-brand-border px-2 py-1 text-[10px] uppercase tracking-wide text-brand-muted">
+                        Mention a teammate
+                      </div>
+                      {mentionMatches.map((a, i) => (
+                        <button
+                          key={a.id}
+                          onMouseDown={(e) => { e.preventDefault(); insertMention(a.label); }}
+                          onMouseEnter={() => setMentionIdx(i)}
+                          className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm ${
+                            i === mentionIdx ? "bg-red-50 text-signal-red" : "text-brand-dark hover:bg-gray-50"
+                          }`}
+                        >
+                          <span className="truncate font-medium">{a.label}</span>
+                          <span className="ml-auto shrink-0 text-[10px] uppercase text-brand-muted">{a.type}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
                   <textarea
+                    ref={composerRef}
                     value={composer}
                     onChange={(e) => setComposer(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (mentionQuery !== null && mentionMatches.length > 0) {
+                        if (e.key === "ArrowDown") { e.preventDefault(); setMentionIdx((i) => (i + 1) % mentionMatches.length); return; }
+                        if (e.key === "ArrowUp") { e.preventDefault(); setMentionIdx((i) => (i - 1 + mentionMatches.length) % mentionMatches.length); return; }
+                        if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); insertMention(mentionMatches[mentionIdx].label); return; }
+                        if (e.key === "Escape") { e.preventDefault(); setComposer((prev) => `${prev} `); return; }
+                      }
+                    }}
                     placeholder="Type your message…  (tip: start with /hi to ask the HI agent)"
                     className="h-24 w-full resize-none rounded-lg border border-brand-border bg-gray-50 p-3 pr-28 text-sm outline-none focus:border-signal-red/40 focus:bg-white"
                   />
