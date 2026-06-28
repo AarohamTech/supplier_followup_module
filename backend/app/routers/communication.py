@@ -89,12 +89,12 @@ def create_task(
     data = payload.model_dump()
     if data.get("assigned_to_user_id") is not None:
         try:
-            user, name = assign.resolve_assignee(db, data["assigned_to_user_id"])
+            _, name = assign.resolve_assignee(db, data["assigned_to_user_id"])
         except ValueError as e:
             raise HTTPException(422, str(e))
         data["assigned_to"] = name
         data["assigned_at"] = datetime.utcnow()
-    data.setdefault("assigned_by", assign.display_name(actor))
+    data["assigned_by"] = assign.display_name(actor)
 
     row = CommunicationTask(**data)
     db.add(row)
@@ -138,7 +138,7 @@ def update_task(
     # Resolve a new assignee (FK → denormalized name + timestamp).
     if "assigned_to_user_id" in data and data["assigned_to_user_id"] is not None:
         try:
-            user, name = assign.resolve_assignee(db, data["assigned_to_user_id"])
+            _, name = assign.resolve_assignee(db, data["assigned_to_user_id"])
         except ValueError as e:
             raise HTTPException(422, str(e))
         data["assigned_to"] = name

@@ -73,3 +73,9 @@ class AssigneeTests(unittest.TestCase):
         with _temp_db() as db:
             u = _user(db, username="PRAMOD", role="employee", emp_code="1010")
             self.assertEqual(assign.display_name(u), "PRAMOD")
+
+    def test_resolve_rejects_inactive(self) -> None:
+        with _temp_db() as db:
+            u = _user(db, email="off@x.com", full_name="Off", role="user", is_active=False)
+            with self.assertRaises(ValueError):
+                assign.resolve_assignee(db, u.id)
