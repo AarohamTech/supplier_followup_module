@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from ..core.deps import get_current_staff
 from ..database import get_db
 from ..models.communication_task import (
     TASK_PRIORITIES,
@@ -13,11 +14,13 @@ from ..models.communication_task import (
     TASK_STATUSES,
     CommunicationTask,
 )
+from ..models.user import User
 from ..schemas.communication_task import (
     CommunicationTaskCreate,
     CommunicationTaskOut,
     CommunicationTaskUpdate,
 )
+from ..services import task_assignment_service as assign
 from ..services import task_collaboration_service as collab
 
 router = APIRouter(prefix="/api/communication", tags=["communication"])
@@ -65,15 +68,35 @@ def get_task(task_id: int, db: Session = Depends(get_db)):
     return row
 
 
+@router.get("/assignees")
+def list_assignees(db: Session = Depends(get_db)):
+    """Active staff + employee accounts selectable as task assignees/watchers."""
+    return assign.list_assignees(db)
+
+
 @router.post("/tasks", response_model=CommunicationTaskOut, status_code=201)
-def create_task(payload: CommunicationTaskCreate, db: Session = Depends(get_db)):
+def create_task(
+    payload: CommunicationTaskCreate,
+    db: Session = Depends(get_db),
+    actor: User = Depends(get_current_staff),
+):
     _validate_enum("priority", payload.priority, TASK_PRIORITIES)
     _validate_enum("status", payload.status, TASK_STATUSES)
     _validate_enum("signal", payload.signal, TASK_SIGNALS)
     if payload.task_source:
         _validate_enum("task_source", payload.task_source, TASK_SOURCES)
 
-    row = CommunicationTask(**payload.model_dump())
+    data = payload.model_dump()
+    if data.get("assigned_to_user_id") is not None:
+        try:
+            user, name = assign.resolve_assignee(db, data["assigned_to_user_id"])
+        except ValueError as e:
+            raise HTTPException(422, str(e))
+        data["assigned_to"] = name
+        data["assigned_at"] = datetime.utcnow()
+    data.setdefault("assigned_by", assign.display_name(actor))
+
+    row = CommunicationTask(**data)
     db.add(row)
     db.flush()
     collab.log_activity(
@@ -81,7 +104,8 @@ def create_task(payload: CommunicationTaskCreate, db: Session = Depends(get_db))
         task_id=row.id,
         activity_type="CREATED",
         new_value=row.title,
-        created_by=row.assigned_by,
+        created_by=assign.display_name(actor),
+        created_by_id=actor.id,
     )
     db.commit()
     db.refresh(row)
@@ -93,6 +117,7 @@ def update_task(
     task_id: int,
     payload: CommunicationTaskUpdate,
     db: Session = Depends(get_db),
+    actor: User = Depends(get_current_staff),
 ):
     row = db.get(CommunicationTask, task_id)
     if not row:
@@ -108,7 +133,27 @@ def update_task(
     if "task_source" in data and data["task_source"] is not None:
         _validate_enum("task_source", data["task_source"], TASK_SOURCES)
 
-    tracked = ("status", "assigned_to", "priority", "due_date", "escalation_level")
+    actor_name = assign.display_name(actor)
+
+    # Resolve a new assignee (FK → denormalized name + timestamp).
+    if "assigned_to_user_id" in data and data["assigned_to_user_id"] is not None:
+        try:
+            user, name = assign.resolve_assignee(db, data["assigned_to_user_id"])
+        except ValueError as e:
+            raise HTTPException(422, str(e))
+        data["assigned_to"] = name
+        data["assigned_at"] = datetime.utcnow()
+
+    # Progress convenience rules.
+    if data.get("status") == "DONE":
+        data["progress_percent"] = 100
+    elif data.get("status") == "BACKLOG":
+        data["progress_percent"] = 0
+
+    tracked = (
+        "status", "assigned_to_user_id", "priority", "due_date",
+        "progress_percent", "escalation_level",
+    )
     changes = {
         key: (getattr(row, key), data[key])
         for key in tracked
@@ -124,7 +169,9 @@ def update_task(
         row.closed_at = None
 
     if changes:
-        collab.record_task_changes(db, row, changes)
+        collab.record_task_changes(
+            db, row, changes, created_by=actor_name, created_by_id=actor.id
+        )
 
     db.commit()
     db.refresh(row)
@@ -259,6 +306,7 @@ def add_task_comment(
     task_id: int,
     body: dict = None,  # type: ignore[assignment]
     db: Session = Depends(get_db),
+    actor: User = Depends(get_current_staff),
 ):
     payload = body or {}
     text = (payload.get("comment") or "").strip()
@@ -269,7 +317,8 @@ def add_task_comment(
             db,
             task_id=task_id,
             comment=text,
-            created_by=payload.get("created_by"),
+            created_by=assign.display_name(actor),
+            created_by_id=actor.id,
         )
     except ValueError:
         raise HTTPException(404, "Task not found")

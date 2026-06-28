@@ -31,12 +31,14 @@ class CommunicationTaskBase(BaseModel):
     task_source: TaskSource = "SUPPLIER"
     created_from_mail_id: Optional[int] = None
     assigned_to: Optional[str] = None
+    assigned_to_user_id: Optional[int] = None
     assigned_by: Optional[str] = None
-    watchers: list[str] = Field(default_factory=list)
+    watchers: list[int] = Field(default_factory=list)
     priority: TaskPriority = "P2"
     status: TaskStatus = "TODO"
     signal: TaskSignal = "YELLOW"
     escalation_level: int = 0
+    progress_percent: int = Field(default=0, ge=0, le=100)
     due_date: Optional[datetime] = None
     reminder_at: Optional[datetime] = None
 
@@ -49,7 +51,8 @@ class CommunicationTaskUpdate(BaseModel):
     title: Optional[str] = None
     description: Optional[str] = None
     assigned_to: Optional[str] = None
-    watchers: Optional[list[str]] = None
+    assigned_to_user_id: Optional[int] = None
+    watchers: Optional[list[int]] = None
     priority: Optional[TaskPriority] = None
     status: Optional[TaskStatus] = None
     signal: Optional[TaskSignal] = None
@@ -58,6 +61,7 @@ class CommunicationTaskUpdate(BaseModel):
     escalation_level: Optional[int] = None
     due_date: Optional[datetime] = None
     reminder_at: Optional[datetime] = None
+    progress_percent: Optional[int] = Field(default=None, ge=0, le=100)
 
 
 class CommunicationTaskOut(CommunicationTaskBase):
@@ -67,5 +71,9 @@ class CommunicationTaskOut(CommunicationTaskBase):
     comments_count: int = 0
     attachment_count: int = 0
     closed_at: Optional[datetime] = None
+    assigned_at: Optional[datetime] = None
+    ai_summary: Optional[str] = None
+    ai_summary_at: Optional[datetime] = None
+    ai_summary_by: Optional[str] = None
     created_at: datetime
     updated_at: datetime
