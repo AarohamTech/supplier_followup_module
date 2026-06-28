@@ -44,3 +44,8 @@ class RenderTests(unittest.TestCase):
         html = svc.render_digest_html(DATA, CFG)
         for ch in ("✨", "→", "↗", "🔥"):
             self.assertNotIn(ch, html)
+
+    def test_empty_data_section_omitted(self):
+        data = dict(DATA, critical=[])           # critical enabled in CFG but no data
+        html = svc.render_digest_html(data, CFG)
+        self.assertNotIn("Most critical", html)  # section omitted when data is empty

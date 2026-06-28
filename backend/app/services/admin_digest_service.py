@@ -254,6 +254,8 @@ INK = brand_email.BRAND_INK      # "#1f2937"
 MUTED = brand_email.BRAND_MUTED  # "#6B7280"
 RED = brand_email.BRAND_RED      # "#E11D2E"
 HAIR = brand_email.BRAND_BORDER  # "#ECECEC"
+FAINT = "#9aa0a6"                # column-label gray
+ROW = "#F4F4F5"                  # row-separator gray
 
 _LABEL = (f'font-size:11px;font-weight:700;letter-spacing:1.5px;'
           f'text-transform:uppercase;color:{MUTED};padding-bottom:12px;')
@@ -283,7 +285,7 @@ def _counts_html(c: dict) -> str:
              ("New replies", c["new_replies"], INK)]
     cells = "".join(
         f'<td style="padding:0 16px;border-right:1px solid {HAIR};">'
-        f'<div style="font-size:28px;font-weight:700;color:{color};">{val}</div>'
+        f'<div style="font-size:28px;font-weight:700;color:{color};">{_esc(val)}</div>'
         f'<div style="font-size:12px;color:{MUTED};padding-top:3px;">{_esc(lbl)}</div></td>'
         for lbl, val, color in tiles)
     s = c["signals"]
@@ -300,7 +302,7 @@ def _counts_html(c: dict) -> str:
 def _table(headers: list[tuple[str, str]], rows: list[str]) -> str:
     head = "".join(
         f'<td style="font-size:11px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;'
-        f'color:#9aa0a6;padding:0 0 8px;{align}">{_esc(h)}</td>' for h, align in headers)
+        f'color:{FAINT};padding:0 0 8px;{align}">{_esc(h)}</td>' for h, align in headers)
     return (f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
             f'style="border-collapse:collapse;"><tr style="border-bottom:1px solid {HAIR};">'
             f'{head}</tr>{"".join(rows)}</table>')
@@ -311,7 +313,7 @@ def _critical_html(items: list[dict]) -> str:
     for it in items:
         late = "—" if it["days_late"] is None else it["days_late"]
         rows.append(
-            f'<tr style="border-bottom:1px solid #F4F4F5;">'
+            f'<tr style="border-bottom:1px solid {ROW};">'
             f'<td style="padding:13px 0;font-size:13px;color:{INK};"><b>{_esc(it["po"])}</b><br>'
             f'<span style="font-size:12px;color:{MUTED};">{_esc(it["supplier"])} &middot; {_esc(it["material"])}</span></td>'
             f'<td style="padding:13px 0;font-size:12px;font-weight:700;color:{INK};">{_esc(it["signal"])}</td>'
@@ -328,10 +330,10 @@ def _heated_html(items: list[dict]) -> str:
             f'<div style="padding-bottom:14px;">'
             f'<table role="presentation" width="100%"><tr>'
             f'<td style="font-size:13px;font-weight:700;color:{INK};">{_esc(it["supplier"])} &middot; {_esc(it["po"])}</td>'
-            f'<td style="text-align:right;font-size:12px;color:{RED};font-weight:700;">{_esc(it["tone"])} &middot; {it["score"]}</td>'
+            f'<td style="text-align:right;font-size:12px;color:{RED};font-weight:700;">{_esc(it["tone"])} &middot; {_esc(it["score"])}</td>'
             f'</tr></table>'
             f'<div style="font-size:12px;color:{MUTED};padding-top:5px;line-height:1.55;">'
-            f'{it["msg_count"]} messages, {it["recent_count"]} in the last 24h.'
+            f'{_esc(it["msg_count"])} messages, {_esc(it["recent_count"])} in the last 24h.'
             + (f' &ldquo;<i>{_esc(it["quote"])}</i>&rdquo;' if it.get("quote") else "")
             + '</div></div>')
     return "".join(blocks)
@@ -339,7 +341,7 @@ def _heated_html(items: list[dict]) -> str:
 
 def _risk_html(items: list[dict]) -> str:
     rows = [
-        f'<tr style="border-bottom:1px solid #F4F4F5;">'
+        f'<tr style="border-bottom:1px solid {ROW};">'
         f'<td style="padding:12px 0;font-size:13px;color:{INK};"><b>{_esc(it["po"])}</b> &middot; '
         f'<span style="color:{MUTED};">{_esc(it["supplier"])}</span></td>'
         f'<td style="padding:12px 0;font-size:12px;color:{MUTED};">{_esc(it["reason"])}</td>'
@@ -350,7 +352,7 @@ def _risk_html(items: list[dict]) -> str:
 
 def _overdue_html(items: list[dict]) -> str:
     rows = [
-        f'<tr style="border-bottom:1px solid #F4F4F5;">'
+        f'<tr style="border-bottom:1px solid {ROW};">'
         f'<td style="padding:12px 0;font-size:13px;color:{INK};"><b>{_esc(it["po"])}</b> &middot; '
         f'<span style="color:{MUTED};">{_esc(it["supplier"])}</span></td>'
         f'<td style="padding:12px 0;font-size:12px;font-weight:700;color:{RED};">{_esc(it["shipment"])}</td>'
@@ -366,7 +368,7 @@ def render_digest_html(data: dict, cfg: dict) -> str:
         f'<div style="font-size:22px;font-weight:700;letter-spacing:-.2px;color:{INK};">Harmony Intelligence Summary</div>'
         f'<div style="font-size:13px;color:{MUTED};padding-top:5px;">{_esc(data["generated_at_local"])} &middot; covering the last 24 hours</div></div>'
     ]
-    if sec.get("counts", True):
+    if sec.get("counts", True) and data.get("counts"):
         parts.append(_section("At a glance", _counts_html(data["counts"]), first=True))
     if sec.get("summary", True) and data.get("summary"):
         parts.append(_section("Summary",
