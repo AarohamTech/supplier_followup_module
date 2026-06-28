@@ -23,9 +23,11 @@ import {
 } from "lucide-react";
 import { api } from "@/lib/api";
 import PageHeader from "@/components/layout/PageHeader";
+import { AssigneePicker, WatcherPicker } from "@/components/tasks/AssigneePicker";
 import type {
   CommunicationTask,
   TaskActivity,
+  TaskAssignee,
   TaskComment,
   TaskSource,
   TaskStatus,
@@ -153,6 +155,11 @@ export default function TasksPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [selected, setSelected] = useState<CommunicationTask | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [assignees, setAssignees] = useState<TaskAssignee[]>([]);
+
+  useEffect(() => {
+    api.listAssignees().then(setAssignees).catch(() => setAssignees([]));
+  }, []);
 
   const refresh = useCallback(async () => {
     setBusy(true);
@@ -515,6 +522,7 @@ export default function TasksPage() {
       {selected && (
         <TaskDrawer
           task={selected}
+          assignees={assignees}
           onClose={() => setSelected(null)}
           onChanged={async (t) => {
             setSelected(t);
@@ -526,6 +534,7 @@ export default function TasksPage() {
 
       {showCreate && (
         <CreateTaskModal
+          assignees={assignees}
           onClose={() => setShowCreate(false)}
           onCreated={async () => {
             setShowCreate(false);
@@ -539,11 +548,13 @@ export default function TasksPage() {
 
 function TaskDrawer({
   task,
+  assignees,
   onClose,
   onChanged,
   onMove,
 }: {
   task: CommunicationTask;
+  assignees: TaskAssignee[];
   onClose: () => void;
   onChanged: (t: CommunicationTask) => void | Promise<void>;
   onMove: (t: CommunicationTask, s: TaskStatus) => void | Promise<void>;
@@ -553,6 +564,7 @@ function TaskDrawer({
   const [newComment, setNewComment] = useState("");
   const [tab, setTab] = useState<"comments" | "activity">("comments");
   const [busy, setBusy] = useState(false);
+  const [watcherIds, setWatcherIds] = useState<number[]>(task.watchers ?? []);
 
   const load = useCallback(async () => {
     try {
@@ -646,15 +658,24 @@ function TaskDrawer({
             </div>
             <div>
               <div className="text-[11px] text-brand-muted mb-1">Assignee</div>
-              <input
-                type="text"
-                defaultValue={task.assigned_to || ""}
-                onBlur={(e) => {
-                  if (e.target.value !== (task.assigned_to || "")) patch({ assigned_to: e.target.value });
-                }}
-                className="border border-brand-border rounded px-2 py-1.5 text-sm w-full"
+              <AssigneePicker
+                value={task.assigned_to_user_id ?? null}
+                assignees={assignees}
+                onChange={(id) => patch({ assigned_to_user_id: id })}
               />
             </div>
+          </div>
+
+          <div>
+            <div className="text-[11px] text-brand-muted mb-1">Watchers</div>
+            <WatcherPicker
+              value={watcherIds}
+              assignees={assignees}
+              onChange={(ids) => {
+                setWatcherIds(ids);
+                void patch({ watchers: ids });
+              }}
+            />
           </div>
 
           {task.description && (
@@ -770,9 +791,11 @@ function TaskDrawer({
 }
 
 function CreateTaskModal({
+  assignees,
   onClose,
   onCreated,
 }: {
+  assignees: TaskAssignee[];
   onClose: () => void;
   onCreated: () => void | Promise<void>;
 }) {
@@ -780,7 +803,7 @@ function CreateTaskModal({
   const [description, setDescription] = useState("");
   const [taskSource, setTaskSource] = useState<TaskSource>("INTERNAL");
   const [priority, setPriority] = useState("P2");
-  const [assigned, setAssigned] = useState("");
+  const [assignedToUserId, setAssignedToUserId] = useState<number | null>(null);
   const [supplier, setSupplier] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -798,7 +821,7 @@ function CreateTaskModal({
         description: description || undefined,
         task_source: taskSource,
         priority: priority as CommunicationTask["priority"],
-        assigned_to: assigned || undefined,
+        assigned_to_user_id: assignedToUserId ?? undefined,
         supplier_name: supplier || undefined,
         status: "TODO",
       });
@@ -855,12 +878,11 @@ function CreateTaskModal({
           placeholder="Supplier name (optional)"
           className="border border-brand-border rounded px-2 py-1.5 text-sm w-full"
         />
-        <input
-          type="text"
-          value={assigned}
-          onChange={(e) => setAssigned(e.target.value)}
+        <AssigneePicker
+          value={assignedToUserId}
+          assignees={assignees}
+          onChange={setAssignedToUserId}
           placeholder="Assign to (optional)"
-          className="border border-brand-border rounded px-2 py-1.5 text-sm w-full"
         />
         <div className="flex justify-end gap-2 pt-1">
           <button onClick={onClose} className="text-sm px-3 py-1.5 rounded border border-brand-border">
