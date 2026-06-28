@@ -10,6 +10,7 @@ Defaults fall back to ``settings`` (env vars) when no row is present.
 """
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -109,3 +110,89 @@ def set_followup_intervals(db: Session, values: dict[str, int]) -> dict[str, int
         _set_raw(db, FOLLOWUP_INTERVALS_KEY, existing)
         db.commit()
     return get_followup_intervals(db)
+
+
+ADMIN_DIGEST_KEY = "admin_digest"
+
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+DEFAULT_ADMIN_DIGEST: dict[str, Any] = {
+    "enabled": False,
+    "recipients": [],
+    "send_hour": 9,
+    "timezone": "Asia/Kolkata",
+    "sections": {
+        "counts": True, "summary": True, "critical": True,
+        "heated": True, "risk": True, "overdue": True,
+    },
+    "limits": {"critical": 10, "heated": 5, "risk": 10, "overdue": 15},
+    "last_sent_date": None,
+}
+
+
+def _merge_admin_digest(stored: dict[str, Any]) -> dict[str, Any]:
+    """Merge a stored config dict over defaults, returning a complete config."""
+    return {
+        "enabled": bool(stored.get("enabled", DEFAULT_ADMIN_DIGEST["enabled"])),
+        "recipients": [e for e in stored.get("recipients", []) if isinstance(e, str)],
+        "send_hour": _clamp_int(stored.get("send_hour"), DEFAULT_ADMIN_DIGEST["send_hour"], 0, 23),
+        "timezone": str(stored.get("timezone") or DEFAULT_ADMIN_DIGEST["timezone"]),
+        "sections": {**DEFAULT_ADMIN_DIGEST["sections"], **_bool_map(stored.get("sections"))},
+        "limits": {**DEFAULT_ADMIN_DIGEST["limits"], **_int_map(stored.get("limits"), lo=1, hi=100)},
+        "last_sent_date": stored.get("last_sent_date") or None,
+    }
+
+
+def get_admin_digest(db: Session) -> dict[str, Any]:
+    return _merge_admin_digest(_get_raw(db, ADMIN_DIGEST_KEY) or {})
+
+
+def set_admin_digest(db: Session, values: dict[str, Any]) -> dict[str, Any]:
+    existing = _get_raw(db, ADMIN_DIGEST_KEY) or {}
+    if "enabled" in values:
+        existing["enabled"] = bool(values["enabled"])
+    if "recipients" in values:
+        existing["recipients"] = [
+            e.strip() for e in values["recipients"]
+            if isinstance(e, str) and _EMAIL_RE.match(e.strip())
+        ]
+    if "send_hour" in values:
+        existing["send_hour"] = _clamp_int(values["send_hour"], DEFAULT_ADMIN_DIGEST["send_hour"], 0, 23)
+    if "timezone" in values and values["timezone"]:
+        existing["timezone"] = str(values["timezone"])
+    if "sections" in values:
+        existing["sections"] = {**existing.get("sections", {}), **_bool_map(values["sections"])}
+    if "limits" in values:
+        existing["limits"] = {**existing.get("limits", {}), **_int_map(values["limits"], lo=1, hi=100)}
+    _set_raw(db, ADMIN_DIGEST_KEY, existing)
+    db.commit()
+    return _merge_admin_digest(existing)
+
+
+def mark_admin_digest_sent(db: Session, day_iso: str) -> None:
+    existing = _get_raw(db, ADMIN_DIGEST_KEY) or {}
+    existing["last_sent_date"] = day_iso
+    _set_raw(db, ADMIN_DIGEST_KEY, existing)
+    db.commit()
+
+
+def _clamp_int(raw: Any, default: int, lo: int, hi: int) -> int:
+    try:
+        return max(lo, min(hi, int(raw)))
+    except (TypeError, ValueError):
+        return default
+
+
+def _bool_map(raw: Any) -> dict[str, bool]:
+    return {str(k): bool(v) for k, v in raw.items()} if isinstance(raw, dict) else {}
+
+
+def _int_map(raw: Any, *, lo: int, hi: int) -> dict[str, int]:
+    out: dict[str, int] = {}
+    if isinstance(raw, dict):
+        for k, v in raw.items():
+            try:
+                out[str(k)] = max(lo, min(hi, int(v)))
+            except (TypeError, ValueError):
+                continue
+    return out

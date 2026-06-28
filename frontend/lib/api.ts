@@ -83,6 +83,7 @@ import type {
   EmployeeCreatePayload,
   CrmIngestLog,
   AppNotification,
+  AdminDigestConfig,
 } from "./types";
 import { getToken, setToken, LOGIN_PATH } from "./auth-token";
 
@@ -397,6 +398,21 @@ export const api = {
     http<{ followup_intervals_hours: Record<string, number> }>(
       `/api/settings/followup`,
       { method: "PUT", body: JSON.stringify({ intervals }) },
+    ),
+
+  getAdminDigest: () =>
+    http<{ admin_digest: AdminDigestConfig }>("/api/settings/admin-digest"),
+
+  updateAdminDigest: (values: Partial<AdminDigestConfig>) =>
+    http<{ admin_digest: AdminDigestConfig }>("/api/settings/admin-digest", {
+      method: "PUT",
+      body: JSON.stringify(values),
+    }),
+
+  sendAdminDigestTest: () =>
+    http<{ sent: boolean; recipients: number; reason?: string }>(
+      "/api/settings/admin-digest/test",
+      { method: "POST" },
     ),
 
   listDraftRules: () =>
