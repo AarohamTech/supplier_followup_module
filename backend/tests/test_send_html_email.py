@@ -27,3 +27,12 @@ class SendHtmlEmailTests(unittest.TestCase):
         self.assertEqual(em["Subject"], "Subj")
         self.assertEqual(em["To"], "a@x.com, b@y.com")
         self.assertTrue(em.get_content_type().startswith("multipart"))
+        plain = em.get_body(preferencelist=("plain",))
+        self.assertIsNotNone(plain)
+
+    def test_returns_dict_when_send_raises(self):
+        with patch.object(w, "_config_ready", return_value=(True, "")), \
+             patch.object(w, "_send_one", side_effect=RuntimeError("smtp down")):
+            result = w.send_html_email(["a@x.com"], "S", "<b>x</b>")
+        self.assertFalse(result["sent"])
+        self.assertIn("smtp down", result["reason"])

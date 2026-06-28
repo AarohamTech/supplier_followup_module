@@ -124,7 +124,10 @@ def send_html_email(
     em["Subject"] = subject or "(no subject)"
     em.set_content(text or _html_to_text(html) or "")
     em.add_alternative(html, subtype="html")
-    _send_one(em)
+    try:
+        _send_one(em)
+    except Exception as exc:  # noqa: BLE001
+        return {"sent": False, "recipients": len(recipients), "reason": str(exc)}
     return {"sent": True, "recipients": len(recipients), "reason": ""}
 
 
