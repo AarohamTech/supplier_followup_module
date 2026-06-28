@@ -188,7 +188,10 @@ def map_row(row: dict[str, Any]) -> dict[str, Any]:
         "supplier_date": row.get("PoRefTrnDate"),
         "shipment_date": row.get("ShipmentDate"),
         "lead_time": row.get("LeadTime"),
-        "owner_emp_code": _emp_code(row.get("EmpCode")),
+        # PO owner = the procurement USER who handles it (CRM `UserId`), which
+        # matches the employee master's EMPLOYEE_ID. NOT `EmpCode` (the indenter/
+        # requester — a company-wide code that rarely maps to a portal user).
+        "owner_emp_code": _emp_code(row.get("UserId")),
     }
 
 
