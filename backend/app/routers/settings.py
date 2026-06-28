@@ -30,11 +30,11 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..core.deps import require_manager
+from ..core.deps import get_current_user, require_manager
 from ..database import get_db
 from ..models.mail_template import MailTemplate
 from ..scheduler import apply_scheduler_settings
-from ..services import mail_engine_service, settings_service
+from ..services import admin_digest_service, mail_engine_service, settings_service
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
@@ -117,6 +117,40 @@ def update_followup_intervals(
 ) -> dict:
     updated = settings_service.set_followup_intervals(db, payload.intervals)
     return {"followup_intervals_hours": updated}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Admin digest config
+# ─────────────────────────────────────────────────────────────────────────────
+class AdminDigestUpdate(BaseModel):
+    enabled: bool | None = None
+    recipients: list[str] | None = None
+    send_hour: int | None = None
+    timezone: str | None = None
+    sections: dict[str, bool] | None = None
+    limits: dict[str, int] | None = None
+
+
+@router.get("/admin-digest")
+def get_admin_digest_settings(db: Session = Depends(get_db)) -> dict:
+    return {"admin_digest": settings_service.get_admin_digest(db)}
+
+
+@router.put("/admin-digest", dependencies=_MGR)
+def update_admin_digest_settings(
+    payload: AdminDigestUpdate, db: Session = Depends(get_db)
+) -> dict:
+    values = {k: v for k, v in payload.model_dump().items() if v is not None}
+    return {"admin_digest": settings_service.set_admin_digest(db, values)}
+
+
+@router.post("/admin-digest/test", dependencies=_MGR)
+def send_admin_digest_test(
+    db: Session = Depends(get_db), current_user=Depends(get_current_user)
+) -> dict:
+    if not current_user.email:
+        raise HTTPException(status_code=400, detail="Your account has no email address.")
+    return admin_digest_service.send_test_digest(db, current_user.email)
 
 
 @router.get("/draft-rules")
