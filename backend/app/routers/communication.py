@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -21,6 +22,7 @@ from ..schemas.communication_task import (
     CommunicationTaskUpdate,
 )
 from ..services import ai_service
+from ..services import task_analytics_service as analytics
 from ..services import task_assignment_service as assign
 from ..services import task_collaboration_service as collab
 
@@ -227,6 +229,22 @@ def _task_counts(db: Session) -> dict[str, int]:
 @router.get("/dashboard")
 def dashboard(db: Session = Depends(get_db)):
     return _task_counts(db)
+
+
+@router.get("/analytics")
+def task_analytics_summary(db: Session = Depends(get_db)):
+    return analytics.compute_analytics(db)
+
+
+@router.get("/analytics/export")
+def task_analytics_export(db: Session = Depends(get_db)):
+    data = analytics.export_workbook(db)
+    headers = {"Content-Disposition": 'attachment; filename="task-analytics.xlsx"'}
+    return StreamingResponse(
+        iter([data]),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers=headers,
+    )
 
 
 # Unified task management endpoints under /api/tasks/...
