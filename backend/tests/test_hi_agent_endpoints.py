@@ -9,10 +9,12 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.database import Base
-from app.models import AgentSubscription, CommunicationMessage  # noqa: F401
+from app.models import AgentSubscription, CommunicationMessage, Notification, User  # noqa: F401
 from app.models.communication_message import CommunicationMessage as CM
+from app.models.notification import Notification as Notif
 from app.routers import communication_hub as hub
 from app.services import agent_subscription_service as subs
+from app.services import user_service
 
 
 @contextmanager
@@ -48,6 +50,24 @@ class ConfirmEndpointTests(unittest.TestCase):
             self.assertTrue(out["ok"])
             db.refresh(msg)
             self.assertEqual(msg.status, "SENT")
+
+    def test_confirm_draft_notifies_internal_recipient(self) -> None:
+        with _temp_db() as db:
+            anjali = user_service.create_user(
+                db, email="anjali@co.com", password="x", full_name="Anjali",
+                username="anjali", role="user",
+            )
+            msg = CM(direction="OUTGOING", status="DRAFT", channel="EMAIL",
+                     to_emails=["anjali@co.com"], subject="FYI PO-1", body="see thread",
+                     supplier_po_no="PO-1", mail_type="HI_AGENT_SEND")
+            db.add(msg); db.commit(); db.refresh(msg)
+            with patch("app.workers.mail_send_worker.send_message_now",
+                       return_value={"sent": True}):
+                out = hub._confirm_action(db, action_type="draft", action_id=msg.id)
+            self.assertTrue(out["notified"])
+            notes = db.query(Notif).filter(Notif.user_id == anjali.id).all()
+            self.assertEqual(len(notes), 1)
+            self.assertEqual(notes[0].type, "HI_MESSAGE")
 
     def test_confirm_subscription_activates(self) -> None:
         with _temp_db() as db:
