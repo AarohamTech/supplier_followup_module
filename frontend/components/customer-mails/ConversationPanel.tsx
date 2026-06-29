@@ -43,7 +43,7 @@ function ConversationPanelBase({
   const recipient = mail.from_name || mail.customer_name || mail.from_email || "customer";
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex min-h-0 flex-1 flex-col">
       {/* Header — clean single line */}
       <div className="shrink-0 border-b border-brand-border px-5 py-3">
         <div className="flex items-center gap-2">
@@ -74,7 +74,7 @@ function ConversationPanelBase({
           <button
             type="button"
             onClick={onOpenContext}
-            className="rounded-md p-1.5 text-gray-400 hover:bg-gray-100 hover:text-brand-dark xl:hidden"
+            className="rounded-md p-1.5 text-gray-400 hover:bg-gray-100 hover:text-brand-dark 2xl:hidden"
             title="Procurement context"
           >
             <PanelRightOpen className="h-4 w-4" />
@@ -92,10 +92,10 @@ function ConversationPanelBase({
       </div>
 
       {/* Messages (scrolls) — chat bubbles with breathing room */}
-      <div className="flex-1 space-y-5 overflow-y-auto bg-brand-surface/40 px-6 py-6">
+      <div className="min-h-0 flex-1 space-y-5 overflow-y-auto bg-brand-surface/40 px-4 py-5 sm:px-6">
         {/* Incoming customer mail — left */}
         <div className="flex justify-start">
-          <article className="max-w-[82%] rounded-2xl border border-brand-border bg-white p-4 shadow-sm">
+          <article className="max-w-[90%] rounded-xl border border-brand-border bg-white p-4 lg:max-w-[72ch]">
             <div className="mb-2 flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">
                 <span className="flex h-7 w-7 items-center justify-center rounded-md bg-signal-red text-[11px] font-semibold text-white">
@@ -121,7 +121,7 @@ function ConversationPanelBase({
         {/* Outgoing replies — right */}
         {localReplies.map((reply) => (
           <div key={reply.id} className="flex justify-end">
-            <article className="max-w-[82%] rounded-2xl border border-amber-100 bg-amber-50 p-4 shadow-sm">
+            <article className="max-w-[90%] rounded-xl border border-gray-200 bg-gray-50 p-4 lg:max-w-[72ch]">
               <div className="mb-1.5 flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-semibold text-brand-dark">You replied</span>

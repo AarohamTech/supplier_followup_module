@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { AlertTriangle, Send, X } from "lucide-react";
+import { useEffect, useState } from "react";
+import { AlertTriangle, RefreshCw, Send, X } from "lucide-react";
 
 import { api } from "@/lib/api";
 import { ADVANCE_STAGES, stageMeta } from "@/lib/asn";
@@ -23,6 +23,7 @@ export default function AsnDrawer({
 }) {
   const addEvent = staff ? api.addAsnEvent : api.addPortalAsnEvent;
   const updateAsn = staff ? api.updateAsn : api.updatePortalAsn;
+  const refreshTracking = staff ? api.refreshAsnTracking : api.refreshPortalAsnTracking;
   const meta = stageMeta(asn.status);
   const [stage, setStage] = useState<string>("");
   const [location, setLocation] = useState("");
@@ -30,9 +31,34 @@ export default function AsnDrawer({
   const [alert, setAlert] = useState(false);
   const [alertReason, setAlertReason] = useState("");
   const [busy, setBusy] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const isClosed = asn.status === "DELIVERED" || asn.status === "CANCELLED";
+  // A shipment auto-tracks only when it carries a real courier + tracking number.
+  const trackable = Boolean(asn.courier_code && asn.tracking_no) && !isClosed && asn.status !== "DRAFT";
+
+  // On open, pull fresh courier checkpoints for trackable shipments. The backend
+  // is fail-safe (no courier API / unreachable → ASN returned unchanged).
+  useEffect(() => {
+    if (!trackable) return;
+    let cancelled = false;
+    setRefreshing(true);
+    refreshTracking(asn.id)
+      .then((updated) => {
+        if (!cancelled) onUpdated(updated);
+      })
+      .catch(() => {
+        /* live tracking is best-effort; keep showing existing timeline */
+      })
+      .finally(() => {
+        if (!cancelled) setRefreshing(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [asn.id]);
 
   const advance = async () => {
     if (!stage) {
@@ -150,7 +176,15 @@ export default function AsnDrawer({
 
           {/* Timeline */}
           <div>
-            <div className="mb-2 text-[10px] uppercase tracking-wider text-brand-muted font-semibold">Tracking Timeline</div>
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-[10px] uppercase tracking-wider text-brand-muted font-semibold">Tracking Timeline</span>
+              {trackable && (
+                <span className="flex items-center gap-1 text-[10px] text-brand-muted">
+                  <RefreshCw size={11} className={refreshing ? "animate-spin" : ""} />
+                  {refreshing ? "Checking carrier…" : "Live courier tracking"}
+                </span>
+              )}
+            </div>
             {asn.events.length === 0 ? (
               <div className="text-xs text-brand-muted">No tracking updates yet.</div>
             ) : (

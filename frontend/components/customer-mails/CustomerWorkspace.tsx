@@ -482,7 +482,7 @@ export default function CustomerWorkspace() {
   );
 
   const rightPanel = (
-    <div className="flex h-full flex-col overflow-y-auto">
+    <div className="flex h-full min-h-0 flex-col overflow-y-auto">
       <ProcurementContextPanel
         context={context}
         loading={loadingContext}
@@ -502,7 +502,7 @@ export default function CustomerWorkspace() {
   );
 
   return (
-    <div className="flex h-[calc(100vh-128px)] flex-col">
+    <div className="flex min-h-[calc(100dvh-7rem)] flex-col md:h-[calc(100dvh-7rem)] md:min-h-0">
       <PageHeader
         className="mb-3"
         title="Customer Response Workspace"
@@ -581,7 +581,7 @@ export default function CustomerWorkspace() {
       {/* Workspace grid */}
       <div className="flex min-h-0 flex-1 flex-col gap-3 md:flex-row">
         {/* Left queue */}
-        <aside className="max-h-[60vh] w-full shrink-0 overflow-hidden rounded-xl border border-brand-border bg-white shadow-sm md:max-h-none md:w-80">
+        <aside className="h-[22rem] max-h-[45vh] w-full shrink-0 overflow-hidden rounded-xl border border-brand-border bg-white shadow-sm md:h-auto md:max-h-none md:w-72 xl:w-80">
           <MailQueue
             tabs={QUEUE_TABS}
             activeTab={activeTab}
@@ -597,9 +597,9 @@ export default function CustomerWorkspace() {
         </aside>
 
         {/* Center conversation */}
-        <section className="flex min-w-0 flex-1 overflow-hidden rounded-xl border border-brand-border bg-white shadow-sm">
+        <section className="flex min-h-[32rem] min-w-0 flex-1 overflow-hidden rounded-xl border border-brand-border bg-white shadow-sm md:min-h-0">
           {selected ? (
-            <div className="flex h-full w-full flex-col">
+            <div className="flex h-full min-h-0 w-full flex-col">
               {(agentBusy || agentReply) ? (
                 <div className="m-3 mb-0 rounded-lg border border-signal-red/30 bg-red-50/60 p-3 text-xs">
                   <div className="mb-1 flex items-center justify-between">
@@ -640,7 +640,7 @@ export default function CustomerWorkspace() {
                   )}
                 </div>
               ) : (
-                <div className="m-3 mb-0 rounded-md bg-gray-50 px-3 py-1.5 text-[11px] text-brand-muted">
+                <div className="m-3 mb-0 shrink-0 rounded-md bg-gray-50 px-3 py-1.5 text-[11px] text-brand-muted">
                   Tip: type <span className="font-semibold text-signal-red">/hi</span> in the reply box to ask Harmony Intelligence — e.g. <em>/hi summarize</em>, <em>/hi draft a reply</em>, <em>/hi email @teammate</em>.
                 </div>
               )}
@@ -660,15 +660,15 @@ export default function CustomerWorkspace() {
           )}
         </section>
 
-        {/* Right context (fixed on xl, drawer below) */}
-        <aside className="hidden w-80 shrink-0 overflow-hidden rounded-xl border border-brand-border bg-white shadow-sm xl:block">
+        {/* Right context stays a drawer until there is room for all three columns. */}
+        <aside className="hidden w-80 shrink-0 overflow-hidden rounded-xl border border-brand-border bg-white shadow-sm 2xl:block">
           {rightPanel}
         </aside>
       </div>
 
       {/* Mobile / tablet drawer for context */}
       {drawerOpen && (
-        <div className="fixed inset-0 z-40 xl:hidden">
+        <div className="fixed inset-0 z-40 2xl:hidden">
           <div
             className="absolute inset-0 bg-black/30"
             onClick={closeContext}

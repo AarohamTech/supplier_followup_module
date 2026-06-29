@@ -107,6 +107,76 @@ def _checkpoint(c: dict) -> tuple[str | None, str | None, datetime | None]:
     )
 
 
+def is_trackable(asn: Asn) -> bool:
+    """True when the ASN has a supported courier + tracking number to poll."""
+    courier = (asn.courier_code or "").strip().lower()
+    tracking_no = (asn.tracking_no or "").strip()
+    return bool(courier in SUPPORTED_COURIERS and tracking_no)
+
+
+def poll_one(db: Session, asn: Asn) -> dict[str, Any]:
+    """Fetch + append new checkpoints for a single ASN.
+
+    Fail-safe: never raises. Returns a per-ASN result dict. Skips silently
+    when courier polling is disabled or the ASN is not trackable; both the
+    cron sweep and the on-demand drawer refresh share this one code path.
+    """
+    if not settings.COURIER_API_ENABLED:
+        return {"enabled": False, "trackable": False, "polled": 0, "updated": 0, "errors": 0}
+    if not is_trackable(asn) or asn.status in ("DELIVERED", "CANCELLED", "DRAFT"):
+        return {"enabled": True, "trackable": False, "polled": 0, "updated": 0, "errors": 0}
+
+    courier = (asn.courier_code or "").strip().lower()
+    tracking_no = (asn.tracking_no or "").strip()
+    try:
+        checkpoints = _fetch(courier, tracking_no)
+    except Exception:  # noqa: BLE001
+        log.warning("courier fetch failed asn=%s courier=%s", asn.asn_no, courier, exc_info=True)
+        return {"enabled": True, "trackable": True, "polled": 1, "updated": 0, "errors": 1}
+
+    seen = {
+        (e.occurred_at, (e.location or "").lower(), (e.note or "")[:80])
+        for e in asn.events
+        if e.source == "COURIER_API"
+    }
+    parsed = []
+    for c in checkpoints:
+        loc, detail, when = _checkpoint(c)
+        if not (loc or detail):
+            continue
+        parsed.append((when or datetime.utcnow(), loc, detail))
+    parsed.sort(key=lambda x: x[0])
+
+    updated = errors = 0
+    for when, loc, detail in parsed:
+        key = (when, (loc or "").lower(), (detail or "")[:80])
+        if key in seen:
+            continue
+        seen.add(key)
+        coords = geocode(loc)
+        stage = _forward_stage(_map_stage(detail or ""), asn.status)
+        try:
+            asn_service.add_event(
+                db,
+                asn,
+                stage=stage,
+                location=loc,
+                note=detail,
+                occurred_at=when,
+                created_by="courier-api",
+                lat=coords[0] if coords else None,
+                lng=coords[1] if coords else None,
+                source="COURIER_API",
+            )
+            updated += 1
+        except Exception:  # noqa: BLE001
+            db.rollback()
+            errors += 1
+            log.warning("courier add_event failed asn=%s", asn.asn_no, exc_info=True)
+
+    return {"enabled": True, "trackable": True, "polled": 1, "updated": updated, "errors": errors}
+
+
 def poll_in_transit(db: Session) -> dict[str, Any]:
     """Fetch + append new checkpoints for every trackable in-transit ASN."""
     if not settings.COURIER_API_ENABLED:
@@ -126,55 +196,11 @@ def poll_in_transit(db: Session) -> dict[str, Any]:
 
     polled = updated = errors = 0
     for asn in asns:
-        courier = (asn.courier_code or "").strip().lower()
-        tracking_no = (asn.tracking_no or "").strip()
-        if courier not in SUPPORTED_COURIERS or not tracking_no:
+        if not is_trackable(asn):
             continue
-        polled += 1
-        try:
-            checkpoints = _fetch(courier, tracking_no)
-        except Exception:  # noqa: BLE001
-            errors += 1
-            log.warning("courier fetch failed asn=%s courier=%s", asn.asn_no, courier, exc_info=True)
-            continue
-
-        seen = {
-            (e.occurred_at, (e.location or "").lower(), (e.note or "")[:80])
-            for e in asn.events
-            if e.source == "COURIER_API"
-        }
-        parsed = []
-        for c in checkpoints:
-            loc, detail, when = _checkpoint(c)
-            if not (loc or detail):
-                continue
-            parsed.append((when or datetime.utcnow(), loc, detail))
-        parsed.sort(key=lambda x: x[0])
-
-        for when, loc, detail in parsed:
-            key = (when, (loc or "").lower(), (detail or "")[:80])
-            if key in seen:
-                continue
-            seen.add(key)
-            coords = geocode(loc)
-            stage = _forward_stage(_map_stage(detail or ""), asn.status)
-            try:
-                asn_service.add_event(
-                    db,
-                    asn,
-                    stage=stage,
-                    location=loc,
-                    note=detail,
-                    occurred_at=when,
-                    created_by="courier-api",
-                    lat=coords[0] if coords else None,
-                    lng=coords[1] if coords else None,
-                    source="COURIER_API",
-                )
-                updated += 1
-            except Exception:  # noqa: BLE001
-                db.rollback()
-                errors += 1
-                log.warning("courier add_event failed asn=%s", asn.asn_no, exc_info=True)
+        result = poll_one(db, asn)
+        polled += int(result.get("polled", 0))
+        updated += int(result.get("updated", 0))
+        errors += int(result.get("errors", 0))
 
     return {"enabled": True, "polled": polled, "updated": updated, "errors": errors}
