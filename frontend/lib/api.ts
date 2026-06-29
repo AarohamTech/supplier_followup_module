@@ -788,6 +788,7 @@ export const api = {
     }),
   portalPoTasks: (supplierPoNo: string) =>
     http<PortalTask[]>(`/api/portal/pos/${encodeURIComponent(supplierPoNo)}/tasks`),
+  portalTasks: () => http<PortalTask[]>("/api/portal/tasks"),
   portalPoMessages: (supplierPoNo: string) =>
     http<PortalMessage[]>(`/api/portal/pos/${encodeURIComponent(supplierPoNo)}/messages`),
   sendPortalPoMessage: (supplierPoNo: string, body: string, subject?: string) =>
@@ -835,6 +836,15 @@ export const api = {
     http<PortalMessage>(`/api/eportal/pos/${encodeURIComponent(supplierPoNo)}/messages`, {
       method: "POST",
       body: JSON.stringify({ body, subject }),
+    }),
+  eportalTasks: () => http<PortalTask[]>("/api/eportal/tasks"),
+  eportalUpdateTask: (
+    id: number,
+    patch: { status?: string; progress_percent?: number },
+  ) =>
+    http<PortalTask>(`/api/eportal/tasks/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(patch),
     }),
 
   // ─── Employee login management (admin) ────────────────────────────────

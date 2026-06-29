@@ -87,6 +87,7 @@ class PortalTask(BaseModel):
     status: str
     priority: str
     signal: Optional[str] = None
+    progress_percent: int = 0
     due_date: Optional[datetime] = None
     created_at: datetime
     closed_at: Optional[datetime] = None

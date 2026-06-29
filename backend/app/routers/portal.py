@@ -301,7 +301,7 @@ def submit_commitments(
     db.commit()
     if saved:
         notif.safe(
-            notif.notify_staff, db,
+            notif.notify_po_owners, db,
             type="COMMITMENT_RECEIVED",
             title=f"Commitment received from {name or 'a supplier'}",
             body=f"PO {supplier_po_no}: {saved} material(s) committed",
@@ -352,6 +352,46 @@ def po_tasks(
             status=t.status,
             priority=t.priority,
             signal=t.signal,
+            progress_percent=t.progress_percent,
+            due_date=t.due_date,
+            created_at=t.created_at,
+            closed_at=t.closed_at,
+        )
+        for t in rows
+    ]
+
+
+# ── All tasks for this supplier (read-only Task Manager) ──────────────────────
+@router.get("/tasks", response_model=list[PortalTask])
+def supplier_tasks(
+    user: User = Depends(get_current_supplier),
+    db: Session = Depends(get_db),
+) -> list[PortalTask]:
+    """Every internal task linked to this supplier — view only."""
+    name = _supplier_name(db, user)
+    rows = db.scalars(
+        select(CommunicationTask).where(
+            or_(
+                CommunicationTask.supplier_id == user.supplier_id,
+                func.upper(CommunicationTask.supplier_name) == (name or "").upper(),
+            )
+        )
+    ).all()
+    # Open tasks first, then by due date (undated last).
+    rows = sorted(
+        rows,
+        key=lambda t: (1 if (t.status or "").upper() == "DONE" else 0, t.due_date or datetime.max),
+    )
+    return [
+        PortalTask(
+            id=t.id,
+            title=t.title,
+            description=t.description,
+            material_name=t.material_name,
+            status=t.status,
+            priority=t.priority,
+            signal=t.signal,
+            progress_percent=t.progress_percent,
             due_date=t.due_date,
             created_at=t.created_at,
             closed_at=t.closed_at,
@@ -448,7 +488,7 @@ def post_po_message(
         received_at=datetime.utcnow(),
     )
     notif.safe(
-        notif.notify_staff, db,
+        notif.notify_po_owners, db,
         type="SUPPLIER_MESSAGE",
         title=f"New message from {name or 'a supplier'}",
         body=f"PO {supplier_po_no}: {payload.body.strip()[:140]}",
@@ -519,7 +559,7 @@ def create_asn(
     )
     if asn.status != "DRAFT":
         notif.safe(
-            notif.notify_staff, db,
+            notif.notify_po_owners, db,
             type="ASN_SUBMITTED",
             title=f"New ASN {asn.asn_no} from {name or 'a supplier'}",
             body=f"PO {asn.supplier_po_no} · {len(asn.items)} item(s)",
@@ -572,7 +612,7 @@ def add_event(
     if asn.status == "DELIVERED":
         name = _supplier_name(db, user)
         notif.safe(
-            notif.notify_staff, db,
+            notif.notify_po_owners, db,
             type="ASN_DELIVERED",
             title=f"ASN {asn.asn_no} delivered",
             body=f"PO {asn.supplier_po_no} marked delivered by {name or 'the supplier'}",

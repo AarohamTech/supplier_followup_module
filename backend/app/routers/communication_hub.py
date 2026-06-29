@@ -341,6 +341,7 @@ def list_suppliers(db: Session = Depends(get_db)) -> list[dict[str, Any]]:
 
     result.sort(
         key=lambda s: (
+            -(1 if s.get("unread_inbound") else 0),  # unread (new) suppliers first
             -_SIGNAL_RANK.get(_norm_signal(s["highest_signal"]), 1),
             -(1 if s["last_activity_at"] else 0),
         )
@@ -372,6 +373,21 @@ def _build_supplier_entry(
         )
     ).scalar_one()
 
+    # Unread inbound supplier replies across this supplier's POs — drives the
+    # bold row + dot + "new on top" ordering in the hub.
+    unread_inbound: int = db.execute(
+        select(func.count(CommunicationMessage.id)).where(
+            CommunicationMessage.direction == "INCOMING",
+            CommunicationMessage.read_at.is_(None),
+            or_(
+                func.upper(CommunicationMessage.supplier_name) == upper,
+                (CommunicationMessage.supplier_id == supplier_id)
+                if supplier_id
+                else False,
+            ),
+        )
+    ).scalar_one() or 0
+
     mapping_status = "NO_EMAIL"
     if supplier_id:
         email_row = db.scalar(
@@ -398,6 +414,7 @@ def _build_supplier_entry(
         "mail_count": len(mails),
         "draft_mail_count": draft_count,
         "task_count": open_task_count,
+        "unread_inbound": int(unread_inbound or 0),
         "highest_signal": highest,
         "health_score": _HEALTH.get(highest, 65),
         "mapping_status": mapping_status,
@@ -534,6 +551,7 @@ def _pos_for_supplier(
     rank_dir = {"BLACK": 0, "RED": 1, "YELLOW": 2, "GREEN": 3}
     result.sort(
         key=lambda r: (
+            0 if (r.get("unread_inbound") or 0) > 0 else 1,  # unread (new) POs first
             rank_dir.get(_norm_signal(r["signal"]), 3),
             r.get("shipment_date") or "9999-99-99",
         )

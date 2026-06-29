@@ -1,8 +1,11 @@
 """Create + read in-app notifications. Pure service layer (no FastAPI).
 
 Fan-out helpers target an audience and write one row per recipient user:
-  - notify_staff    → every active internal (non-supplier) user
-  - notify_supplier → every active login for a given supplier_id
+  - notify_staff     → every active internal (non-supplier) user
+  - notify_supplier  → every active login for a given supplier_id
+  - notify_po_owners → only the staff who own a PO (owner_emp_code) plus the
+                       assignees/watchers of its open tasks (falls back to
+                       notify_staff when a PO has no owner at all)
 
 Best-effort by design: notification failures must never break the action that
 triggered them, so callers wrap these in try/except (or use the safe wrappers).
@@ -16,7 +19,9 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from ..models.communication_task import CommunicationTask
 from ..models.notification import Notification
+from ..models.procurement import ProcurementRecord
 from ..models.user import User
 
 log = logging.getLogger(__name__)
@@ -66,6 +71,74 @@ def notify_supplier(db: Session, for_supplier_id: int | None, **fields: Any) -> 
     if for_supplier_id is None:
         return 0
     return notify_users(db, _active_supplier_ids(db, for_supplier_id), **fields)
+
+
+def _po_owner_user_ids(db: Session, supplier_po_no: str) -> list[int]:
+    """Active staff who own a PO: employees whose emp_code matches the PO's
+    owner_emp_code, plus the assignees and watchers of its open tasks."""
+    ids: set[int] = set()
+
+    emp_codes = [
+        c
+        for c in db.scalars(
+            select(ProcurementRecord.owner_emp_code)
+            .where(
+                ProcurementRecord.supplier_po_no == supplier_po_no,
+                ProcurementRecord.owner_emp_code.isnot(None),
+            )
+            .distinct()
+        ).all()
+        if c
+    ]
+    if emp_codes:
+        for uid in db.scalars(
+            select(User.id).where(
+                User.is_active.is_(True), User.emp_code.in_(emp_codes)
+            )
+        ).all():
+            ids.add(uid)
+
+    tasks = db.scalars(
+        select(CommunicationTask).where(
+            CommunicationTask.supplier_po_no == supplier_po_no,
+            CommunicationTask.status != "DONE",
+        )
+    ).all()
+    for t in tasks:
+        if t.assigned_to_user_id:
+            ids.add(t.assigned_to_user_id)
+        for w in t.watchers or []:
+            try:
+                ids.add(int(w))
+            except (TypeError, ValueError):
+                continue
+
+    return list(ids)
+
+
+def notify_po_owners(
+    db: Session,
+    *,
+    supplier_po_no: str | None,
+    exclude_user_id: int | None = None,
+    **fields: Any,
+) -> int:
+    """Notify only the staff responsible for a PO. Falls back to every active
+    staff member when the PO has no resolvable owner, so a notification is never
+    silently dropped. `supplier_po_no` selects the audience; any `supplier_id=`
+    in **fields is the notification's own context column.
+    """
+    if supplier_po_no:
+        fields.setdefault("supplier_po_no", supplier_po_no)  # keep it on the row
+    ids = _po_owner_user_ids(db, supplier_po_no) if supplier_po_no else []
+    had_owners = bool(ids)
+    if exclude_user_id is not None:
+        ids = [i for i in ids if i != exclude_user_id]
+    if ids:
+        return notify_users(db, ids, **fields)
+    if had_owners:
+        return 0  # the only owner is the actor — no one else to notify
+    return notify_staff(db, exclude_user_id=exclude_user_id, **fields)  # orphan PO
 
 
 def safe(fn, *args, **kwargs) -> int:

@@ -236,7 +236,10 @@ def _col_values(payload: dict[str, Any]) -> dict[str, Any]:
         "ai_required": rule.ai_required,
         "mail_status": "NOT_SENT",
         "followup_count": 0,
-        "next_followup_date": now + timedelta(hours=24),
+        # Due now so the first message (green release / yellow / red day-1) fires
+        # as soon as the PO is ingested; later follow-ups are rescheduled by the
+        # follow-up engine after each send.
+        "next_followup_date": now,
         "red_since": now if sig == "RED" else None,
     }
 
@@ -350,6 +353,13 @@ def _bulk_upsert(db: Session, raw_rows: list[dict[str, Any]]) -> tuple[int, int,
                     (sig == "RED", func.coalesce(tbl.c.red_since, func.now())),
                     else_=None,
                 ),
+                # On a signal-tier change, become due now so the new-tier message
+                # (e.g. yellow → red day-1) fires immediately; otherwise keep the
+                # existing schedule so unchanged POs aren't re-chased.
+                "next_followup_date": case(
+                    (sig != tbl.c.signal, func.now()),
+                    else_=tbl.c.next_followup_date,
+                ),
                 "updated_at": func.now(),
             },
         )
@@ -389,6 +399,28 @@ def _log_run(**fields: Any) -> None:
         session.close()
 
 
+def _auto_send_after_ingest(db: Session) -> None:
+    """Queue the green/yellow/red follow-ups now due and send the ready ones.
+
+    Best-effort: any failure here is logged and swallowed so it never affects the
+    ingest result. The queue step self-guards on ``AUTO_PO_FOLLOWUP_ENABLED`` and
+    skips POs with no active email mapping, so it is safe to call unconditionally.
+    """
+    # Lazy imports avoid any import-time cycle between ingest / mail services.
+    from .po_followup_mail_service import queue_due_po_followups
+    from ..workers.mail_send_worker import send_ready_messages
+
+    try:
+        queue_due_po_followups(db)
+    except Exception:  # noqa: BLE001
+        log.exception("[crm] auto follow-up queue failed (ignored)")
+    if getattr(settings, "SMTP_ENABLED", False):
+        try:
+            send_ready_messages()
+        except Exception:  # noqa: BLE001
+            log.exception("[crm] auto follow-up send failed (ignored)")
+
+
 def poll_and_ingest(db: Session, trigger: str = "auto") -> dict[str, Any]:
     """Fetch the desk feed, keep generated POs, and bulk-upsert them. Failure-safe.
 
@@ -423,6 +455,12 @@ def poll_and_ingest(db: Session, trigger: str = "auto") -> dict[str, Any]:
         created=created, updated=updated, skipped=skipped, errors=0,
         duration_ms=duration_ms,
     )
+
+    # Contact suppliers as soon as their data lands: queue + send the signal-based
+    # follow-ups for the POs that just changed, rather than waiting for the
+    # separate follow-up cron. Best-effort — never breaks the ingest.
+    if created or updated:
+        _auto_send_after_ingest(db)
 
     result = {
         "ok": True,
