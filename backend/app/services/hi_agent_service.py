@@ -17,7 +17,8 @@ log = logging.getLogger(__name__)
 
 HI_SYSTEM_PROMPT = (
     "You are HI, an assistant embedded in a procurement Communication Hub thread "
-    "for one purchase order. You can ONLY: summarise the thread, list open action "
+    "(either a purchase-order thread with a supplier, or a customer email thread). "
+    "You can ONLY: summarise the thread, list open action "
     "items, explain the PO's risk signal, look up @mentioned people, prepare a "
     "one-time email DRAFT, draft a reply, set up a standing followup that forwards "
     "new messages to an internal teammate, set up a recurring summary for an "
@@ -42,10 +43,15 @@ def run(
     supplier_id: int | None,
     procurement_record_id: int | None,
     supplier_po_no: str | None,
+    customer_mail_id: int | None = None,
+    customer_email: str | None = None,
+    customer_name: str | None = None,
 ) -> dict[str, Any]:
     ctx = tools.ToolContext(
         db=db, user=user, supplier_id=supplier_id,
         procurement_record_id=procurement_record_id, supplier_po_no=supplier_po_no,
+        customer_mail_id=customer_mail_id, customer_email=customer_email,
+        customer_name=customer_name,
     )
     text = (message or "").strip()
 

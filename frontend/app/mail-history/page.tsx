@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import api from "@/lib/api";
 import { useStore } from "@/lib/store";
 import TaskCreateForm from "@/components/tasks/TaskCreateForm";
+import CustomerWorkspace from "@/components/customer-mails/CustomerWorkspace";
 import type {
   CommHubDashboard,
   CommHubMessage,
@@ -556,9 +557,17 @@ export default function Page() {
     }
   }, [loadKpis, loadPos, loadThread, loadTasks, loadCommitments]);
 
+  // Suppliers (PO threads) vs Customers (customer inbox) — one Hub, two sources.
+  const [source, setSource] = useState<"suppliers" | "customers">("suppliers");
   useEffect(() => {
-    void loadAll();
-  }, [loadAll]);
+    if (new URLSearchParams(window.location.search).get("source") === "customers") {
+      setSource("customers");
+    }
+  }, []);
+
+  useEffect(() => {
+    if (source === "suppliers") void loadAll();
+  }, [loadAll, source]);
 
   useEffect(() => {
     const handleMailHistoryUpdated = () => {
@@ -778,6 +787,32 @@ export default function Page() {
 
   const noPo = !activePo || !activeSupplier;
 
+  const sourceToggle = (
+    <div className="inline-flex shrink-0 rounded-lg border border-brand-border bg-gray-50 p-0.5 text-xs font-semibold">
+      <button
+        onClick={() => setSource("suppliers")}
+        className={`rounded-md px-3 py-1.5 transition ${source === "suppliers" ? "bg-white text-signal-red shadow-sm" : "text-brand-muted hover:text-brand-dark"}`}
+      >
+        Suppliers
+      </button>
+      <button
+        onClick={() => setSource("customers")}
+        className={`rounded-md px-3 py-1.5 transition ${source === "customers" ? "bg-white text-signal-red shadow-sm" : "text-brand-muted hover:text-brand-dark"}`}
+      >
+        Customers
+      </button>
+    </div>
+  );
+
+  if (source === "customers") {
+    return (
+      <div>
+        <div className="mb-3">{sourceToggle}</div>
+        <CustomerWorkspace />
+      </div>
+    );
+  }
+
   return (
     <div className="-m-5 flex h-[calc(100vh-65px)] flex-col bg-brand-surface sm:-m-6 lg:-m-8">
       {/* ── Header ───────────────────────────────────────────────────────── */}
@@ -791,6 +826,8 @@ export default function Page() {
             Triage replies, PO risk and next actions in one place.
           </p>
         </div>
+
+        {sourceToggle}
 
         <div className="relative ml-auto w-full min-w-[200px] max-w-sm flex-1">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />

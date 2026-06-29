@@ -27,6 +27,16 @@ import { useDebouncedValue, useRenderCount } from "./hooks";
 import { QUEUE_TABS, formatDate } from "./shared";
 import PageHeader from "@/components/layout/PageHeader";
 
+type AgentAction = {
+  type: "draft" | "subscription";
+  message_id?: number;
+  subscription_id?: number;
+  recipient?: string;
+  subject?: string;
+  kind?: string;
+  schedule?: string | null;
+};
+
 function fmtQty(value: number | null | undefined, uom?: string | null): string | null {
   if (value === null || value === undefined) return null;
   const n = Number(value);
@@ -85,6 +95,11 @@ export default function CustomerWorkspace() {
   const [taskModalOpen, setTaskModalOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+
+  // ── /hi agent (Harmony Intelligence) on the selected customer thread ──────
+  const [agentReply, setAgentReply] = useState<string | null>(null);
+  const [agentActions, setAgentActions] = useState<AgentAction[]>([]);
+  const [agentBusy, setAgentBusy] = useState(false);
 
   // ── Fetch list (debounced search only; tabs group client-side) ───────────
   useEffect(() => {
@@ -264,9 +279,50 @@ export default function CustomerWorkspace() {
   const handleTabChange = useCallback((key: string) => setActiveTab(key), []);
   const handleSearchChange = useCallback((v: string) => setSearchInput(v), []);
 
+  // Ask the HI agent (customer-thread context), surfacing any confirm-gated actions.
+  const runAgent = useCallback(
+    async (message: string) => {
+      if (selectedId == null) return;
+      setAgentBusy(true);
+      setAgentReply(null);
+      setAgentActions([]);
+      try {
+        const res = await api.hubAgent({ message, customer_mail_id: selectedId });
+        setAgentReply(res.reply || "(no response)");
+        setAgentActions(res.pending_actions ?? []);
+      } catch (err) {
+        setAgentReply((err as Error).message);
+      } finally {
+        setAgentBusy(false);
+      }
+    },
+    [selectedId],
+  );
+
+  const confirmAgentAction = useCallback(async (action: AgentAction) => {
+    try {
+      if (action.type === "draft" && action.message_id != null) {
+        await api.hubAgentConfirm({ action_type: "draft", id: action.message_id });
+        setReplyReloadKey((k) => k + 1);
+        setToast("Reply sent.");
+      } else if (action.type === "subscription" && action.subscription_id != null) {
+        await api.hubAgentConfirm({ action_type: "subscription", id: action.subscription_id });
+        setToast("Subscription activated.");
+      }
+      setAgentActions((prev) => prev.filter((a) => a !== action));
+    } catch (err) {
+      setToast((err as Error).message);
+    }
+  }, []);
+
   const handleSend = useCallback(
     (text: string) => {
       if (selectedId == null) return;
+      // "/hi ..." routes to the Harmony Intelligence agent instead of a reply.
+      if (/^\/hi\b/i.test(text)) {
+        void runAgent(text.replace(/^\/hi\b/i, "").trim() || "help");
+        return;
+      }
       const id = selectedId;
       setSending(true);
       api
@@ -288,7 +344,7 @@ export default function CustomerWorkspace() {
         .catch((err) => setToast((err as Error).message))
         .finally(() => setSending(false));
     },
-    [selectedId],
+    [selectedId, runAgent],
   );
 
   const handleCreateTask = useCallback(() => {
@@ -544,6 +600,50 @@ export default function CustomerWorkspace() {
         <section className="flex min-w-0 flex-1 overflow-hidden rounded-xl border border-brand-border bg-white shadow-sm">
           {selected ? (
             <div className="flex h-full w-full flex-col">
+              {(agentBusy || agentReply) ? (
+                <div className="m-3 mb-0 rounded-lg border border-signal-red/30 bg-red-50/60 p-3 text-xs">
+                  <div className="mb-1 flex items-center justify-between">
+                    <span className="inline-flex items-center gap-1 font-semibold text-signal-red">
+                      <Sparkles className="h-3.5 w-3.5" /> Harmony Intelligence
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => { setAgentReply(null); setAgentActions([]); }}
+                      className="rounded p-0.5 text-brand-muted hover:bg-white"
+                      aria-label="Dismiss HI"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                  {agentBusy ? (
+                    <span className="inline-flex items-center gap-1 text-brand-muted">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" /> Thinking…
+                    </span>
+                  ) : (
+                    <p className="whitespace-pre-wrap leading-relaxed text-brand-dark">{agentReply}</p>
+                  )}
+                  {agentActions.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {agentActions.map((a, i) => (
+                        <button
+                          key={i}
+                          type="button"
+                          onClick={() => void confirmAgentAction(a)}
+                          className="inline-flex items-center gap-1 rounded-md bg-signal-red px-2.5 py-1 text-[11px] font-semibold text-white hover:opacity-90"
+                        >
+                          {a.type === "draft"
+                            ? `Send draft${a.recipient ? ` → ${a.recipient}` : ""}`
+                            : `Activate ${a.kind || "subscription"}${a.recipient ? ` → ${a.recipient}` : ""}`}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="m-3 mb-0 rounded-md bg-gray-50 px-3 py-1.5 text-[11px] text-brand-muted">
+                  Tip: type <span className="font-semibold text-signal-red">/hi</span> in the reply box to ask Harmony Intelligence — e.g. <em>/hi summarize</em>, <em>/hi draft a reply</em>, <em>/hi email @teammate</em>.
+                </div>
+              )}
               <ConversationPanel
                 mail={selected}
                 localReplies={selectedReplies}

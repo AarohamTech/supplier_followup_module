@@ -358,6 +358,7 @@ export const api = {
     supplier_id?: number | null;
     procurement_record_id?: number | null;
     supplier_po_no?: string | null;
+    customer_mail_id?: number | null;
   }) =>
     http<{
       reply: string;

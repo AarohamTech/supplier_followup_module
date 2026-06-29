@@ -33,15 +33,53 @@ class ToolContext:
     supplier_id: int | None
     procurement_record_id: int | None
     supplier_po_no: str | None
+    # Customer-inbox context: when set, the thread is a CustomerMail conversation
+    # (no supplier/PO) instead of a supplier PO thread.
+    customer_mail_id: int | None = None
+    customer_email: str | None = None
+    customer_name: str | None = None
     pending_actions: list[dict[str, Any]] = field(default_factory=list)
 
 
 # ── Thread context ───────────────────────────────────────────────────────────
 def gather_thread(
-    db: Session, procurement_record_id: int | None, supplier_po_no: str | None
+    db: Session,
+    procurement_record_id: int | None,
+    supplier_po_no: str | None,
+    customer_mail_id: int | None = None,
 ) -> list[dict[str, Any]]:
-    """Merge MailHistory (legacy) + CommunicationMessage (new) for one PO thread."""
+    """Merge messages for one thread.
+
+    Customer mode (``customer_mail_id`` set): the originating CustomerMail plus
+    any outbound replies linked to it. Supplier mode: MailHistory (legacy) +
+    CommunicationMessage (new) for one PO thread.
+    """
     rows: list[dict[str, Any]] = []
+
+    if customer_mail_id is not None:
+        cmail = db.get(CustomerMail, customer_mail_id)
+        if cmail is not None:
+            rows.append({
+                "direction": "INCOMING",
+                "subject": cmail.subject,
+                "body": cmail.body or "",
+                "created_at": cmail.received_at or cmail.created_at,
+                "who": cmail.customer_name or cmail.from_name or "Customer",
+            })
+        for m in db.scalars(
+            select(CommunicationMessage).where(
+                CommunicationMessage.customer_mail_id == customer_mail_id
+            )
+        ).all():
+            rows.append({
+                "direction": m.direction,
+                "subject": m.subject,
+                "body": m.body or "",
+                "created_at": m.created_at,
+                "who": "Procurement" if m.direction == "OUTGOING" else "Customer",
+            })
+        rows.sort(key=lambda r: r["created_at"] or "")
+        return rows
 
     mh = select(MailHistory)
     if procurement_record_id is not None and supplier_po_no:
@@ -116,7 +154,7 @@ def _po_record(ctx: "ToolContext") -> ProcurementRecord | None:
 
 # ── Read-only tools ──────────────────────────────────────────────────────────
 def tool_read_thread(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
-    rows = gather_thread(ctx.db, ctx.procurement_record_id, ctx.supplier_po_no)
+    rows = gather_thread(ctx.db, ctx.procurement_record_id, ctx.supplier_po_no, ctx.customer_mail_id)
     return {
         "message_count": len(rows),
         "supplier_po_no": ctx.supplier_po_no,
@@ -125,7 +163,7 @@ def tool_read_thread(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
 
 
 def tool_summarize(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
-    rows = gather_thread(ctx.db, ctx.procurement_record_id, ctx.supplier_po_no)
+    rows = gather_thread(ctx.db, ctx.procurement_record_id, ctx.supplier_po_no, ctx.customer_mail_id)
     transcript = build_transcript(rows)
     if not transcript:
         return {"summary": "There are no messages in this thread yet."}
@@ -137,16 +175,17 @@ def tool_summarize(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
     # Deterministic fallback: last inbound + counts.
     incoming = [r for r in rows if r["direction"] == "INCOMING"]
     last = incoming[-1]["body"] if incoming else rows[-1]["body"]
+    where = f"PO {ctx.supplier_po_no}" if ctx.supplier_po_no else "this thread"
     return {
         "summary": (
-            f"{len(rows)} message(s) on PO {ctx.supplier_po_no}. "
+            f"{len(rows)} message(s) on {where}. "
             f"Most recent update: {last.strip()[:240]}"
         )
     }
 
 
 def tool_action_items(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
-    rows = gather_thread(ctx.db, ctx.procurement_record_id, ctx.supplier_po_no)
+    rows = gather_thread(ctx.db, ctx.procurement_record_id, ctx.supplier_po_no, ctx.customer_mail_id)
     transcript = build_transcript(rows)
     if not transcript:
         return {"items": [], "note": "No messages to analyse."}
@@ -293,33 +332,59 @@ def tool_draft_email(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
 
 
 def tool_draft_reply(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
-    """Compose a supplier-reply DRAFT into this thread (confirm-gated, no send)."""
-    rows = gather_thread(ctx.db, ctx.procurement_record_id, ctx.supplier_po_no)
+    """Compose a reply DRAFT into this thread (confirm-gated, no send).
+
+    Customer mode → an outbound reply addressed to the customer; supplier mode →
+    a supplier reply on the PO thread.
+    """
+    rows = gather_thread(ctx.db, ctx.procurement_record_id, ctx.supplier_po_no, ctx.customer_mail_id)
     last_incoming = next(
         (r["body"] for r in reversed(rows) if r["direction"] == "INCOMING"), None
     )
+    incoming_subject = next(
+        (r["subject"] for r in rows if r["direction"] == "INCOMING" and r.get("subject")), None
+    )
     instruction = (args.get("instruction") or "").strip()
+    is_customer = ctx.customer_mail_id is not None
     body = ""
     if ai_service.is_enabled():
         try:
             body = ai_service.suggest_customer_reply(
-                customer_name=None, subject=f"PO {ctx.supplier_po_no}",
-                customer_message=last_incoming, supplier_po_no=ctx.supplier_po_no,
+                customer_name=ctx.customer_name if is_customer else None,
+                subject=(incoming_subject or "your message") if is_customer else f"PO {ctx.supplier_po_no}",
+                customer_message=last_incoming,
+                supplier_po_no=None if is_customer else ctx.supplier_po_no,
                 instruction=instruction or None,
             )
         except Exception:  # noqa: BLE001
             log.exception("suggest_customer_reply failed; using fallback body")
     if not body:
         body = instruction or "Thank you for the update — we will revert shortly."
-    msg = msg_service.create_message(
-        ctx.db, direction="OUTGOING", status="DRAFT",
-        supplier_id=ctx.supplier_id, procurement_record_id=ctx.procurement_record_id,
-        supplier_po_no=ctx.supplier_po_no,
-        subject=f"Re: PO {ctx.supplier_po_no}", body=body,
-        mail_type="HI_AGENT_REPLY", commit=True,
-    )
-    descriptor = {"type": "draft", "message_id": msg.id, "recipient": "Supplier",
-                  "recipient_kind": "supplier", "subject": msg.subject}
+
+    if is_customer:
+        subject = f"Re: {incoming_subject}" if incoming_subject else "Re: your message"
+        msg = msg_service.create_message(
+            ctx.db, direction="OUTGOING", status="DRAFT",
+            customer_mail_id=ctx.customer_mail_id,
+            subject=subject, body=body,
+            receiver_email=ctx.customer_email,
+            to_emails=[ctx.customer_email] if ctx.customer_email else [],
+            mail_type="HI_AGENT_REPLY", commit=True,
+        )
+        recipient_label = ctx.customer_name or "Customer"
+        recipient_kind = "customer"
+    else:
+        msg = msg_service.create_message(
+            ctx.db, direction="OUTGOING", status="DRAFT",
+            supplier_id=ctx.supplier_id, procurement_record_id=ctx.procurement_record_id,
+            supplier_po_no=ctx.supplier_po_no,
+            subject=f"Re: PO {ctx.supplier_po_no}", body=body,
+            mail_type="HI_AGENT_REPLY", commit=True,
+        )
+        recipient_label = "Supplier"
+        recipient_kind = "supplier"
+    descriptor = {"type": "draft", "message_id": msg.id, "recipient": recipient_label,
+                  "recipient_kind": recipient_kind, "subject": msg.subject}
     ctx.pending_actions.append(descriptor)
     return {"drafted": True, "message_id": msg.id, "preview": body[:240],
             "needs_confirmation": True}

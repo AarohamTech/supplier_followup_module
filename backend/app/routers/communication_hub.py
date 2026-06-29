@@ -26,6 +26,7 @@ from ..models.communication_task import (
     CommunicationTask,
 )
 from ..models.communication_message import CommunicationMessage
+from ..models.customer_mail import CustomerMail
 from ..models.mail_history import MailHistory
 from ..models.procurement import ProcurementRecord
 from ..models.supplier import SupplierMaster
@@ -1383,6 +1384,8 @@ class HubAgentIn(BaseModel):
     supplier_id: int | None = None
     procurement_record_id: int | None = None
     supplier_po_no: str | None = None
+    # Customer-inbox thread: when set, /hi runs on a CustomerMail conversation.
+    customer_mail_id: int | None = None
 
 
 class HubAgentConfirmIn(BaseModel):
@@ -1466,11 +1469,22 @@ def run_agent(
     (drafts/subscriptions awaiting confirmation). Never sends anything itself."""
     if not (payload.message or "").strip():
         raise HTTPException(422, "message is required")
+    customer_email = None
+    customer_name = None
+    if payload.customer_mail_id is not None:
+        cmail = db.get(CustomerMail, payload.customer_mail_id)
+        if cmail is None:
+            raise HTTPException(404, "Customer mail not found")
+        customer_email = cmail.from_email
+        customer_name = cmail.customer_name or cmail.from_name
     return hi_agent_service.run(
         db, user=user, message=payload.message,
         supplier_id=payload.supplier_id,
         procurement_record_id=payload.procurement_record_id,
         supplier_po_no=payload.supplier_po_no,
+        customer_mail_id=payload.customer_mail_id,
+        customer_email=customer_email,
+        customer_name=customer_name,
     )
 
 
