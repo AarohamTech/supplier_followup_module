@@ -28,6 +28,8 @@ class PortalPo(BaseModel):
     completed: bool
     asn_count: int
     message_count: int = 0
+    # Unread buyer messages (OUTGOING, not yet read by the supplier) on this PO.
+    unread_inbound: int = 0
     # True when a buyer has escalated this PO (manual or rule-based).
     escalated: bool = False
 

@@ -22,6 +22,10 @@ from app.models import (  # noqa: E402,F401
     User,
 )
 from app.routers import employee_portal, portal  # noqa: E402
+from app.schemas.communication_task import (  # noqa: E402
+    CommunicationTaskCreate,
+    CommunicationTaskUpdate,
+)
 from app.services import notification_service, user_service  # noqa: E402
 
 
@@ -145,38 +149,55 @@ class EmployeeTaskScopeTests(unittest.TestCase):
             titles = {t.title for t in tasks}
             self.assertEqual(titles, {"on owned po", "assigned to me"})
 
-    def test_update_my_task_guarded_to_assignee(self):
+    def test_full_update_scoped_to_owned_po_or_assigned(self):
         with _temp_db() as db:
             emp = self._emp(db)
-            other = self._emp(db, emp_code="EMP2")
             _po(db, po="OWNED", owner="EMP1")
-            mine = CommunicationTask(
-                title="mine", supplier_po_no="OWNED", status="TODO",
-                assigned_to_user_id=emp.id, watchers=[], progress_percent=0)
-            theirs = CommunicationTask(
-                title="theirs", supplier_po_no="OWNED", status="TODO",
-                assigned_to_user_id=other.id, watchers=[])
-            db.add_all([mine, theirs])
+            _po(db, po="FOREIGN", owner="OTHER")
+            on_owned = CommunicationTask(
+                title="on owned", supplier_po_no="OWNED", status="TODO", watchers=[])
+            foreign = CommunicationTask(
+                title="foreign", supplier_po_no="FOREIGN", status="TODO", watchers=[])
+            db.add_all([on_owned, foreign])
             db.commit()
-            db.refresh(mine)
-            db.refresh(theirs)
+            db.refresh(on_owned)
+            db.refresh(foreign)
 
+            # Full field update allowed on a task on the employee's own PO.
             out = employee_portal.update_my_task(
-                mine.id, employee_portal.EmployeeTaskUpdate(status="DONE"), user=emp, db=db)
+                on_owned.id,
+                CommunicationTaskUpdate(status="DONE", priority="P1", signal="RED"),
+                user=emp, db=db)
             self.assertEqual(out.status, "DONE")
+            self.assertEqual(out.priority, "P1")
+            self.assertEqual(out.signal, "RED")
             self.assertEqual(out.progress_percent, 100)
-            db.refresh(mine)
-            self.assertIsNotNone(mine.closed_at)
+            db.refresh(on_owned)
+            self.assertIsNotNone(on_owned.closed_at)
 
-            # Cannot touch a task assigned to someone else.
+            # A task on a PO they don't own and aren't assigned to → 404.
             from fastapi import HTTPException
             with self.assertRaises(HTTPException):
                 employee_portal.update_my_task(
-                    theirs.id, employee_portal.EmployeeTaskUpdate(status="DONE"), user=emp, db=db)
+                    foreign.id, CommunicationTaskUpdate(status="DONE"), user=emp, db=db)
+
+    def test_create_only_on_owned_po(self):
+        from fastapi import HTTPException
+        with _temp_db() as db:
+            emp = self._emp(db)
+            _po(db, po="OWNED", owner="EMP1")
+            t = employee_portal.create_task(
+                CommunicationTaskCreate(title="new", supplier_po_no="OWNED"), user=emp, db=db)
+            self.assertEqual(t.supplier_po_no, "OWNED")
+            self.assertEqual(t.assigned_by, emp.full_name or emp.username or emp.email)
+            # Cannot create on a PO the employee doesn't own.
+            with self.assertRaises(HTTPException):
+                employee_portal.create_task(
+                    CommunicationTaskCreate(title="bad", supplier_po_no="FOREIGN"), user=emp, db=db)
 
 
 class SupplierTaskScopeTests(unittest.TestCase):
-    def test_supplier_tasks_scoped_to_supplier(self):
+    def test_supplier_tasks_scoped_and_sanitized(self):
         with _temp_db() as db:
             s = SupplierMaster(supplier_name="ACME TOOLS", is_active=True)
             db.add(s)
@@ -186,7 +207,8 @@ class SupplierTaskScopeTests(unittest.TestCase):
                 db, email="sup@acme.com", password="x" * 8, role=Role.SUPPLIER, supplier_id=s.id)
             db.add(CommunicationTask(
                 title="for acme", supplier_id=s.id, supplier_name="ACME TOOLS",
-                supplier_po_no="PO-1", status="TODO", watchers=[]))
+                supplier_po_no="PO-1", status="TODO", watchers=[42],
+                assigned_to="Internal Staffer", assigned_to_user_id=7, ai_summary="internal note"))
             db.add(CommunicationTask(
                 title="for beta", supplier_id=999, supplier_name="BETA PARTS",
                 supplier_po_no="PO-2", status="TODO", watchers=[]))
@@ -194,6 +216,51 @@ class SupplierTaskScopeTests(unittest.TestCase):
 
             tasks = portal.supplier_tasks(user=sup, db=db)
             self.assertEqual({t.title for t in tasks}, {"for acme"})
+            # Internal fields must be stripped before reaching a supplier.
+            t = tasks[0]
+            self.assertIsNone(t.assigned_to)
+            self.assertIsNone(t.assigned_to_user_id)
+            self.assertEqual(t.watchers, [])
+            self.assertIsNone(t.ai_summary)
+
+
+class PortalCommsUnreadTests(unittest.TestCase):
+    def test_employee_unread_count_and_mark_read(self):
+        with _temp_db() as db:
+            emp = user_service.create_user(
+                db, email="EMP1@corp.com", password="x" * 8, role=Role.EMPLOYEE,
+                emp_code="EMP1", username="EMP1")
+            _po(db, po="OWNED", owner="EMP1")
+            db.add(CommunicationMessage(
+                direction="INCOMING", status="RECEIVED", channel="EMAIL",
+                supplier_po_no="OWNED", supplier_name="ACME TOOLS", body="supplier reply"))
+            db.commit()
+
+            item = {p.supplier_po_no: p for p in employee_portal.list_pos(user=emp, db=db).items}["OWNED"]
+            self.assertEqual(item.unread_inbound, 1)
+            self.assertEqual(employee_portal.mark_messages_read("OWNED", user=emp, db=db)["marked"], 1)
+            item2 = {p.supplier_po_no: p for p in employee_portal.list_pos(user=emp, db=db).items}["OWNED"]
+            self.assertEqual(item2.unread_inbound, 0)
+
+    def test_supplier_unread_count_and_mark_read(self):
+        with _temp_db() as db:
+            s = SupplierMaster(supplier_name="ACME TOOLS", is_active=True)
+            db.add(s)
+            db.commit()
+            db.refresh(s)
+            sup = user_service.create_user(
+                db, email="sup@acme.com", password="x" * 8, role=Role.SUPPLIER, supplier_id=s.id)
+            _po(db, po="PO-1", name="ACME TOOLS")
+            db.add(CommunicationMessage(
+                direction="OUTGOING", status="SENT", channel="EMAIL",
+                supplier_id=s.id, supplier_name="ACME TOOLS", supplier_po_no="PO-1", body="from buyer"))
+            db.commit()
+
+            item = {p.supplier_po_no: p for p in portal.list_pos(user=sup, db=db).items}["PO-1"]
+            self.assertEqual(item.unread_inbound, 1)
+            self.assertEqual(portal.mark_po_messages_read("PO-1", user=sup, db=db)["marked"], 1)
+            item2 = {p.supplier_po_no: p for p in portal.list_pos(user=sup, db=db).items}["PO-1"]
+            self.assertEqual(item2.unread_inbound, 0)
 
 
 if __name__ == "__main__":

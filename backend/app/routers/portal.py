@@ -25,6 +25,7 @@ from ..models.supplier import SupplierMaster
 from ..models.supplier_material_commitment import SupplierMaterialCommitment
 from ..models.user import User
 from ..schemas.asn import AsnCreate, AsnEventIn, AsnListOut, AsnOut, AsnSummaryOut, AsnUpdate
+from ..schemas.communication_task import CommunicationTaskOut
 from ..schemas.portal import (
     PortalCommitmentSubmit,
     PortalMessage,
@@ -135,17 +136,25 @@ def list_pos(user: User = Depends(get_current_supplier), db: Session = Depends(g
         if po_no:
             asn_counts[po_no] = asn_counts.get(po_no, 0) + 1
 
-    # Visible message count per PO (incoming + sent outgoing).
+    # Visible message count + unread (buyer→supplier) count per PO.
     msg_counts: dict[str, int] = {}
+    unread_counts: dict[str, int] = {}
     msg_rows = db.execute(
-        select(CommunicationMessage.supplier_po_no, CommunicationMessage.direction, CommunicationMessage.status)
-        .where(CommunicationMessage.supplier_id == user.supplier_id)
+        select(
+            CommunicationMessage.supplier_po_no,
+            CommunicationMessage.direction,
+            CommunicationMessage.status,
+            CommunicationMessage.portal_read_at,
+        ).where(CommunicationMessage.supplier_id == user.supplier_id)
     ).all()
-    for po_no, direction, status in msg_rows:
+    for po_no, direction, status, portal_read_at in msg_rows:
         if not po_no:
             continue
         if direction == "INCOMING" or status in _VISIBLE_OUTGOING:
             msg_counts[po_no] = msg_counts.get(po_no, 0) + 1
+        # Unread for the supplier = a buyer (OUTGOING) message they haven't opened.
+        if direction == "OUTGOING" and status in _VISIBLE_OUTGOING and portal_read_at is None:
+            unread_counts[po_no] = unread_counts.get(po_no, 0) + 1
 
     groups: dict[str, dict] = {}
     for r in records:
@@ -178,6 +187,7 @@ def list_pos(user: User = Depends(get_current_supplier), db: Session = Depends(g
             completed=po in completed,
             asn_count=asn_counts.get(po, 0),
             message_count=msg_counts.get(po, 0),
+            unread_inbound=unread_counts.get(po, 0),
             escalated=g["escalated"],
         )
         for po, g in sorted(groups.items())
@@ -362,12 +372,25 @@ def po_tasks(
 
 
 # ── All tasks for this supplier (read-only Task Manager) ──────────────────────
-@router.get("/tasks", response_model=list[PortalTask])
-def supplier_tasks(
-    user: User = Depends(get_current_supplier),
-    db: Session = Depends(get_db),
-) -> list[PortalTask]:
-    """Every internal task linked to this supplier — view only."""
+# Suppliers get the admin-style board but VIEW-ONLY, and internal fields (staff
+# assignee/watchers/AI summary/linked mails) are stripped before they're exposed.
+def _supplier_task_out(t: CommunicationTask) -> CommunicationTaskOut:
+    out = CommunicationTaskOut.model_validate(t)
+    out.assigned_to = None
+    out.assigned_to_user_id = None
+    out.assigned_by = None
+    out.assigned_at = None
+    out.watchers = []
+    out.ai_summary = None
+    out.ai_summary_at = None
+    out.ai_summary_by = None
+    out.linked_mail_id = None
+    out.customer_mail_id = None
+    out.created_from_mail_id = None
+    return out
+
+
+def _supplier_task_rows(db: Session, user: User) -> list[CommunicationTask]:
     name = _supplier_name(db, user)
     rows = db.scalars(
         select(CommunicationTask).where(
@@ -378,26 +401,49 @@ def supplier_tasks(
         )
     ).all()
     # Open tasks first, then by due date (undated last).
-    rows = sorted(
+    return sorted(
         rows,
         key=lambda t: (1 if (t.status or "").upper() == "DONE" else 0, t.due_date or datetime.max),
     )
-    return [
-        PortalTask(
-            id=t.id,
-            title=t.title,
-            description=t.description,
-            material_name=t.material_name,
-            status=t.status,
-            priority=t.priority,
-            signal=t.signal,
-            progress_percent=t.progress_percent,
-            due_date=t.due_date,
-            created_at=t.created_at,
-            closed_at=t.closed_at,
-        )
-        for t in rows
-    ]
+
+
+@router.get("/tasks", response_model=list[CommunicationTaskOut])
+def supplier_tasks(
+    user: User = Depends(get_current_supplier),
+    db: Session = Depends(get_db),
+) -> list[CommunicationTaskOut]:
+    """Every internal task linked to this supplier — view only, internals stripped."""
+    return [_supplier_task_out(t) for t in _supplier_task_rows(db, user)]
+
+
+@router.get("/tasks/dashboard")
+def supplier_tasks_dashboard(
+    user: User = Depends(get_current_supplier),
+    db: Session = Depends(get_db),
+) -> dict:
+    rows = _supplier_task_rows(db, user)
+    now = datetime.utcnow()
+    today = now.date()
+
+    def c(pred) -> int:
+        return sum(1 for t in rows if pred(t))
+
+    return {
+        "total_tasks": len(rows),
+        "todo": c(lambda t: t.status == "TODO"),
+        "in_progress": c(lambda t: t.status == "IN_PROGRESS"),
+        "waiting": c(lambda t: t.status == "WAITING_SUPPLIER"),
+        "done": c(lambda t: t.status == "DONE"),
+        "overdue": c(lambda t: t.status != "DONE" and t.due_date is not None and t.due_date < now),
+        "due_today": c(
+            lambda t: t.status != "DONE" and t.due_date is not None and t.due_date.date() == today
+        ),
+        "critical": c(lambda t: t.signal == "BLACK"),
+        "supplier_tasks": c(lambda t: t.task_source == "SUPPLIER"),
+        "customer_tasks": c(lambda t: t.task_source == "CUSTOMER"),
+        "internal_tasks": c(lambda t: t.task_source == "INTERNAL"),
+        "escalation_tasks": c(lambda t: t.task_source == "ESCALATION"),
+    }
 
 
 # ── PO messaging (shared thread with the staff Communication Hub) ─────────────
@@ -498,6 +544,32 @@ def post_po_message(
         procurement_record_id=rec.id,
     )
     return _to_portal_message(cm, name)
+
+
+@router.post("/pos/{supplier_po_no}/messages/mark-read")
+def mark_po_messages_read(
+    supplier_po_no: str,
+    user: User = Depends(get_current_supplier),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Clear the supplier's unread badge for a PO (marks buyer messages read)."""
+    name = _supplier_name(db, user)
+    if not _po_is_owned(db, name, supplier_po_no):
+        raise HTTPException(404, "PO not found for your account")
+    now = datetime.utcnow()
+    rows = db.scalars(
+        select(CommunicationMessage).where(
+            CommunicationMessage.supplier_id == user.supplier_id,
+            CommunicationMessage.supplier_po_no == supplier_po_no,
+            CommunicationMessage.direction == "OUTGOING",
+            CommunicationMessage.portal_read_at.is_(None),
+        )
+    ).all()
+    for cm in rows:
+        cm.portal_read_at = now
+    if rows:
+        db.commit()
+    return {"marked": len(rows)}
 
 
 # ── ASNs ──────────────────────────────────────────────────────────────────────
