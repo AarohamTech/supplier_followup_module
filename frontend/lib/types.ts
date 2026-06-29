@@ -330,7 +330,8 @@ export interface TaskAssignee {
   id: number;
   label: string;
   role: string;
-  type: "staff" | "employee";
+  type: "staff" | "employee" | "customer";
+  email?: string;
 }
 
 export interface TaskAnalytics {

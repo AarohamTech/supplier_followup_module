@@ -13,7 +13,9 @@ from app.models import (  # noqa: F401
 )
 from app.models.agent_subscription import AgentSubscription as Sub
 from app.models.communication_message import CommunicationMessage as CM
+from app.models.customer_mail import CustomerMail
 from app.services import hi_agent_tools as tools
+from app.services import task_assignment_service as assign
 from app.services import user_service
 
 
@@ -173,6 +175,40 @@ class SubscriptionToolTests(unittest.TestCase):
             self.assertEqual(out["message_count"], 2)
             self.assertIn("error", ex("unknown_tool", {}))
 
+class CustomerMentionTests(unittest.TestCase):
+    def test_resolve_customer_by_email(self) -> None:
+        with _temp_db() as db:
+            db.add(CustomerMail(from_email="buyer@acme-customer.com", customer_name="Acme Buyer"))
+            db.commit()
+            r = tools.resolve_recipient(db, "@buyer@acme-customer.com", allow_supplier=True)
+            self.assertTrue(r["found"])
+            self.assertEqual(r["kind"], "customer")
+            self.assertEqual(r["email"], "buyer@acme-customer.com")
+
+    def test_resolve_customer_not_allowed_when_internal_only(self) -> None:
+        with _temp_db() as db:
+            db.add(CustomerMail(from_email="buyer@acme-customer.com", customer_name="Acme Buyer"))
+            db.commit()
+            r = tools.resolve_recipient(db, "@buyer@acme-customer.com", allow_supplier=False)
+            self.assertFalse(r["found"])
+
+    def test_list_mention_targets_includes_customers(self) -> None:
+        with _temp_db() as db:
+            user_service.create_user(
+                db, email="staff@co.com", password="x", full_name="Staff One",
+                username="staff", role="user",
+            )
+            db.add(CustomerMail(from_email="buyer@acme-customer.com", customer_name="Acme Buyer"))
+            db.commit()
+            rows = assign.list_mention_targets(db)
+            types = {r["type"] for r in rows}
+            self.assertIn("customer", types)
+            cust = next(r for r in rows if r["type"] == "customer")
+            self.assertEqual(cust["email"], "buyer@acme-customer.com")
+            self.assertEqual(cust["id"], 0)
+
+
+class SchemaTests(unittest.TestCase):
     def test_tools_schema_lists_all_tools(self) -> None:
         names = {t["function"]["name"] for t in tools.TOOLS}
         self.assertEqual(names, {

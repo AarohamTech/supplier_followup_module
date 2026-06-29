@@ -77,6 +77,13 @@ def list_assignees(db: Session = Depends(get_db)):
     return assign.list_assignees(db)
 
 
+@router.get("/mention-targets")
+def list_mention_targets(db: Session = Depends(get_db)):
+    """@-mention candidates for the /hi assistant: assignable users + recent
+    customers. NOT for assignee/watcher pickers (those use /assignees)."""
+    return assign.list_mention_targets(db)
+
+
 @router.post("/tasks", response_model=CommunicationTaskOut, status_code=201)
 def create_task(
     payload: CommunicationTaskCreate,

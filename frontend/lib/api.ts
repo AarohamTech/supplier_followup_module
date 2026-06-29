@@ -605,6 +605,10 @@ export const api = {
 
   listAssignees: () => http<TaskAssignee[]>("/api/communication/assignees"),
 
+  // Mention candidates for /hi: assignable users + recent customers.
+  // NOT for assignee/watcher pickers (use listAssignees for those).
+  listMentionTargets: () => http<TaskAssignee[]>("/api/communication/mention-targets"),
+
   generateTaskAiSummary: (taskId: number) =>
     http<CommunicationTask>(`/api/tasks/${taskId}/ai-summary`, { method: "POST" }),
 

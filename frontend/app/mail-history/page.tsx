@@ -306,9 +306,9 @@ export default function Page() {
   const [showMaterials, setShowMaterials] = useState(false);
   const selectPoGroup = useStore((s) => s.selectPoGroup);
 
-  // ── @mention autocomplete (reuses the task-assignee directory) ──
+  // ── @mention autocomplete (assignable users + recent customers) ──
   useEffect(() => {
-    api.listAssignees().then(setMentionList).catch(() => setMentionList([]));
+    api.listMentionTargets().then(setMentionList).catch(() => setMentionList([]));
   }, []);
 
   // Clean assignable-user directory for the Create Task pickers (kept separate
@@ -328,7 +328,7 @@ export default function Page() {
     if (mentionQuery === null) return [];
     const q = mentionQuery.toLowerCase();
     return mentionList
-      .filter((a) => !q || a.label.toLowerCase().includes(q))
+      .filter((a) => !q || a.label.toLowerCase().includes(q) || (a.email ?? "").toLowerCase().includes(q))
       .slice(0, 6);
   }, [mentionQuery, mentionList]);
 
@@ -1071,7 +1071,7 @@ export default function Page() {
                       </div>
                       {mentionMatches.map((a, i) => (
                         <button
-                          key={a.id}
+                          key={`${a.type}-${a.email ?? a.id}-${i}`}
                           onMouseDown={(e) => { e.preventDefault(); insertMention(a.label); }}
                           onMouseEnter={() => setMentionIdx(i)}
                           className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm ${

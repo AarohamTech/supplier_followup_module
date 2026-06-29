@@ -14,6 +14,7 @@ from sqlalchemy import func as _sa_func, select
 from sqlalchemy.orm import Session
 
 from ..models.communication_message import CommunicationMessage
+from ..models.customer_mail import CustomerMail
 from ..models.mail_history import MailHistory
 from ..models.procurement import ProcurementRecord
 from ..models.supplier_email import SupplierEmail
@@ -217,10 +218,38 @@ def resolve_recipient(db: Session, mention: str | None, *, allow_supplier: bool)
                     "label": row.supplier_name, "user_id": None,
                     "supplier_id": row.supplier_id, "reason": None}
 
+    # 3) Customer (one-time sends only) — match a recent customer email by exact
+    #    address or name; resolve only when it points to a single email.
+    if allow_supplier:
+        handle_l = handle.lower()
+        crows = db.execute(
+            select(CustomerMail.from_email, CustomerMail.customer_name, CustomerMail.from_name)
+            .where(CustomerMail.from_email.isnot(None))
+            .order_by(CustomerMail.received_at.desc().nullslast())
+        ).all()
+        candidates: dict[str, tuple[str, str]] = {}
+        for from_email, customer_name, from_name in crows:
+            email = (from_email or "").strip()
+            if not email:
+                continue
+            el = email.lower()
+            name_blob = f"{customer_name or ''} {from_name or ''}".lower()
+            if el == handle_l or handle_l in el or handle_l in name_blob:
+                label = (customer_name or from_name or email).strip()
+                candidates.setdefault(el, (email, label))
+        if len(candidates) == 1:
+            email, label = next(iter(candidates.values()))
+            return {"found": True, "kind": "customer", "email": email,
+                    "label": label, "user_id": None, "supplier_id": None, "reason": None}
+        if len(candidates) > 1:
+            return {"found": False, "kind": None, "email": None, "label": None,
+                    "user_id": None, "supplier_id": None,
+                    "reason": f"Multiple customers match '{handle}' — be more specific."}
+
     reason = (
         f"No internal user matches '{handle}'."
         if not allow_supplier
-        else f"No user or supplier matches '{handle}'."
+        else f"No user, supplier, or customer matches '{handle}'."
     )
     return {"found": False, "kind": None, "email": None, "label": None,
             "user_id": None, "supplier_id": None, "reason": reason}

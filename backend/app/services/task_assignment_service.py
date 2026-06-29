@@ -35,3 +35,37 @@ def resolve_assignee(db: Session, user_id: int) -> tuple[User, str]:
     if user is None or not user.is_active or user.supplier_id is not None:
         raise ValueError("User is not an assignable staff/employee account")
     return user, display_name(user)
+
+
+def list_mention_targets(db: Session, *, customer_limit: int = 50) -> list[dict]:
+    """@-mention candidates for the /hi assistant: assignable users PLUS recent
+    customers (distinct sender emails from customer_mails).
+
+    Customer rows carry `id: 0` (no user account) and an `email` field. They are
+    safe to *mention* (the UI inserts by label) but must NEVER be fed to the
+    assignee/watcher pickers, which require real user ids — those keep using
+    `list_assignees`.
+    """
+    from ..models.customer_mail import CustomerMail
+
+    targets = list(list_assignees(db))
+
+    rows = db.execute(
+        select(CustomerMail.from_email, CustomerMail.customer_name, CustomerMail.from_name)
+        .where(CustomerMail.from_email.isnot(None))
+        .order_by(CustomerMail.received_at.desc().nullslast())
+    ).all()
+    seen: set[str] = set()
+    for from_email, customer_name, from_name in rows:
+        email = (from_email or "").strip()
+        key = email.lower()
+        if not email or key in seen:
+            continue
+        seen.add(key)
+        label = (customer_name or from_name or email).strip()
+        targets.append(
+            {"id": 0, "label": label, "email": email, "role": "customer", "type": "customer"}
+        )
+        if len(seen) >= customer_limit:
+            break
+    return targets
