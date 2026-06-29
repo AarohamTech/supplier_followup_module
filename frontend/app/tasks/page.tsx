@@ -29,6 +29,7 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import PageHeader from "@/components/layout/PageHeader";
 import { AssigneePicker, WatcherPicker } from "@/components/tasks/AssigneePicker";
+import TaskCreateForm from "@/components/tasks/TaskCreateForm";
 import type {
   CommunicationTask,
   TaskActivity,
@@ -161,9 +162,14 @@ export default function TasksPage() {
   const [selected, setSelected] = useState<CommunicationTask | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [assignees, setAssignees] = useState<TaskAssignee[]>([]);
+  const [suppliers, setSuppliers] = useState<string[]>([]);
 
   useEffect(() => {
     api.listAssignees().then(setAssignees).catch(() => setAssignees([]));
+    api
+      .listSuppliers()
+      .then((rows) => setSuppliers(rows.map((s) => s.supplier_name).filter(Boolean)))
+      .catch(() => setSuppliers([]));
   }, []);
 
   const refresh = useCallback(async () => {
@@ -544,10 +550,12 @@ export default function TasksPage() {
       )}
 
       {showCreate && (
-        <CreateTaskModal
+        <TaskCreateForm
           assignees={assignees}
-          onClose={() => setShowCreate(false)}
-          onCreated={async () => {
+          suppliers={suppliers}
+          onCancel={() => setShowCreate(false)}
+          onSave={async (payload) => {
+            await api.createTask(payload);
             setShowCreate(false);
             await refresh();
           }}
@@ -903,113 +911,6 @@ function TaskDrawer({
               </button>
             </aside>
           </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function CreateTaskModal({
-  assignees,
-  onClose,
-  onCreated,
-}: {
-  assignees: TaskAssignee[];
-  onClose: () => void;
-  onCreated: () => void | Promise<void>;
-}) {
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [taskSource, setTaskSource] = useState<TaskSource>("INTERNAL");
-  const [priority, setPriority] = useState("P2");
-  const [assignedToUserId, setAssignedToUserId] = useState<number | null>(null);
-  const [supplier, setSupplier] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-
-  async function submit() {
-    if (!title.trim()) {
-      setErr("Title is required");
-      return;
-    }
-    setBusy(true);
-    setErr(null);
-    try {
-      await api.createTask({
-        title: title.trim(),
-        description: description || undefined,
-        task_source: taskSource,
-        priority: priority as CommunicationTask["priority"],
-        assigned_to_user_id: assignedToUserId ?? undefined,
-        supplier_name: supplier || undefined,
-        status: "TODO",
-      });
-      await onCreated();
-    } catch (e) {
-      setErr((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/30" onClick={onClose} />
-      <div className="relative w-full max-w-md bg-white rounded-lg shadow-2xl p-4 space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="text-base font-semibold">Create Task</h2>
-          <button onClick={onClose} className="p-1 rounded hover:bg-gray-100">
-            <X size={16} />
-          </button>
-        </div>
-        {err && <div className="text-xs text-rose-700 bg-rose-50 rounded p-2">{err}</div>}
-        <input
-          type="text"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          placeholder="Task title"
-          className="border border-brand-border rounded px-2 py-1.5 text-sm w-full"
-        />
-        <textarea
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          placeholder="Description (optional)"
-          rows={3}
-          className="border border-brand-border rounded px-2 py-1.5 text-sm w-full"
-        />
-        <div className="grid grid-cols-2 gap-3">
-          <select value={taskSource} onChange={(e) => setTaskSource(e.target.value as TaskSource)} className="border border-brand-border rounded px-2 py-1.5 text-sm">
-            <option value="INTERNAL">Internal</option>
-            <option value="SUPPLIER">Supplier</option>
-            <option value="CUSTOMER">Customer</option>
-            <option value="ESCALATION">Escalation</option>
-          </select>
-          <select value={priority} onChange={(e) => setPriority(e.target.value)} className="border border-brand-border rounded px-2 py-1.5 text-sm">
-            {PRIORITY_OPTS.map((p) => (
-              <option key={p} value={p}>{p}</option>
-            ))}
-          </select>
-        </div>
-        <input
-          type="text"
-          value={supplier}
-          onChange={(e) => setSupplier(e.target.value)}
-          placeholder="Supplier name (optional)"
-          className="border border-brand-border rounded px-2 py-1.5 text-sm w-full"
-        />
-        <AssigneePicker
-          value={assignedToUserId}
-          assignees={assignees}
-          onChange={setAssignedToUserId}
-          placeholder="Assign to (optional)"
-        />
-        <div className="flex justify-end gap-2 pt-1">
-          <button onClick={onClose} className="text-sm px-3 py-1.5 rounded border border-brand-border">
-            Cancel
-          </button>
-          <button onClick={submit} disabled={busy} className="text-sm px-3 py-1.5 rounded bg-brand-dark text-white disabled:opacity-50">
-            {busy ? "Creating…" : "Create"}
-          </button>
         </div>
       </div>
     </div>

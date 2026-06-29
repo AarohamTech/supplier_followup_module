@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import api from "@/lib/api";
 import { useStore } from "@/lib/store";
+import TaskCreateForm from "@/components/tasks/TaskCreateForm";
 import type {
   CommHubDashboard,
   CommHubMessage,
@@ -44,15 +45,6 @@ import {
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
 // ─────────────────────────────────────────────────────────────────────────────
-const ASSIGNEES = [
-  "Rajesh Kumar",
-  "Procurement Lead",
-  "Stores User",
-  "Quality User",
-  "Purchase Head",
-  "Sourcing Head",
-  "Admin User",
-];
 
 const TEMPLATES: { label: string; body: string }[] = [
   {
@@ -303,6 +295,7 @@ export default function Page() {
     Array<{ type: "draft" | "subscription"; message_id?: number; subscription_id?: number; recipient?: string; subject?: string; kind?: string; schedule?: string | null }>
   >([]);
   const [mentionList, setMentionList] = useState<TaskAssignee[]>([]);
+  const [taskAssignees, setTaskAssignees] = useState<TaskAssignee[]>([]);
   const [mentionIdx, setMentionIdx] = useState(0);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const threadEndRef = useRef<HTMLDivElement | null>(null);
@@ -316,6 +309,12 @@ export default function Page() {
   // ── @mention autocomplete (reuses the task-assignee directory) ──
   useEffect(() => {
     api.listAssignees().then(setMentionList).catch(() => setMentionList([]));
+  }, []);
+
+  // Clean assignable-user directory for the Create Task pickers (kept separate
+  // from mentionList, which may also include customers for @-mentions).
+  useEffect(() => {
+    api.listAssignees().then(setTaskAssignees).catch(() => setTaskAssignees([]));
   }, []);
 
   // Active "@query" token at the end of the composer (only while typing a /hi command).
@@ -1325,9 +1324,10 @@ export default function Page() {
         )}
       </div>
 
-      {/* Assign Modal */}
+      {/* Create Task (shared form) */}
       {assignOpen && (
-        <AssignModal
+        <TaskCreateForm
+          assignees={taskAssignees}
           seed={assignSeed}
           suppliers={supplierList.map((s) => s.supplier_name)}
           onCancel={() => setAssignOpen(false)}
@@ -1646,209 +1646,3 @@ function TaskCard({ task, onToggleDone }: { task: CommunicationTask; onToggleDon
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Assign Modal
-// ─────────────────────────────────────────────────────────────────────────────
-function AssignModal({
-  seed,
-  suppliers,
-  onCancel,
-  onSave,
-}: {
-  seed: Partial<CommunicationTaskCreate>;
-  suppliers: string[];
-  onCancel: () => void;
-  onSave: (payload: CommunicationTaskCreate) => void;
-}) {
-  const [title, setTitle] = useState(seed.title ?? "");
-  const [description, setDescription] = useState(seed.description ?? "");
-  const [supplierName, setSupplierName] = useState(seed.supplier_name ?? "");
-  const [poNo, setPoNo] = useState(seed.supplier_po_no ?? "");
-  const [linkedMailId] = useState(seed.linked_mail_id ?? null);
-  const [procurementId] = useState(seed.procurement_record_id ?? null);
-  const [priority, setPriority] = useState<TaskPriority>((seed.priority as TaskPriority) ?? "P2");
-  const [status, setStatus] = useState<TaskStatus>((seed.status as TaskStatus) ?? "TODO");
-  const [signal, setSignal] = useState<TaskSignal>((seed.signal as TaskSignal) ?? "YELLOW");
-  const [assignedTo, setAssignedTo] = useState(seed.assigned_to ?? ASSIGNEES[0]);
-  // watcherNames holds display-only string names for UI; watchers (number[]) will be
-  // wired to real user IDs by Task 11's assignee picker.
-  const [watcherNames, setWatcherNames] = useState<string[]>([]);
-  const [dueDate, setDueDate] = useState<string>(seed.due_date ? toDatetimeLocal(seed.due_date) : "");
-  const [reminder, setReminder] = useState<string>("");
-  const [submitting, setSubmitting] = useState(false);
-
-  const supplierOptions = useMemo(() => {
-    const set = new Set(suppliers);
-    if (supplierName) set.add(supplierName);
-    return Array.from(set);
-  }, [suppliers, supplierName]);
-
-  const buildPayload = (): CommunicationTaskCreate => ({
-    title: title.trim(),
-    description: description || undefined,
-    supplier_name: supplierName || null,
-    supplier_po_no: poNo || null,
-    procurement_record_id: procurementId ?? null,
-    linked_mail_id: linkedMailId ?? null,
-    assigned_to: assignedTo || null,
-    assigned_by: "Admin User",
-    watchers: [],
-    priority,
-    status,
-    signal,
-    due_date: dueDate ? new Date(dueDate).toISOString() : null,
-    reminder_at: reminder ? new Date(reminder).toISOString() : null,
-  });
-
-  const submit = async () => {
-    if (!title.trim()) return;
-    setSubmitting(true);
-    try {
-      onSave(buildPayload());
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" onClick={onCancel}>
-      <div className="w-full max-w-2xl rounded-xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between border-b border-brand-border px-5 py-3">
-          <div className="flex items-center gap-2">
-            <UserPlus size={16} className="text-signal-red" />
-            <span className="font-semibold">Assign Action</span>
-          </div>
-          <button className="rounded p-1 hover:bg-gray-100" onClick={onCancel}>
-            <X size={18} />
-          </button>
-        </div>
-        <div className="grid max-h-[70vh] grid-cols-2 gap-4 overflow-y-auto p-5">
-          <Field label="Task title" full>
-            <input
-              autoFocus
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              className="input"
-              placeholder="e.g. Confirm dispatch date"
-            />
-          </Field>
-          <Field label="Description" full>
-            <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              rows={3}
-              className="input resize-none"
-              placeholder="Add context, expected outcome…"
-            />
-          </Field>
-
-          <Field label="Supplier">
-            <input list="supplier-list" value={supplierName} onChange={(e) => setSupplierName(e.target.value)} className="input" />
-            <datalist id="supplier-list">
-              {supplierOptions.map((s) => (
-                <option key={s} value={s} />
-              ))}
-            </datalist>
-          </Field>
-          <Field label="PO number">
-            <input value={poNo} onChange={(e) => setPoNo(e.target.value)} className="input" placeholder="#45021" />
-          </Field>
-
-          <Field label="Priority">
-            <select value={priority} onChange={(e) => setPriority(e.target.value as TaskPriority)} className="input">
-              {(["P0", "P1", "P2", "P3"] as TaskPriority[]).map((p) => (
-                <option key={p} value={p}>{p}</option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Signal">
-            <select value={signal} onChange={(e) => setSignal(e.target.value as TaskSignal)} className="input">
-              <option value="GREEN">● Green — On Track</option>
-              <option value="YELLOW">● Yellow — Reminder</option>
-              <option value="RED">● Red — Delayed</option>
-              <option value="BLACK">● Black — Critical</option>
-            </select>
-          </Field>
-
-          <Field label="Due date">
-            <input type="datetime-local" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className="input" />
-          </Field>
-          <Field label="Reminder">
-            <input type="datetime-local" value={reminder} onChange={(e) => setReminder(e.target.value)} className="input" />
-          </Field>
-
-          <Field label="Assigned to">
-            <select value={assignedTo} onChange={(e) => setAssignedTo(e.target.value)} className="input">
-              {ASSIGNEES.map((a) => (
-                <option key={a} value={a}>{a}</option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Status">
-            <select value={status} onChange={(e) => setStatus(e.target.value as TaskStatus)} className="input">
-              {STATUS_GROUPS.map((s) => (
-                <option key={s.key} value={s.key}>{s.label}</option>
-              ))}
-            </select>
-          </Field>
-
-          <Field label="Watchers" full>
-            <div className="flex flex-wrap gap-1.5">
-              {ASSIGNEES.filter((a) => a !== assignedTo).map((a) => {
-                const on = watcherNames.includes(a);
-                return (
-                  <button
-                    key={a}
-                    type="button"
-                    onClick={() => setWatcherNames((prev) => (on ? prev.filter((x) => x !== a) : [...prev, a]))}
-                    className={`rounded-full border px-2 py-1 text-[11px] ${
-                      on ? "border-signal-red/30 bg-red-50 text-signal-red" : "border-brand-border text-brand-muted hover:bg-gray-50"
-                    }`}
-                  >
-                    {on ? "✓ " : "+ "}
-                    {a}
-                  </button>
-                );
-              })}
-            </div>
-          </Field>
-        </div>
-        <div className="flex justify-end gap-2 border-t border-brand-border px-5 py-3">
-          <button className="btn-ghost" onClick={onCancel} disabled={submitting}>
-            Cancel
-          </button>
-          <button className="btn-ghost border border-brand-border" onClick={() => void submit()} disabled={submitting || !title.trim()}>
-            Save Task
-          </button>
-          <button className="btn-primary" onClick={() => void submit()} disabled={submitting || !title.trim()}>
-            {submitting ? <Loader2 size={14} className="animate-spin" /> : <Bell size={14} />}
-            <span className="ml-1.5">Save &amp; Notify</span>
-          </button>
-        </div>
-      </div>
-      <style jsx>{`
-        :global(.input) {
-          width: 100%;
-          padding: 8px 10px;
-          font-size: 13px;
-          border: 1px solid #e5e7eb;
-          border-radius: 6px;
-          background: #fff;
-          outline: none;
-        }
-        :global(.input:focus) {
-          border-color: #e11d2e;
-        }
-      `}</style>
-    </div>
-  );
-}
-
-function Field({ label, children, full }: { label: string; children: React.ReactNode; full?: boolean }) {
-  return (
-    <div className={full ? "col-span-2" : ""}>
-      <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-brand-muted">{label}</div>
-      {children}
-    </div>
-  );
-}
