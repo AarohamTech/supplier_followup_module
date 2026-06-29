@@ -34,6 +34,7 @@ from .routers import (
     asns,
     portal,
     employee_portal,
+    eportal_hub,
     notifications,
     supplier_accounts,
     employee_accounts,
@@ -141,6 +142,10 @@ app.include_router(portal.router, dependencies=[Depends(get_current_supplier)])
 
 # Employee portal surface: scoped to the logged-in employee account (own POs).
 app.include_router(employee_portal.router, dependencies=[Depends(get_current_employee)])
+
+# Employee-scoped Communication Hub: mirrors the staff hub endpoint-for-endpoint
+# but every payload is scoped to the employee's owned POs (own-PO security boundary).
+app.include_router(eportal_hub.router, dependencies=[Depends(get_current_employee)])
 
 # In-app notifications: available to ANY logged-in user (staff or supplier).
 app.include_router(notifications.router, dependencies=[Depends(get_current_user)])
