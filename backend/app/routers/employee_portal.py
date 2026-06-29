@@ -10,12 +10,14 @@ import re
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import func, select
+from pydantic import BaseModel
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from ..core.deps import get_current_employee
 from ..database import get_db
 from ..models.communication_message import CommunicationMessage
+from ..models.communication_task import TASK_STATUSES, CommunicationTask
 from ..models.procurement import ProcurementRecord
 from ..models.supplier import SupplierMaster
 from ..models.user import User
@@ -25,9 +27,10 @@ from ..schemas.employee_portal import (
     EmployeePoMaterial,
     EmployeeSummary,
 )
-from ..schemas.portal import PortalMessage, PortalMessageCreate
+from ..schemas.portal import PortalMessage, PortalMessageCreate, PortalTask
 from ..services import communication_message_service as msg_service
 from ..services import notification_service as notif
+from ..services import task_collaboration_service as collab
 
 router = APIRouter(prefix="/api/eportal", tags=["employee-portal"])
 
@@ -278,13 +281,137 @@ def post_message(
         sent_at=datetime.utcnow(),
     )
     notif.safe(
-        notif.notify_staff, db,
+        notif.notify_po_owners, db,
+        supplier_po_no=supplier_po_no,
+        exclude_user_id=user.id,  # don't notify the employee who just messaged
         type="EMPLOYEE_MESSAGE",
         title=f"{user.full_name or user.username} messaged on PO {supplier_po_no}",
         body=payload.body.strip()[:140],
         link="/mail-history",
         supplier_id=supplier.id if supplier else None,
-        supplier_po_no=supplier_po_no,
         procurement_record_id=rec.id,
     )
     return _msg_out(cm, user.full_name)
+
+
+# ── Tasks (the employee's own Task Manager) ───────────────────────────────────
+class EmployeeTaskUpdate(BaseModel):
+    """Employees may only move a task and report progress — nothing else."""
+    status: str | None = None
+    progress_percent: int | None = None
+
+
+def _to_portal_task(t: CommunicationTask) -> PortalTask:
+    return PortalTask(
+        id=t.id,
+        title=t.title,
+        description=t.description,
+        material_name=t.material_name,
+        status=t.status,
+        priority=t.priority,
+        signal=t.signal,
+        progress_percent=t.progress_percent,
+        due_date=t.due_date,
+        created_at=t.created_at,
+        closed_at=t.closed_at,
+    )
+
+
+def _owned_po_numbers(db: Session, emp_code: str | None) -> list[str]:
+    if not emp_code:
+        return []
+    return [
+        po
+        for po in db.scalars(
+            select(ProcurementRecord.supplier_po_no)
+            .where(
+                ProcurementRecord.owner_emp_code == emp_code,
+                ProcurementRecord.supplier_po_no.isnot(None),
+            )
+            .distinct()
+        ).all()
+        if po
+    ]
+
+
+@router.get("/tasks", response_model=list[PortalTask])
+def my_tasks(
+    user: User = Depends(get_current_employee), db: Session = Depends(get_db)
+) -> list[PortalTask]:
+    """The employee's tasks: assigned to them, or on a PO they own."""
+    conds = [CommunicationTask.assigned_to_user_id == user.id]
+    owned = _owned_po_numbers(db, user.emp_code)
+    if owned:
+        conds.append(CommunicationTask.supplier_po_no.in_(owned))
+    rows = db.scalars(select(CommunicationTask).where(or_(*conds))).all()
+    # Open tasks first, then by due date (undated last).
+    rows = sorted(
+        rows,
+        key=lambda t: (1 if (t.status or "").upper() == "DONE" else 0, t.due_date or datetime.max),
+    )
+    return [_to_portal_task(t) for t in rows]
+
+
+@router.patch("/tasks/{task_id}", response_model=PortalTask)
+def update_my_task(
+    task_id: int,
+    payload: EmployeeTaskUpdate,
+    user: User = Depends(get_current_employee),
+    db: Session = Depends(get_db),
+) -> PortalTask:
+    """Employees can update status / progress on tasks assigned to them only."""
+    row = db.get(CommunicationTask, task_id)
+    if row is None or row.assigned_to_user_id != user.id:
+        raise HTTPException(404, "Task not found for your account")
+
+    data = payload.model_dump(exclude_unset=True)
+    if data.get("status") is not None and data["status"] not in TASK_STATUSES:
+        raise HTTPException(422, f"status must be one of {TASK_STATUSES}")
+    if data.get("progress_percent") is not None:
+        pp = int(data["progress_percent"])
+        if not 0 <= pp <= 100:
+            raise HTTPException(422, "progress_percent must be between 0 and 100")
+        data["progress_percent"] = pp
+
+    # Progress convenience rules (mirror the staff handler).
+    if data.get("status") == "DONE":
+        data["progress_percent"] = 100
+    elif data.get("status") == "BACKLOG":
+        data["progress_percent"] = 0
+
+    tracked = ("status", "progress_percent")
+    changes = {
+        k: (getattr(row, k), data[k])
+        for k in tracked
+        if k in data and data[k] is not None and getattr(row, k) != data[k]
+    }
+    for k, v in data.items():
+        if v is not None:
+            setattr(row, k, v)
+
+    if data.get("status") == "DONE" and not row.closed_at:
+        row.closed_at = datetime.utcnow()
+    elif data.get("status") and data["status"] != "DONE":
+        row.closed_at = None
+
+    if changes:
+        collab.record_task_changes(
+            db, row, changes,
+            created_by=user.full_name or user.username,
+            created_by_id=user.id,
+        )
+    db.commit()
+    db.refresh(row)
+
+    if changes and row.supplier_po_no:
+        notif.safe(
+            notif.notify_po_owners, db,
+            supplier_po_no=row.supplier_po_no,
+            exclude_user_id=user.id,  # the acting employee is often an owner
+            type="TASK_UPDATED",
+            title=f"Task updated by {user.full_name or user.username}",
+            body=f"{row.title} → {row.status}",
+            link="/tasks",
+            supplier_id=row.supplier_id,
+        )
+    return _to_portal_task(row)

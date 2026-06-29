@@ -460,6 +460,7 @@ export interface CommHubSupplier {
   mail_count: number;
   draft_mail_count: number;
   task_count: number;
+  unread_inbound?: number;
   highest_signal: string;
   health_score: number;
   mapping_status: string;
@@ -1265,6 +1266,7 @@ export interface PortalTask {
   status: string;
   priority: string;
   signal?: string | null;
+  progress_percent?: number;
   due_date?: string | null;
   created_at: string;
   closed_at?: string | null;

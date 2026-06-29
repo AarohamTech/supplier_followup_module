@@ -287,6 +287,7 @@ export default function Page() {
   const [search, setSearch] = useState("");
   const [queueFilter, setQueueFilter] = useState<QueueFilter>("needs_reply");
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [headerMatsOpen, setHeaderMatsOpen] = useState(false);
   const [composer, setComposer] = useState("");
   const [sendAsEmail, setSendAsEmail] = useState(true);
   const [replying, setReplying] = useState(false);
@@ -392,6 +393,10 @@ export default function Page() {
           (s.last_subject || "").toLowerCase().includes(q),
       )
       .sort((a, b) => {
+        // Unread (new) suppliers always float to the top.
+        const aUnread = (a.unread_inbound || 0) > 0 ? 1 : 0;
+        const bUnread = (b.unread_inbound || 0) > 0 ? 1 : 0;
+        if (aUnread !== bUnread) return bUnread - aUnread;
         const priority =
           signalRank((b.highest_signal || "GREEN").toUpperCase()) -
           signalRank((a.highest_signal || "GREEN").toUpperCase());
@@ -506,6 +511,12 @@ export default function Page() {
             });
             if (selectedSupplierName) {
               await loadPos(selectedSupplierName, selectedSupplierId);
+            }
+            // Refresh the supplier list so its unread dot/badge clears too.
+            try {
+              setSupplierList(await api.hubSuppliers());
+            } catch {
+              /* non-fatal */
             }
           } catch {
             /* non-fatal */
@@ -970,6 +981,18 @@ export default function Page() {
 
                 <div className="ml-auto flex items-center gap-1">
                   <button
+                    onClick={() => setHeaderMatsOpen((v) => !v)}
+                    className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium ${
+                      headerMatsOpen
+                        ? "border-brand-dark/20 bg-gray-100 text-brand-dark"
+                        : "border-brand-border text-brand-dark hover:bg-gray-50"
+                    }`}
+                    title="Materials & committed dates"
+                  >
+                    <Package size={13} /> Materials
+                    <ChevronDown size={12} className={`transition-transform ${headerMatsOpen ? "rotate-180" : ""}`} />
+                  </button>
+                  <button
                     onClick={() => setDetailsOpen((v) => !v)}
                     className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium ${
                       detailsOpen
@@ -988,6 +1011,51 @@ export default function Page() {
                   </button>
                 </div>
               </div>
+
+              {/* Materials & committed dates — quick dropdown from the header */}
+              {headerMatsOpen && (
+                <div className="border-b border-brand-border bg-gray-50/70 px-5 py-3">
+                  <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-brand-muted">
+                    Materials &amp; committed dates
+                  </div>
+                  {(activePo.materials?.length ?? 0) === 0 ? (
+                    <div className="text-xs text-brand-muted">No materials on this PO.</div>
+                  ) : (
+                    <div className="overflow-x-auto rounded border border-brand-border bg-white">
+                      <table className="min-w-full text-left text-xs">
+                        <thead className="bg-slate-50">
+                          <tr className="text-[10px] uppercase tracking-wide text-slate-600">
+                            <th className="px-3 py-1.5 font-semibold">Material</th>
+                            <th className="px-3 py-1.5 font-semibold">Committed date</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(activePo.materials ?? []).map((m: PoFollowupMaterial) => {
+                            const commit =
+                              commitments.find(
+                                (c) => c.material_name?.toUpperCase() === m.material_name?.toUpperCase(),
+                              ) ?? m.commitment ?? null;
+                            return (
+                              <tr key={m.procurement_record_id} className="border-t border-brand-border">
+                                <td className="px-3 py-1.5 text-brand-dark" title={m.material_name}>
+                                  {m.material_name}
+                                </td>
+                                <td className="px-3 py-1.5 text-brand-dark">
+                                  {commit?.commitment_date ? (
+                                    fmtTableDate(commit.commitment_date)
+                                  ) : (
+                                    <span className="text-brand-muted">Awaiting supplier</span>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Thread — generous breathing room */}
               <div className="flex-1 space-y-6 overflow-y-auto px-6 py-6 lg:px-10">
@@ -1394,6 +1462,7 @@ export default function Page() {
 // ─────────────────────────────────────────────────────────────────────────────
 function SupplierRow({ s, active, onClick }: { s: CommHubSupplier; active: boolean; onClick: () => void }) {
   const sig = (s.highest_signal || "GREEN") as TaskSignal;
+  const unread = (s.unread_inbound ?? 0) > 0;
   return (
     <button
       onClick={onClick}
@@ -1402,11 +1471,21 @@ function SupplierRow({ s, active, onClick }: { s: CommHubSupplier; active: boole
       }`}
     >
       <div className="flex items-center gap-2">
+        {unread && <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-500" title="Unread supplier replies" />}
         <span className={`h-2 w-2 shrink-0 rounded-full ${SIGNAL_DOT[sig] ?? "bg-gray-300"}`} title={SIGNAL_LABEL[sig]} />
-        <span className="flex-1 truncate text-sm font-semibold text-brand-dark">{s.supplier_name}</span>
+        <span className={`flex-1 truncate text-sm text-brand-dark ${unread ? "font-bold" : "font-medium"}`}>
+          {s.supplier_name}
+        </span>
+        {unread && (
+          <span className="rounded-full bg-emerald-500 px-1.5 py-0.5 text-[10px] font-bold text-white">
+            {(s.unread_inbound ?? 0) > 99 ? "99+" : s.unread_inbound}
+          </span>
+        )}
         <span className="text-[10px] text-gray-400">{relTime(s.last_activity_at)}</span>
       </div>
-      <p className="mt-1 truncate pl-4 text-xs text-brand-muted">{s.last_subject ?? "No subject"}</p>
+      <p className={`mt-1 truncate pl-4 text-xs ${unread ? "font-medium text-brand-dark/80" : "text-brand-muted"}`}>
+        {s.last_subject ?? "No subject"}
+      </p>
       {(s.draft_mail_count > 0 || s.task_count > 0) && (
         <div className="mt-1.5 flex items-center gap-1.5 pl-4">
           {s.draft_mail_count > 0 && (
@@ -1428,6 +1507,7 @@ function SupplierRow({ s, active, onClick }: { s: CommHubSupplier; active: boole
 function PoRow({ p, active, onClick }: { p: CommHubPO; active: boolean; onClick: () => void }) {
   const sig = (p.signal || "GREEN") as TaskSignal;
   const materialCount = p.material_count ?? p.materials?.length ?? 0;
+  const unread = (p.unread_inbound ?? 0) > 0;
   return (
     <button
       onClick={onClick}
@@ -1437,7 +1517,7 @@ function PoRow({ p, active, onClick }: { p: CommHubPO; active: boolean; onClick:
     >
       <div className="flex items-center gap-2">
         <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${SIGNAL_DOT[sig] ?? "bg-gray-300"}`} />
-        <span className="truncate text-sm font-semibold text-brand-dark">#{p.supplier_po_no}</span>
+        <span className={`truncate text-sm text-brand-dark ${unread ? "font-bold" : "font-medium"}`}>#{p.supplier_po_no}</span>
         {(p.unread_inbound ?? 0) > 0 && (
           <span className="rounded-full bg-emerald-500 px-1.5 py-0.5 text-[10px] font-bold text-white">
             {(p.unread_inbound ?? 0) > 99 ? "99+" : p.unread_inbound}
