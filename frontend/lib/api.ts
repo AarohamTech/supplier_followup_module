@@ -25,6 +25,7 @@ import type {
   TaskAssignee,
   TaskAnalytics,
   CommunicationDashboard,
+  PortalTaskDashboard,
   CommHubDashboard,
   CommHubSupplier,
   CommHubPO,
@@ -788,7 +789,9 @@ export const api = {
     }),
   portalPoTasks: (supplierPoNo: string) =>
     http<PortalTask[]>(`/api/portal/pos/${encodeURIComponent(supplierPoNo)}/tasks`),
-  portalTasks: () => http<PortalTask[]>("/api/portal/tasks"),
+  // Read-only Task Manager view (backend nulls internal fields server-side).
+  portalTasks: () => http<CommunicationTask[]>("/api/portal/tasks"),
+  portalTasksDashboard: () => http<PortalTaskDashboard>("/api/portal/tasks/dashboard"),
   portalPoMessages: (supplierPoNo: string) =>
     http<PortalMessage[]>(`/api/portal/pos/${encodeURIComponent(supplierPoNo)}/messages`),
   sendPortalPoMessage: (supplierPoNo: string, body: string, subject?: string) =>
@@ -796,6 +799,12 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ body, subject }),
     }),
+  // Clear the unread-inbound badge for a supplier's PO thread.
+  portalMarkPoRead: (supplierPoNo: string) =>
+    http<{ marked: number }>(
+      `/api/portal/pos/${encodeURIComponent(supplierPoNo)}/messages/mark-read`,
+      { method: "POST" },
+    ),
   portalAsnSummary: () => http<AsnSummary>("/api/portal/asns/summary"),
   portalAsns: (params: { tab?: string; search?: string } = {}) => {
     const q = new URLSearchParams();
@@ -837,14 +846,47 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ body, subject }),
     }),
-  eportalTasks: () => http<PortalTask[]>("/api/eportal/tasks"),
-  eportalUpdateTask: (
-    id: number,
-    patch: { status?: string; progress_percent?: number },
-  ) =>
-    http<PortalTask>(`/api/eportal/tasks/${id}`, {
+  // Clear the unread-inbound badge for an employee's PO thread.
+  eportalMarkPoRead: (supplierPoNo: string) =>
+    http<{ marked: number }>(
+      `/api/eportal/pos/${encodeURIComponent(supplierPoNo)}/messages/mark-read`,
+      { method: "POST" },
+    ),
+
+  // Full-parity Task Manager (scoped to the employee's owned POs).
+  eportalTasks: (filters: {
+    status?: string;
+    task_source?: string;
+    supplier_po_no?: string;
+    overdue?: boolean;
+  } = {}) => {
+    const q = new URLSearchParams();
+    Object.entries(filters).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== "" && v !== false) q.append(k, String(v));
+    });
+    const qs = q.toString();
+    return http<CommunicationTask[]>(`/api/eportal/tasks${qs ? `?${qs}` : ""}`);
+  },
+  eportalTasksDashboard: () => http<PortalTaskDashboard>("/api/eportal/tasks/dashboard"),
+  eportalAssignees: () => http<TaskAssignee[]>("/api/eportal/assignees"),
+  eportalCreateTask: (body: CommunicationTaskCreate) =>
+    http<CommunicationTask>("/api/eportal/tasks", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  eportalUpdateTask: (id: number, patch: CommunicationTaskUpdate) =>
+    http<CommunicationTask>(`/api/eportal/tasks/${id}`, {
       method: "PATCH",
       body: JSON.stringify(patch),
+    }),
+  eportalDeleteTask: (id: number) =>
+    http<void>(`/api/eportal/tasks/${id}`, { method: "DELETE" }),
+  eportalTaskComments: (id: number) =>
+    http<TaskComment[]>(`/api/eportal/tasks/${id}/comments`),
+  eportalAddTaskComment: (id: number, comment: string) =>
+    http<TaskComment>(`/api/eportal/tasks/${id}/comments`, {
+      method: "POST",
+      body: JSON.stringify({ comment }),
     }),
 
   // ─── Employee login management (admin) ────────────────────────────────
