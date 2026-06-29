@@ -29,6 +29,8 @@ class EmployeePo(BaseModel):
     po_status: Optional[str] = None
     earliest_shipment_date: Optional[datetime] = None
     escalated: bool = False
+    # Unread supplier replies (INCOMING, not yet read) on this PO.
+    unread_inbound: int = 0
 
 
 class EmployeePoListResponse(BaseModel):

@@ -86,7 +86,12 @@ class CommunicationMessage(Base):
     # Timestamps
     received_at: Mapped[datetime | None] = mapped_column(DateTime)
     sent_at: Mapped[datetime | None] = mapped_column(DateTime)
+    # Staff/employee side: when an INCOMING supplier reply was read in the hub.
     read_at: Mapped[datetime | None] = mapped_column(DateTime)
+    # Supplier-portal side: when the supplier read an OUTGOING (buyer) message.
+    # Tracks the opposite direction from `read_at` so the supplier portal gets
+    # its own unread badge without clobbering the staff-side read state.
+    portal_read_at: Mapped[datetime | None] = mapped_column(DateTime)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False
     )

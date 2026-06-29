@@ -2,7 +2,9 @@
 
 Mounted in main.py with `Depends(get_current_employee)`, so every handler can
 trust `user.emp_code`. Employees only ever see POs whose `owner_emp_code` matches
-their employee code. Read-only in v1.
+their employee code. For Tasks they get the full staff Task Manager (create /
+assign / escalate / comment) but every endpoint is scoped to tasks they own or
+are assigned to, and delegates to the shared logic in `routers.communication`.
 """
 from __future__ import annotations
 
@@ -10,27 +12,32 @@ import re
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from ..core.deps import get_current_employee
 from ..database import get_db
 from ..models.communication_message import CommunicationMessage
-from ..models.communication_task import TASK_STATUSES, CommunicationTask
+from ..models.communication_task import CommunicationTask
 from ..models.procurement import ProcurementRecord
 from ..models.supplier import SupplierMaster
 from ..models.user import User
+from ..schemas.communication_task import (
+    CommunicationTaskCreate,
+    CommunicationTaskOut,
+    CommunicationTaskUpdate,
+)
 from ..schemas.employee_portal import (
     EmployeePo,
     EmployeePoListResponse,
     EmployeePoMaterial,
     EmployeeSummary,
 )
-from ..schemas.portal import PortalMessage, PortalMessageCreate, PortalTask
+from ..schemas.portal import PortalMessage, PortalMessageCreate
 from ..services import communication_message_service as msg_service
 from ..services import notification_service as notif
-from ..services import task_collaboration_service as collab
+from ..services import task_assignment_service as assign
+from . import communication as comm  # reuse the staff task logic (one source of truth)
 
 router = APIRouter(prefix="/api/eportal", tags=["employee-portal"])
 
@@ -139,6 +146,22 @@ def list_pos(
         if sd and (g["earliest"] is None or sd < g["earliest"]):
             g["earliest"] = sd
 
+    # Unread supplier replies (INCOMING, not yet read) per PO.
+    unread_counts: dict[str, int] = {}
+    po_nos = [po for po in groups.keys() if po]
+    if po_nos:
+        for po_no, cnt in db.execute(
+            select(CommunicationMessage.supplier_po_no, func.count(CommunicationMessage.id))
+            .where(
+                CommunicationMessage.direction == "INCOMING",
+                CommunicationMessage.read_at.is_(None),
+                CommunicationMessage.supplier_po_no.in_(po_nos),
+            )
+            .group_by(CommunicationMessage.supplier_po_no)
+        ).all():
+            if po_no:
+                unread_counts[po_no] = int(cnt or 0)
+
     items = [
         EmployeePo(
             supplier_po_no=po,
@@ -149,6 +172,7 @@ def list_pos(
             po_status=g["po_status"],
             earliest_shipment_date=g["earliest"],
             escalated=g["escalated"],
+            unread_inbound=unread_counts.get(po, 0),
         )
         for po, g in groups.items()
     ]
@@ -294,29 +318,31 @@ def post_message(
     return _msg_out(cm, user.full_name)
 
 
-# ── Tasks (the employee's own Task Manager) ───────────────────────────────────
-class EmployeeTaskUpdate(BaseModel):
-    """Employees may only move a task and report progress — nothing else."""
-    status: str | None = None
-    progress_percent: int | None = None
+@router.post("/pos/{supplier_po_no}/messages/mark-read")
+def mark_messages_read(
+    supplier_po_no: str,
+    user: User = Depends(get_current_employee),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Clear the employee's unread badge for a PO (marks supplier replies read)."""
+    if not _owned_po(db, user, supplier_po_no):
+        raise HTTPException(404, "PO not found for your account")
+    now = datetime.utcnow()
+    rows = db.scalars(
+        select(CommunicationMessage).where(
+            CommunicationMessage.supplier_po_no == supplier_po_no,
+            CommunicationMessage.direction == "INCOMING",
+            CommunicationMessage.read_at.is_(None),
+        )
+    ).all()
+    for cm in rows:
+        cm.read_at = now
+    if rows:
+        db.commit()
+    return {"marked": len(rows)}
 
 
-def _to_portal_task(t: CommunicationTask) -> PortalTask:
-    return PortalTask(
-        id=t.id,
-        title=t.title,
-        description=t.description,
-        material_name=t.material_name,
-        status=t.status,
-        priority=t.priority,
-        signal=t.signal,
-        progress_percent=t.progress_percent,
-        due_date=t.due_date,
-        created_at=t.created_at,
-        closed_at=t.closed_at,
-    )
-
-
+# ── Tasks (full Task Manager, scoped to the employee's POs) ───────────────────
 def _owned_po_numbers(db: Session, emp_code: str | None) -> list[str]:
     if not emp_code:
         return []
@@ -334,84 +360,163 @@ def _owned_po_numbers(db: Session, emp_code: str | None) -> list[str]:
     ]
 
 
-@router.get("/tasks", response_model=list[PortalTask])
-def my_tasks(
-    user: User = Depends(get_current_employee), db: Session = Depends(get_db)
-) -> list[PortalTask]:
-    """The employee's tasks: assigned to them, or on a PO they own."""
-    conds = [CommunicationTask.assigned_to_user_id == user.id]
+def _task_in_scope(user: User, owned: list[str], task: CommunicationTask) -> bool:
+    """A task belongs to an employee if it's assigned to them or on a PO they own."""
+    if task.assigned_to_user_id == user.id:
+        return True
+    return bool(task.supplier_po_no and task.supplier_po_no in owned)
+
+
+def _scoped_task_or_404(db: Session, user: User, task_id: int) -> CommunicationTask:
+    row = db.get(CommunicationTask, task_id)
     owned = _owned_po_numbers(db, user.emp_code)
+    if row is None or not _task_in_scope(user, owned, row):
+        raise HTTPException(404, "Task not found for your account")
+    return row
+
+
+def _scope_counts(rows: list[CommunicationTask]) -> dict:
+    now = datetime.utcnow()
+    today = now.date()
+
+    def c(pred) -> int:
+        return sum(1 for t in rows if pred(t))
+
+    return {
+        "total_tasks": len(rows),
+        "todo": c(lambda t: t.status == "TODO"),
+        "in_progress": c(lambda t: t.status == "IN_PROGRESS"),
+        "waiting": c(lambda t: t.status == "WAITING_SUPPLIER"),
+        "done": c(lambda t: t.status == "DONE"),
+        "overdue": c(lambda t: t.status != "DONE" and t.due_date is not None and t.due_date < now),
+        "due_today": c(
+            lambda t: t.status != "DONE" and t.due_date is not None and t.due_date.date() == today
+        ),
+        "critical": c(lambda t: t.signal == "BLACK"),
+        "supplier_tasks": c(lambda t: t.task_source == "SUPPLIER"),
+        "customer_tasks": c(lambda t: t.task_source == "CUSTOMER"),
+        "internal_tasks": c(lambda t: t.task_source == "INTERNAL"),
+        "escalation_tasks": c(lambda t: t.task_source == "ESCALATION"),
+    }
+
+
+@router.get("/tasks", response_model=list[CommunicationTaskOut])
+def my_tasks(
+    user: User = Depends(get_current_employee),
+    db: Session = Depends(get_db),
+    status: str | None = None,
+    task_source: str | None = None,
+    supplier_po_no: str | None = None,
+    overdue: bool = False,
+) -> list[CommunicationTask]:
+    """The employee's tasks: assigned to them, or on a PO they own."""
+    owned = _owned_po_numbers(db, user.emp_code)
+    conds = [CommunicationTask.assigned_to_user_id == user.id]
     if owned:
         conds.append(CommunicationTask.supplier_po_no.in_(owned))
-    rows = db.scalars(select(CommunicationTask).where(or_(*conds))).all()
-    # Open tasks first, then by due date (undated last).
-    rows = sorted(
+    stmt = select(CommunicationTask).where(or_(*conds))
+    if status:
+        stmt = stmt.where(CommunicationTask.status == status)
+    if task_source:
+        stmt = stmt.where(CommunicationTask.task_source == task_source)
+    if supplier_po_no:
+        stmt = stmt.where(CommunicationTask.supplier_po_no == supplier_po_no)
+    if overdue:
+        now = datetime.utcnow()
+        stmt = stmt.where(
+            CommunicationTask.status != "DONE",
+            CommunicationTask.due_date.isnot(None),
+            CommunicationTask.due_date < now,
+        )
+    rows = db.scalars(stmt).all()
+    return sorted(
         rows,
         key=lambda t: (1 if (t.status or "").upper() == "DONE" else 0, t.due_date or datetime.max),
     )
-    return [_to_portal_task(t) for t in rows]
 
 
-@router.patch("/tasks/{task_id}", response_model=PortalTask)
-def update_my_task(
-    task_id: int,
-    payload: EmployeeTaskUpdate,
+@router.get("/tasks/dashboard")
+def my_tasks_dashboard(
+    user: User = Depends(get_current_employee), db: Session = Depends(get_db)
+) -> dict:
+    return _scope_counts(list(my_tasks(user=user, db=db)))
+
+
+@router.get("/assignees")
+def list_assignees(
+    user: User = Depends(get_current_employee), db: Session = Depends(get_db)
+) -> list[dict]:
+    """Assignable staff/employee accounts for the picker (same set as staff)."""
+    return assign.list_assignees(db)
+
+
+@router.post("/tasks", response_model=CommunicationTaskOut, status_code=201)
+def create_task(
+    payload: CommunicationTaskCreate,
     user: User = Depends(get_current_employee),
     db: Session = Depends(get_db),
-) -> PortalTask:
-    """Employees can update status / progress on tasks assigned to them only."""
-    row = db.get(CommunicationTask, task_id)
-    if row is None or row.assigned_to_user_id != user.id:
-        raise HTTPException(404, "Task not found for your account")
+) -> CommunicationTask:
+    """Create a task on one of the employee's own POs (or a personal task)."""
+    owned = _owned_po_numbers(db, user.emp_code)
+    if payload.supplier_po_no:
+        if payload.supplier_po_no not in owned:
+            raise HTTPException(403, "You can only create tasks on your own POs")
+    elif payload.assigned_to_user_id is None:
+        # Personal task with no PO → pin to the employee so it stays in scope.
+        payload.assigned_to_user_id = user.id
+    return comm.create_task(payload=payload, db=db, actor=user)
 
-    data = payload.model_dump(exclude_unset=True)
-    if data.get("status") is not None and data["status"] not in TASK_STATUSES:
-        raise HTTPException(422, f"status must be one of {TASK_STATUSES}")
-    if data.get("progress_percent") is not None:
-        pp = int(data["progress_percent"])
-        if not 0 <= pp <= 100:
-            raise HTTPException(422, "progress_percent must be between 0 and 100")
-        data["progress_percent"] = pp
 
-    # Progress convenience rules (mirror the staff handler).
-    if data.get("status") == "DONE":
-        data["progress_percent"] = 100
-    elif data.get("status") == "BACKLOG":
-        data["progress_percent"] = 0
-
-    tracked = ("status", "progress_percent")
-    changes = {
-        k: (getattr(row, k), data[k])
-        for k in tracked
-        if k in data and data[k] is not None and getattr(row, k) != data[k]
-    }
-    for k, v in data.items():
-        if v is not None:
-            setattr(row, k, v)
-
-    if data.get("status") == "DONE" and not row.closed_at:
-        row.closed_at = datetime.utcnow()
-    elif data.get("status") and data["status"] != "DONE":
-        row.closed_at = None
-
-    if changes:
-        collab.record_task_changes(
-            db, row, changes,
-            created_by=user.full_name or user.username,
-            created_by_id=user.id,
-        )
-    db.commit()
-    db.refresh(row)
-
-    if changes and row.supplier_po_no:
+@router.patch("/tasks/{task_id}", response_model=CommunicationTaskOut)
+def update_my_task(
+    task_id: int,
+    payload: CommunicationTaskUpdate,
+    user: User = Depends(get_current_employee),
+    db: Session = Depends(get_db),
+) -> CommunicationTask:
+    """Full update of a task in the employee's scope (delegates to staff logic)."""
+    _scoped_task_or_404(db, user, task_id)
+    row = comm.update_task(task_id=task_id, payload=payload, db=db, actor=user)
+    if row.supplier_po_no:
         notif.safe(
             notif.notify_po_owners, db,
             supplier_po_no=row.supplier_po_no,
-            exclude_user_id=user.id,  # the acting employee is often an owner
+            exclude_user_id=user.id,
             type="TASK_UPDATED",
             title=f"Task updated by {user.full_name or user.username}",
             body=f"{row.title} → {row.status}",
             link="/tasks",
             supplier_id=row.supplier_id,
         )
-    return _to_portal_task(row)
+    return row
+
+
+@router.delete("/tasks/{task_id}", status_code=204)
+def delete_my_task(
+    task_id: int,
+    user: User = Depends(get_current_employee),
+    db: Session = Depends(get_db),
+):
+    _scoped_task_or_404(db, user, task_id)
+    comm.delete_task(task_id=task_id, db=db)
+
+
+@router.get("/tasks/{task_id}/comments")
+def task_comments(
+    task_id: int,
+    user: User = Depends(get_current_employee),
+    db: Session = Depends(get_db),
+) -> list[dict]:
+    _scoped_task_or_404(db, user, task_id)
+    return comm.task_comments(task_id=task_id, db=db)
+
+
+@router.post("/tasks/{task_id}/comments", status_code=201)
+def add_task_comment(
+    task_id: int,
+    body: dict = None,  # type: ignore[assignment]
+    user: User = Depends(get_current_employee),
+    db: Session = Depends(get_db),
+) -> dict:
+    _scoped_task_or_404(db, user, task_id)
+    return comm.add_task_comment(task_id=task_id, body=body, db=db, actor=user)
