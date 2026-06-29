@@ -22,6 +22,7 @@ class AsnCreate(BaseModel):
     supplier_po_no: str = Field(min_length=1, max_length=64)
     crm_no: Optional[str] = None
     carrier_name: Optional[str] = None
+    courier_code: Optional[str] = None
     tracking_no: Optional[str] = None
     transport_mode: Optional[str] = None
     origin: Optional[str] = None
@@ -38,6 +39,7 @@ class AsnUpdate(BaseModel):
     supplier_po_no: Optional[str] = None
     crm_no: Optional[str] = None
     carrier_name: Optional[str] = None
+    courier_code: Optional[str] = None
     tracking_no: Optional[str] = None
     transport_mode: Optional[str] = None
     origin: Optional[str] = None
@@ -80,6 +82,9 @@ class AsnEventOut(BaseModel):
     status_label: Optional[str] = None
     location: Optional[str] = None
     note: Optional[str] = None
+    lat: Optional[float] = None
+    lng: Optional[float] = None
+    source: Optional[str] = None
     occurred_at: datetime
     created_by: Optional[str] = None
 
@@ -93,6 +98,7 @@ class AsnOut(BaseModel):
     supplier_po_no: str
     crm_no: Optional[str] = None
     carrier_name: Optional[str] = None
+    courier_code: Optional[str] = None
     tracking_no: Optional[str] = None
     transport_mode: Optional[str] = None
     origin: Optional[str] = None

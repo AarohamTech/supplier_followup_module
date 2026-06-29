@@ -38,6 +38,16 @@ export function stageMeta(status: string): StageMeta {
   return STAGE_META[(status as AsnStatus)] ?? STAGE_META.DRAFT;
 }
 
+// Courier providers supported by the tracking API (provider slug → display label).
+export const SUPPORTED_COURIERS: { code: string; label: string }[] = [
+  { code: "delhivery", label: "Delhivery" },
+  { code: "bluedart", label: "Blue Dart" },
+  { code: "ekart", label: "Ekart" },
+  { code: "dtdc", label: "DTDC" },
+  { code: "ecom", label: "Ecom Express" },
+  { code: "dhl", label: "DHL" },
+];
+
 // Worst-first signal colour, reused by PO rows.
 export function signalBadge(signal?: string | null): string {
   switch ((signal || "").toUpperCase()) {

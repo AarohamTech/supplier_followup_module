@@ -206,6 +206,25 @@ def crm_ingestion_runner() -> dict[str, Any]:
         db.close()
 
 
+def courier_tracking_runner() -> dict[str, Any]:
+    """Poll the courier tracking API for in-transit ASNs and append checkpoints."""
+    if not getattr(settings, "COURIER_API_ENABLED", False):
+        return {"enabled": False, "status": "DISABLED"}
+    db: Session = SessionLocal()
+    try:
+        from ..services import courier_tracking_service
+
+        result = courier_tracking_service.poll_in_transit(db)
+        log.info("[cron] courier_tracking_runner done: %s", result)
+        return result
+    except Exception:  # noqa: BLE001
+        db.rollback()
+        log.exception("courier_tracking_runner failed")
+        return {"ok": False, "status": "ERROR", "error": True}
+    finally:
+        db.close()
+
+
 def admin_digest_runner() -> dict[str, Any]:
     """Send the Harmony Intelligence Summary if it is due (once per local day)."""
     db: Session = SessionLocal()
@@ -408,6 +427,14 @@ JOB_SPECS: list[EngineJobSpec] = [
         default_interval_minutes=15,
         runner=admin_digest_runner,
         category="OTHER",
+    ),
+    EngineJobSpec(
+        job_name="courier_tracking_cron",
+        display_name="Courier Shipment Tracking",
+        description="Poll the courier API for in-transit ASNs and append tracking checkpoints.",
+        default_interval_minutes=int(getattr(settings, "COURIER_TRACKING_INTERVAL_MINUTES", 30) or 30),
+        runner=courier_tracking_runner,
+        category="SHIPMENT",
     ),
 ]
 

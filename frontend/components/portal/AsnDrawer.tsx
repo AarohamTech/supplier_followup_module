@@ -7,6 +7,7 @@ import { api } from "@/lib/api";
 import { ADVANCE_STAGES, stageMeta } from "@/lib/asn";
 import { fmtDate } from "@/lib/format";
 import type { Asn } from "@/lib/types";
+import ShipmentMap from "./ShipmentMap";
 
 export default function AsnDrawer({
   asn,
@@ -140,6 +141,12 @@ export default function AsnDrawer({
               </div>
             </div>
           )}
+
+          {/* Shipment map (geocoded checkpoints) */}
+          <div>
+            <div className="mb-2 text-[10px] uppercase tracking-wider text-brand-muted font-semibold">Shipment Map</div>
+            <ShipmentMap events={asn.events} />
+          </div>
 
           {/* Timeline */}
           <div>

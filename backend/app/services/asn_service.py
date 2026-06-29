@@ -91,6 +91,7 @@ def create_asn(
     supplier_po_no: str,
     crm_no: str | None = None,
     carrier_name: str | None = None,
+    courier_code: str | None = None,
     tracking_no: str | None = None,
     transport_mode: str | None = None,
     origin: str | None = None,
@@ -110,6 +111,7 @@ def create_asn(
         supplier_po_no=supplier_po_no,
         crm_no=crm_no,
         carrier_name=carrier_name,
+        courier_code=(courier_code or None),
         tracking_no=tracking_no,
         transport_mode=(transport_mode or None),
         origin=origin,
@@ -153,8 +155,8 @@ def create_asn(
 
 
 EDITABLE_FIELDS = (
-    "supplier_po_no", "crm_no", "carrier_name", "tracking_no", "transport_mode",
-    "origin", "destination", "dispatch_date", "eta", "remarks",
+    "supplier_po_no", "crm_no", "carrier_name", "courier_code", "tracking_no",
+    "transport_mode", "origin", "destination", "dispatch_date", "eta", "remarks",
 )
 
 
@@ -189,6 +191,9 @@ def add_event(
     alert_reason: str | None = None,
     created_by: str | None = None,
     occurred_at: datetime | None = None,
+    lat: float | None = None,
+    lng: float | None = None,
+    source: str | None = None,
 ) -> Asn:
     """Append a tracking event and advance the ASN to that stage."""
     stage = (stage or "").upper()
@@ -204,6 +209,9 @@ def add_event(
             note=note,
             created_by=created_by,
             occurred_at=occurred_at or datetime.utcnow(),
+            lat=lat,
+            lng=lng,
+            source=source,
         )
     )
     db.commit()

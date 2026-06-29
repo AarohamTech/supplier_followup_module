@@ -504,6 +504,7 @@ def create_asn(
         supplier_po_no=payload.supplier_po_no,
         crm_no=payload.crm_no,
         carrier_name=payload.carrier_name,
+        courier_code=payload.courier_code,
         tracking_no=payload.tracking_no,
         transport_mode=(payload.transport_mode or "").upper() or None,
         origin=payload.origin,

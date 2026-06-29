@@ -145,6 +145,13 @@ class Settings(BaseSettings):
     # (Supplier Inbox), even when the sender isn't in the supplier email mapping.
     SUPPLIER_MAIL_DOMAINS: str = Field(default="zanvargroup.com")
 
+    # Courier tracking (self-hosted indian-courier-api sidecar). Whole feature is
+    # off unless enabled; the poller is fully fail-safe.
+    COURIER_API_ENABLED: bool = Field(default=False)
+    COURIER_API_BASE_URL: str = Field(default="http://127.0.0.1:8787")
+    COURIER_TRACKING_INTERVAL_MINUTES: int = Field(default=30)
+    COURIER_HTTP_TIMEOUT_SECONDS: float = Field(default=20.0)
+
     @property
     def supplier_mail_domains(self) -> set[str]:
         return {d.strip().lower() for d in (self.SUPPLIER_MAIL_DOMAINS or "").split(",") if d.strip()}

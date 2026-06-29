@@ -1044,6 +1044,9 @@ export interface AsnEvent {
   status_label?: string | null;
   location?: string | null;
   note?: string | null;
+  lat?: number | null;
+  lng?: number | null;
+  source?: string | null;
   occurred_at: string;
   created_by?: string | null;
 }
@@ -1056,6 +1059,7 @@ export interface Asn {
   supplier_po_no: string;
   crm_no?: string | null;
   carrier_name?: string | null;
+  courier_code?: string | null;
   tracking_no?: string | null;
   transport_mode?: string | null;
   origin?: string | null;
@@ -1104,6 +1108,7 @@ export interface AsnCreatePayload {
   supplier_po_no: string;
   crm_no?: string | null;
   carrier_name?: string | null;
+  courier_code?: string | null;
   tracking_no?: string | null;
   transport_mode?: string | null;
   origin?: string | null;

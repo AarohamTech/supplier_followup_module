@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Save, Send, X } from "lucide-react";
 
 import { api } from "@/lib/api";
-import { TRANSPORT_MODES } from "@/lib/asn";
+import { SUPPORTED_COURIERS, TRANSPORT_MODES } from "@/lib/asn";
 import type { Asn, AsnItemInput, PortalPo, PortalPoMaterial } from "@/lib/types";
 
 interface LineDraft extends AsnItemInput {
@@ -24,6 +24,7 @@ export default function AsnCreateModal({
   const [loadingMaterials, setLoadingMaterials] = useState(false);
 
   const [carrier, setCarrier] = useState("");
+  const [courier, setCourier] = useState("");
   const [tracking, setTracking] = useState("");
   const [mode, setMode] = useState("");
   const [origin, setOrigin] = useState("");
@@ -99,6 +100,7 @@ export default function AsnCreateModal({
       const asn = await api.createPortalAsn({
         supplier_po_no: poNo,
         carrier_name: carrier || null,
+        courier_code: courier || null,
         tracking_no: tracking || null,
         transport_mode: mode || null,
         origin: origin || null,
@@ -143,6 +145,12 @@ export default function AsnCreateModal({
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <Field label="Carrier"><input className="input" value={carrier} onChange={(e) => setCarrier(e.target.value)} placeholder="e.g. Maersk Line" /></Field>
+            <Field label="Courier (for live tracking)">
+              <select className="input" value={courier} onChange={(e) => setCourier(e.target.value)}>
+                <option value="">— None —</option>
+                {SUPPORTED_COURIERS.map((c) => <option key={c.code} value={c.code}>{c.label}</option>)}
+              </select>
+            </Field>
             <Field label="Tracking No"><input className="input" value={tracking} onChange={(e) => setTracking(e.target.value)} placeholder="e.g. MSK-L81122" /></Field>
             <Field label="Mode">
               <select className="input" value={mode} onChange={(e) => setMode(e.target.value)}>

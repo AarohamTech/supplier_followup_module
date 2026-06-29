@@ -36,6 +36,8 @@ class Asn(Base):
     crm_no: Mapped[str | None] = mapped_column(String(64))
 
     carrier_name: Mapped[str | None] = mapped_column(String(255))
+    # Provider slug for the tracking API (delhivery/bluedart/ekart/dtdc/ecom/dhl).
+    courier_code: Mapped[str | None] = mapped_column(String(32))
     tracking_no: Mapped[str | None] = mapped_column(String(128), index=True)
     transport_mode: Mapped[str | None] = mapped_column(String(16))  # SEA/AIR/ROAD/RAIL
     origin: Mapped[str | None] = mapped_column(String(255))
@@ -95,6 +97,11 @@ class AsnEvent(Base):
     status_label: Mapped[str | None] = mapped_column(String(64))
     location: Mapped[str | None] = mapped_column(String(255))
     note: Mapped[str | None] = mapped_column(Text)
+    # Geocoded checkpoint coordinates (best-effort, for the shipment map).
+    lat: Mapped[float | None] = mapped_column(Numeric(9, 6))
+    lng: Mapped[float | None] = mapped_column(Numeric(9, 6))
+    # "COURIER_API" for auto-fetched checkpoints, else manual.
+    source: Mapped[str | None] = mapped_column(String(16))
     occurred_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
     created_by: Mapped[str | None] = mapped_column(String(255))
 
