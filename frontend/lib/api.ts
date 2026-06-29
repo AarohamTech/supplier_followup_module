@@ -841,6 +841,20 @@ export const api = {
       "/api/eportal/me",
     ),
   eportalSummary: () => http<EmployeeSummary>("/api/eportal/summary"),
+
+  // PO Follow-ups (mirrors the staff /api/procurement endpoints, scoped to the
+  // employee's owned records — IDENTICAL response shapes + query building so the
+  // staff store/components can be reused verbatim).
+  eportalDashboard: () => http<DashboardKpis>("/api/eportal/procurement/dashboard"),
+  eportalProcurement: (filters: ProcurementFilters = {}) => {
+    const q = new URLSearchParams();
+    Object.entries(filters).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== "") q.append(k, String(v));
+    });
+    const qs = q.toString();
+    return http<ProcurementListResponse>(`/api/eportal/procurement${qs ? `?${qs}` : ""}`);
+  },
+
   eportalPos: () => http<EmployeePoListResponse>("/api/eportal/pos"),
   eportalPoMaterials: (supplierPoNo: string) =>
     http<EmployeePoMaterial[]>(`/api/eportal/pos/${encodeURIComponent(supplierPoNo)}/materials`),

@@ -9,7 +9,8 @@ are assigned to, and delegates to the shared logic in `routers.communication`.
 from __future__ import annotations
 
 import re
-from datetime import datetime
+from datetime import date, datetime
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, or_, select
@@ -34,6 +35,7 @@ from ..schemas.employee_portal import (
     EmployeeSummary,
 )
 from ..schemas.portal import PortalMessage, PortalMessageCreate
+from ..schemas.procurement import DashboardKpis, ProcurementListOut
 from ..services import communication_message_service as msg_service
 from ..services import notification_service as notif
 from ..services import task_assignment_service as assign
@@ -215,6 +217,109 @@ def po_materials(
         )
         for r in rows
     ]
+
+
+# ── PO Follow-ups (staff /api/procurement mirrors, scoped to owned records) ─────
+# Same response shapes (DashboardKpis / ProcurementListOut) and same filters as
+# the staff procurement router, but every query carries an extra
+# `owner_emp_code == user.emp_code` predicate so an employee only ever sees their
+# own POs. This lets the staff PO Follow-ups page (store + components) be reused
+# verbatim against these endpoints.
+@router.get("/procurement/dashboard", response_model=DashboardKpis)
+def procurement_dashboard(
+    user: User = Depends(get_current_employee), db: Session = Depends(get_db)
+) -> DashboardKpis:
+    R = ProcurementRecord
+    today = date.today()
+    start = datetime.combine(today, datetime.min.time())
+    end = datetime.combine(today, datetime.max.time())
+    owned = R.owner_emp_code == user.emp_code
+
+    row = db.execute(
+        select(
+            func.count().filter(owned),
+            func.count().filter(owned, R.signal == "GREEN"),
+            func.count().filter(owned, R.signal == "YELLOW"),
+            func.count().filter(owned, R.signal == "RED"),
+            func.count().filter(owned, R.signal == "BLACK"),
+            func.count().filter(owned, R.shipment_date < start),
+            func.count().filter(owned, R.shipment_date >= start, R.shipment_date < end),
+            func.count().filter(owned, R.ai_required.is_(True)),
+        )
+    ).one()
+
+    return DashboardKpis(
+        total_records=row[0] or 0,
+        green_count=row[1] or 0,
+        yellow_count=row[2] or 0,
+        red_count=row[3] or 0,
+        black_count=row[4] or 0,
+        overdue_count=row[5] or 0,
+        due_today_count=row[6] or 0,
+        ai_required_count=row[7] or 0,
+    )
+
+
+@router.get("/procurement", response_model=ProcurementListOut)
+def list_procurement(
+    user: User = Depends(get_current_employee),
+    db: Session = Depends(get_db),
+    signal: Optional[str] = None,
+    supplier_name: Optional[str] = None,
+    po_no: Optional[str] = None,
+    supplier_po_no: Optional[str] = None,
+    crm_no: Optional[str] = None,
+    po_status: Optional[str] = None,
+    shipment_date_from: Optional[date] = None,
+    shipment_date_to: Optional[date] = None,
+    search: Optional[str] = None,
+    page: int = 1,
+    size: int = 50,
+) -> ProcurementListOut:
+    # Clamp to staff bounds (mirrors the /api/procurement Query(ge=1, le=500)).
+    page = max(1, page)
+    size = min(500, max(1, size))
+    R = ProcurementRecord
+    stmt = select(R).where(R.owner_emp_code == user.emp_code)
+    if signal:
+        stmt = stmt.where(R.signal == signal.upper())
+    if supplier_name:
+        stmt = stmt.where(R.supplier_name.ilike(f"%{supplier_name}%"))
+    supplier_po_filter = supplier_po_no or po_no
+    if supplier_po_filter:
+        stmt = stmt.where(R.supplier_po_no.ilike(f"%{supplier_po_filter}%"))
+    if crm_no:
+        stmt = stmt.where(R.crm_no.ilike(f"%{crm_no}%"))
+    if po_status:
+        stmt = stmt.where(R.po_status == po_status)
+    if shipment_date_from:
+        stmt = stmt.where(
+            R.shipment_date >= datetime.combine(shipment_date_from, datetime.min.time())
+        )
+    if shipment_date_to:
+        stmt = stmt.where(
+            R.shipment_date <= datetime.combine(shipment_date_to, datetime.max.time())
+        )
+    if search:
+        like = f"%{search}%"
+        stmt = stmt.where(
+            or_(
+                R.crm_no.ilike(like),
+                R.supplier_po_no.ilike(like),
+                R.material_name.ilike(like),
+                R.supplier_name.ilike(like),
+                R.po_status.ilike(like),
+                R.signal.ilike(like),
+            )
+        )
+
+    total = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
+    rows = db.scalars(
+        stmt.order_by(R.shipment_date.asc().nulls_last())
+        .offset((page - 1) * size)
+        .limit(size)
+    ).all()
+    return ProcurementListOut(total=total, page=page, size=size, items=rows)
 
 
 # ── PO communication thread (shared with staff hub + supplier portal) ──────────
