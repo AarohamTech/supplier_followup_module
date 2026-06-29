@@ -141,6 +141,10 @@ def _process_one(
         return {"message_uid": message_id, "skipped": True, "reason": "duplicate"}
 
     supplier_id, supplier_name = msg_service.find_supplier_by_email(db, sender_email)
+    sender_domain = (
+        sender_email.rsplit("@", 1)[-1].lower() if sender_email and "@" in sender_email else ""
+    )
+    is_supplier_domain = sender_domain in settings.supplier_mail_domains
     parsed = mail_parser_service.parse_email(db, subject, body, supplier_id=supplier_id)
 
     rec = msg_service.find_procurement_record(
@@ -151,8 +155,10 @@ def _process_one(
     )
 
     # Mails from unknown senders (no supplier mapping AND no PO match) are
-    # routed into the Customer Mail inbox instead of the supplier comm hub.
-    if supplier_id is None and rec is None:
+    # routed into the Customer Mail inbox instead of the supplier comm hub —
+    # UNLESS the sender domain is a configured supplier domain (Supplier Inbox),
+    # in which case they fall through to the supplier pipeline below.
+    if supplier_id is None and rec is None and not is_supplier_domain:
         existing_customer = (
             db.query(CustomerMail).filter(CustomerMail.message_uid == message_id).first()
             if message_id
@@ -209,13 +215,17 @@ def _process_one(
         direction="INCOMING",
         status="RECEIVED",
         supplier_id=supplier_id,
-        supplier_name=(rec.supplier_name if rec else None) or supplier_name,
+        supplier_name=(rec.supplier_name if rec else None)
+        or supplier_name
+        or (parseaddr(from_header)[0] or None)
+        or (sender_domain or None),
         procurement_record_id=rec.id if rec else None,
         supplier_po_no=parsed.get("supplier_po_no") or (rec.supplier_po_no if rec else None),
         subject=subject,
         body=body,
         sender_email=sender_email,
         receiver_email=parseaddr(to_header)[1] or settings.IMAP_USER,
+        is_supplier_inbox=True,
         message_uid=message_id,
         in_reply_to=in_reply_to,
         parsed_status=parsed.get("status"),

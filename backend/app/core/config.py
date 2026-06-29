@@ -141,6 +141,14 @@ class Settings(BaseSettings):
     CRM_INGEST_INTERVAL_MINUTES: int = Field(default=3)
     CRM_HTTP_TIMEOUT_SECONDS: float = Field(default=40.0)
 
+    # Inbound mail from these sender domains is treated as SUPPLIER correspondence
+    # (Supplier Inbox), even when the sender isn't in the supplier email mapping.
+    SUPPLIER_MAIL_DOMAINS: str = Field(default="zanvargroup.com")
+
+    @property
+    def supplier_mail_domains(self) -> set[str]:
+        return {d.strip().lower() for d in (self.SUPPLIER_MAIL_DOMAINS or "").split(",") if d.strip()}
+
     @property
     def embed_api_key(self) -> str | None:
         """Embedding key, falling back to the chat LLM key (same NVIDIA account)."""

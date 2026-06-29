@@ -7,7 +7,7 @@ during migration.
 """
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, JSON, String, Text, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, JSON, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ..database import Base
@@ -64,6 +64,10 @@ class CommunicationMessage(Base):
 
     # Workflow
     status: Mapped[str] = mapped_column(String(32), default="DRAFT", index=True)
+
+    # Supplier Inbox: tags an incoming mail as supplier correspondence (matched
+    # supplier OR sender domain in SUPPLIER_MAIL_DOMAINS). Nullable → NULL = no.
+    is_supplier_inbox: Mapped[bool | None] = mapped_column(Boolean, index=True)
 
     # Provider linkage (for IMAP de-dup)
     message_uid: Mapped[str | None] = mapped_column(String(255), index=True)
