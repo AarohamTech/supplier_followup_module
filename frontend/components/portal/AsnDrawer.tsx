@@ -76,12 +76,12 @@ export default function AsnDrawer({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-black/40" onClick={onClose}>
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" onClick={onClose}>
       <div
-        className="side-panel-right h-full w-full max-w-md overflow-y-auto bg-white shadow-2xl"
+        className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-brand-border bg-white px-5 py-3">
+        <div className="flex items-center justify-between border-b border-brand-border bg-white px-5 py-3">
           <div>
             <div className="font-semibold text-brand-dark">{asn.asn_no}</div>
             <div className="text-xs text-brand-muted">PO {asn.supplier_po_no}</div>
@@ -92,7 +92,7 @@ export default function AsnDrawer({
           </div>
         </div>
 
-        <div className="space-y-5 p-5">
+        <div className="flex-1 space-y-5 overflow-y-auto p-5">
           {error && <div className="rounded-md bg-red-50 px-3 py-2 text-xs text-signal-red">{error}</div>}
 
           {asn.alert && (
