@@ -1,11 +1,16 @@
 """Create + read in-app notifications. Pure service layer (no FastAPI).
 
 Fan-out helpers target an audience and write one row per recipient user:
-  - notify_staff     → every active internal (non-supplier) user
+  - notify_staff     → every active internal *staff* user (RBAC accounts only;
+                       excludes supplier AND employee-portal accounts)
   - notify_supplier  → every active login for a given supplier_id
   - notify_po_owners → only the staff who own a PO (owner_emp_code) plus the
                        assignees/watchers of its open tasks (falls back to
                        notify_staff when a PO has no owner at all)
+
+An employee-portal account (`emp_code` set) is therefore notified ONLY when it
+genuinely owns / is assigned to / watches the PO — never via the broadcast
+fallback. This keeps an employee's bell scoped to their own work.
 
 Best-effort by design: notification failures must never break the action that
 triggered them, so callers wrap these in try/except (or use the safe wrappers).
@@ -44,7 +49,14 @@ def notify_users(db: Session, user_ids: list[int], **fields: Any) -> int:
 
 
 def _active_staff_ids(db: Session, *, exclude_user_id: int | None = None) -> list[int]:
-    stmt = select(User.id).where(User.is_active.is_(True), User.supplier_id.is_(None))
+    # "Staff" = internal RBAC accounts only. Mirror core.deps.get_current_staff,
+    # which rejects portal accounts when EITHER supplier_id OR emp_code is set —
+    # so an employee-portal account is never swept into a staff broadcast.
+    stmt = select(User.id).where(
+        User.is_active.is_(True),
+        User.supplier_id.is_(None),
+        User.emp_code.is_(None),
+    )
     if exclude_user_id is not None:
         stmt = stmt.where(User.id != exclude_user_id)
     return list(db.scalars(stmt).all())

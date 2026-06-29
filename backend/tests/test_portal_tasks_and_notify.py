@@ -91,6 +91,22 @@ class NotifyPoOwnersTests(unittest.TestCase):
                 db, supplier_po_no="PO-3", type="X", title="hi")
             self.assertEqual(notification_service.unread_count(db, staff.id), 1)
 
+    def test_orphan_fallback_skips_employee_portal_accounts(self):
+        # Regression: an employee bell must stay scoped to the employee's own
+        # POs. An orphan-PO broadcast must reach real staff but NOT a random
+        # employee-portal account who doesn't own the PO.
+        with _temp_db() as db:
+            _po(db, po="PO-ORPHAN", owner=None)  # no owner, no tasks
+            staff = user_service.create_user(
+                db, email="mgr@corp.com", password="x" * 8, role=Role.MANAGER)
+            stranger_emp = user_service.create_user(
+                db, email="emp@corp.com", password="x" * 8, role=Role.EMPLOYEE,
+                emp_code="EMPX", username="EMPX")
+            notification_service.notify_po_owners(
+                db, supplier_po_no="PO-ORPHAN", type="X", title="hi")
+            self.assertEqual(notification_service.unread_count(db, staff.id), 1)
+            self.assertEqual(notification_service.unread_count(db, stranger_emp.id), 0)
+
     def test_excluded_sole_owner_does_not_rebroadcast(self):
         with _temp_db() as db:
             _po(db, po="PO-4", owner="EMP9")
