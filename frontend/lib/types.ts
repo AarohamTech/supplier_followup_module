@@ -438,6 +438,23 @@ export interface CommunicationDashboard {
   critical: number;
 }
 
+// Portal/eportal task dashboard — same shape the backend returns for
+// /api/eportal/tasks/dashboard and /api/portal/tasks/dashboard.
+export interface PortalTaskDashboard {
+  total_tasks: number;
+  todo: number;
+  in_progress: number;
+  waiting: number;
+  done: number;
+  overdue: number;
+  due_today: number;
+  critical: number;
+  supplier_tasks: number;
+  customer_tasks: number;
+  internal_tasks: number;
+  escalation_tasks: number;
+}
+
 // ─── Communication Hub (aggregation layer) ────────────────────────────────────
 export interface CommHubDashboard {
   active_suppliers: number;
@@ -1131,6 +1148,7 @@ export interface PortalPo {
   completed: boolean;
   asn_count: number;
   message_count: number;
+  unread_inbound?: number;
   escalated: boolean;
 }
 
@@ -1156,6 +1174,7 @@ export interface EmployeePo {
   overall_signal?: string | null;
   po_status?: string | null;
   earliest_shipment_date?: string | null;
+  unread_inbound?: number;
   escalated: boolean;
 }
 
