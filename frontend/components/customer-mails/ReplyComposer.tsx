@@ -1,7 +1,7 @@
 "use client";
 
 import { memo, useEffect, useRef, useState } from "react";
-import { Bold, Image as ImageIcon, Paperclip, Send } from "lucide-react";
+import { Send } from "lucide-react";
 import { useDebouncedCallback, useRenderCount } from "./hooks";
 
 interface ReplyComposerProps {
@@ -85,23 +85,12 @@ function ReplyComposerBase({
         onChange={(e) => handleChange(e.target.value)}
         placeholder={`Type your response to ${recipientName}…`}
         aria-label={`Reply to ${recipientName}`}
-        rows={3}
-        className="w-full resize-none rounded-lg border border-brand-border bg-gray-50 px-3 py-2.5 text-sm outline-none focus:border-signal-red/40 focus:bg-white"
+        rows={2}
+        className="min-h-[4.5rem] w-full resize-none rounded-lg border border-brand-border bg-gray-50 px-3 py-2.5 text-sm outline-none focus:border-signal-red/40 focus:bg-white"
       />
-      <div className="mt-2 flex items-center justify-between">
-        <div className="flex items-center gap-0.5 text-gray-400">
-          <button type="button" className="rounded p-1.5 hover:bg-gray-100 hover:text-brand-dark" title="Bold">
-            <Bold className="h-4 w-4" />
-          </button>
-          <button type="button" className="rounded p-1.5 hover:bg-gray-100 hover:text-brand-dark" title="Attach">
-            <Paperclip className="h-4 w-4" />
-          </button>
-          <button type="button" className="rounded p-1.5 hover:bg-gray-100 hover:text-brand-dark" title="Image">
-            <ImageIcon className="h-4 w-4" />
-          </button>
-        </div>
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+        <span className="text-[11px] text-brand-muted">Draft autosaved locally</span>
         <div className="flex items-center gap-2.5">
-          <span className="text-[11px] text-brand-muted">Draft autosaved</span>
           <button
             type="button"
             onClick={handleSend}

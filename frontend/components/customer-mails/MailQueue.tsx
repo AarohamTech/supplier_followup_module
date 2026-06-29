@@ -1,7 +1,7 @@
 "use client";
 
 import { memo, useState } from "react";
-import { Search } from "lucide-react";
+import { Inbox, Search } from "lucide-react";
 import type { CustomerMail } from "@/lib/types";
 import { MailCard } from "./MailCard";
 import { useRenderCount } from "./hooks";
@@ -42,6 +42,7 @@ function MailQueueBase({
   useRenderCount("MailQueue");
   const [visible, setVisible] = useState(PAGE);
   const shown = mails.slice(0, visible);
+  const activeLabel = tabs.find((tab) => tab.key === activeTab)?.label ?? "this queue";
 
   return (
     <div className="flex h-full flex-col">
@@ -58,7 +59,7 @@ function MailQueueBase({
         </div>
       </div>
 
-      <div className="flex gap-1 overflow-x-auto border-b border-brand-border px-3 py-2.5 scrollbar-thin">
+      <div className="flex flex-wrap gap-1.5 border-b border-brand-border px-3 py-2.5">
         {tabs.map((t) => {
           const active = t.key === activeTab;
           return (
@@ -67,7 +68,7 @@ function MailQueueBase({
               type="button"
               onClick={() => onTabChange(t.key)}
               className={[
-                "inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition",
+                "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-semibold transition",
                 active
                   ? "bg-red-50 text-signal-red ring-1 ring-signal-red/30"
                   : "text-brand-muted hover:bg-gray-100",
@@ -90,8 +91,14 @@ function MailQueueBase({
         {loading && mails.length === 0 ? (
           <div className="py-8 text-center text-xs text-brand-muted">Loading…</div>
         ) : mails.length === 0 ? (
-          <div className="py-8 text-center text-xs text-brand-muted">
-            No mails in this queue.
+          <div className="flex flex-col items-center px-6 py-10 text-center">
+            <span className="mb-3 grid h-9 w-9 place-items-center rounded-lg bg-gray-100 text-gray-400">
+              <Inbox className="h-4 w-4" />
+            </span>
+            <p className="text-xs font-medium text-brand-dark">No conversations in {activeLabel}</p>
+            <p className="mt-1 text-[11px] leading-relaxed text-brand-muted">
+              New customer messages will appear here automatically.
+            </p>
           </div>
         ) : (
           <>

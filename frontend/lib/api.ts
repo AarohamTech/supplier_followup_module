@@ -894,6 +894,149 @@ export const api = {
       body: JSON.stringify({ comment }),
     }),
 
+  // ─── Employee Communication Hub (mirrors /api/communication-hub/*, ──────
+  // scoped to the employee's owned POs — BYTE-IDENTICAL response shapes).
+  eportalHubDashboard: () =>
+    http<CommHubDashboard>("/api/eportal/hub/dashboard"),
+
+  eportalHubSuppliers: () =>
+    http<CommHubSupplier[]>("/api/eportal/hub/suppliers"),
+
+  eportalHubPos: (params: { supplier_name?: string; supplier_id?: number } = {}) => {
+    const q = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== "") q.append(k, String(v));
+    });
+    const qs = q.toString();
+    return http<CommHubPO[]>(`/api/eportal/hub/pos${qs ? `?${qs}` : ""}`);
+  },
+
+  eportalHubThread: (params: { supplier_id?: number | null; procurement_record_id?: number | null; supplier_po_no?: string | null }) => {
+    const q = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== null) q.append(k, String(v));
+    });
+    return http<CommHubThread>(`/api/eportal/hub/thread?${q.toString()}`);
+  },
+
+  eportalHubMarkThreadRead: (params: { supplier_po_no?: string | null; procurement_record_id?: number | null }) => {
+    const q = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== "") q.append(k, String(v));
+    });
+    return http<{ marked: number; at: string }>(
+      `/api/eportal/hub/thread/mark-read?${q.toString()}`,
+      { method: "POST" },
+    );
+  },
+
+  eportalHubTasks: (params: CommHubTaskFilters = {}) => {
+    const q = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== null) q.append(k, String(v));
+    });
+    const qs = q.toString();
+    return http<CommHubTasksGrouped>(`/api/eportal/hub/tasks${qs ? `?${qs}` : ""}`);
+  },
+
+  eportalHubCreateTask: (body: CommunicationTaskCreate) =>
+    http<CommunicationTask>("/api/eportal/hub/tasks", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  eportalHubUpdateTask: (id: number, body: CommunicationTaskUpdate) =>
+    http<CommunicationTask>(`/api/eportal/hub/tasks/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+
+  eportalHubAiReply: (procurementRecordId: number) =>
+    http<{ subject: string; body: string; mail_type: string }>(
+      `/api/eportal/hub/ai-reply?procurement_record_id=${procurementRecordId}`,
+      { method: "POST" },
+    ),
+
+  eportalHubReply: (body: {
+    procurement_record_id?: number | null;
+    supplier_po_no?: string | null;
+    supplier_id?: number | null;
+    supplier_name?: string | null;
+    subject?: string;
+    body: string;
+    send_email: boolean;
+  }) =>
+    http<{ ok: boolean; message_id: number; channel: "email" | "portal"; sent: boolean; emailed_to: string[]; no_email_on_file: boolean }>(
+      "/api/eportal/hub/reply",
+      { method: "POST", body: JSON.stringify(body) },
+    ),
+
+  eportalHubEscalate: (procurementRecordId: number) =>
+    http<{ message: string; mail_draft_id: number; task_id: number; subject: string }>(
+      `/api/eportal/hub/escalate?procurement_record_id=${procurementRecordId}`,
+      { method: "POST" },
+    ),
+
+  eportalHubAgent: (body: {
+    message: string;
+    supplier_id?: number | null;
+    procurement_record_id?: number | null;
+    supplier_po_no?: string | null;
+    customer_mail_id?: number | null;
+  }) =>
+    http<{
+      reply: string;
+      pending_actions: Array<{
+        type: "draft" | "subscription";
+        message_id?: number;
+        subscription_id?: number;
+        recipient?: string;
+        subject?: string;
+        kind?: string;
+        schedule?: string | null;
+      }>;
+      tools_used: Array<{ name: string }>;
+    }>("/api/eportal/hub/agent", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  eportalHubAgentConfirm: (body: { action_type: "draft" | "subscription"; id: number }) =>
+    http<{ ok: boolean; status?: string; sent?: boolean }>(
+      "/api/eportal/hub/agent/confirm",
+      { method: "POST", body: JSON.stringify(body) },
+    ),
+
+  eportalHubSendMail: (mail_history_id: number) =>
+    http<{ mail_history_id: number; send_result: any }>(
+      `/api/eportal/hub/send-mail?mail_history_id=${mail_history_id}`,
+      { method: "POST" },
+    ),
+
+  eportalHubAssignees: () => http<TaskAssignee[]>("/api/eportal/hub/assignees"),
+
+  eportalHubMentionTargets: () => http<TaskAssignee[]>("/api/eportal/hub/mention-targets"),
+
+  eportalHubCommitments: (params: { supplier_po_no: string; supplier_name?: string }) => {
+    const q = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== "") q.append(k, String(v));
+    });
+    return http<SupplierMaterialCommitment[]>(`/api/eportal/hub/commitments?${q.toString()}`);
+  },
+
+  eportalHubApproveMessage: (id: number) =>
+    http<{ ok: boolean; message_id: number; status: string }>(
+      `/api/eportal/hub/messages/${id}/approve`,
+      { method: "POST" },
+    ),
+
+  eportalHubDiscardMessage: (id: number) =>
+    http<{ ok: boolean; discarded_id: number }>(
+      `/api/eportal/hub/messages/${id}/discard`,
+      { method: "POST" },
+    ),
+
   // ─── Employee login management (admin) ────────────────────────────────
   listEmployeeLogins: () => http<AuthUser[]>("/api/employee-accounts"),
   importEmployeeSheet: (file: File) => {

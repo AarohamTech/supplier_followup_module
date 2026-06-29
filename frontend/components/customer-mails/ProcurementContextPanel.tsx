@@ -28,9 +28,23 @@ interface ProcurementContextPanelProps {
   aiLoading: boolean;
 }
 
-function DataCard({ label, value, tone }: { label: string; value: string | null; tone?: string }) {
+function DataField({
+  label,
+  value,
+  tone,
+  wide = false,
+}: {
+  label: string;
+  value: string | null;
+  tone?: string;
+  wide?: boolean;
+}) {
   return (
-    <div className="rounded-lg border border-brand-border bg-gray-50/60 p-2.5">
+    <div
+      className={`border-t border-brand-border p-2.5 ${
+        wide ? "col-span-2" : "even:border-l"
+      }`}
+    >
       <div className="text-[10px] font-medium uppercase tracking-wide text-brand-muted">
         {label}
       </div>
@@ -67,42 +81,40 @@ function ProcurementContextPanelBase({
         Auto Procurement Summary
       </div>
 
-      {/* Primary material */}
-      <div className="rounded-xl border border-red-100 bg-red-50/40 p-3">
-        <div className="flex items-center justify-between gap-2">
-          <div className="text-[10px] font-medium uppercase tracking-wide text-brand-muted">
-            Primary Material
+      {/* One grouped order summary is easier to scan than a stack of nested cards. */}
+      <div className="overflow-hidden rounded-lg border border-brand-border bg-white">
+        <div className="bg-red-50/50 p-3">
+          <div className="flex items-center justify-between gap-2">
+            <div className="text-[10px] font-medium uppercase tracking-wide text-brand-muted">
+              Primary Material
+            </div>
+            {c?.risk && (
+              <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${riskTone}`}>
+                {c.risk} Risk
+              </span>
+            )}
           </div>
-          {c?.risk && (
-            <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${riskTone}`}>
-              {c.risk} Risk
-            </span>
-          )}
+          <div className="mt-0.5 text-sm font-semibold text-brand-dark">
+            {c?.material || "No linked material"}
+          </div>
         </div>
-        <div className="mt-0.5 text-sm font-semibold text-brand-dark">
-          {c?.material || "No linked material"}
+        <div className="grid grid-cols-2 bg-gray-50/60">
+          <DataField label="Customer PO" value={c?.customerPo ?? null} />
+          <DataField label="Supplier PO" value={c?.supplierPo ?? null} />
+          <DataField label="Balance Qty" value={c?.balanceQty ?? null} />
+          <DataField label="Stock Available" value={c?.stockAvailable ?? null} tone="text-signal-red" />
+          <DataField label="Received Qty" value={c?.receivedQty ?? null} />
+          <DataField label="Status" value={c?.status ?? null} />
+          <DataField label="Supplier Commitment" value={formatDate(c?.commitmentDate)} wide />
+          <div className="col-span-2 border-t border-brand-border p-2.5">
+            <div className="text-[10px] font-medium uppercase tracking-wide text-brand-muted">
+              Latest Supplier Update
+            </div>
+            <p className="mt-1 text-xs italic leading-relaxed text-brand-dark">
+              {c?.latestUpdate ? `“${c.latestUpdate}”` : "No supplier update yet."}
+            </p>
+          </div>
         </div>
-      </div>
-
-      {/* Compact data cards */}
-      <div className="grid grid-cols-2 gap-2">
-        <DataCard label="Customer PO" value={c?.customerPo ?? null} />
-        <DataCard label="Supplier PO" value={c?.supplierPo ?? null} />
-        <DataCard label="Balance Qty" value={c?.balanceQty ?? null} />
-        <DataCard label="Stock Available" value={c?.stockAvailable ?? null} tone="text-signal-red" />
-        <DataCard label="Received Qty" value={c?.receivedQty ?? null} />
-        <DataCard label="Status" value={c?.status ?? null} />
-      </div>
-
-      <DataCard label="Supplier Commitment Date" value={formatDate(c?.commitmentDate)} />
-
-      <div className="rounded-lg border border-brand-border bg-gray-50/60 p-2.5">
-        <div className="text-[10px] font-medium uppercase tracking-wide text-brand-muted">
-          Latest Supplier Update
-        </div>
-        <p className="mt-1 text-xs italic leading-relaxed text-brand-dark">
-          {c?.latestUpdate ? `“${c.latestUpdate}”` : "No supplier update yet."}
-        </p>
       </div>
 
       {/* Linked materials */}
