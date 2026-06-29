@@ -126,7 +126,6 @@ def create_message(
     raw_payload: dict[str, Any] | None = None,
     received_at: datetime | None = None,
     sent_at: datetime | None = None,
-    is_supplier_inbox: bool | None = None,
     commit: bool = True,
 ) -> CommunicationMessage:
     _validate(direction, status)
@@ -157,7 +156,6 @@ def create_message(
         raw_payload=raw_payload,
         received_at=received_at,
         sent_at=sent_at,
-        is_supplier_inbox=is_supplier_inbox,
     )
     db.add(msg)
     if commit:

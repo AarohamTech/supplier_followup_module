@@ -65,8 +65,9 @@ class CommunicationMessage(Base):
     # Workflow
     status: Mapped[str] = mapped_column(String(32), default="DRAFT", index=True)
 
-    # Supplier Inbox: tags an incoming mail as supplier correspondence (matched
-    # supplier OR sender domain in SUPPLIER_MAIL_DOMAINS). Nullable → NULL = no.
+    # DEPRECATED — the "Supplier Inbox" feature was removed; this column is no
+    # longer read or written. Kept (nullable) only because online schema-evolve
+    # can't drop columns; remove in a future destructive migration.
     is_supplier_inbox: Mapped[bool | None] = mapped_column(Boolean, index=True)
 
     # Provider linkage (for IMAP de-dup)

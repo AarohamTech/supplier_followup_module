@@ -21,7 +21,6 @@ from .routers import (
     ai_insights,
     auth,
     customer_mails,
-    supplier_mails,
     procurement,
     suppliers,
     supplier_emails,
@@ -126,7 +125,6 @@ app.include_router(communication.router, dependencies=_rbac)
 app.include_router(communication.tasks_router, dependencies=_rbac)
 app.include_router(communication_hub.router, dependencies=_rbac)
 app.include_router(customer_mails.router, dependencies=_rbac)
-app.include_router(supplier_mails.router, dependencies=_rbac)
 app.include_router(po_followups.router, dependencies=_rbac)
 app.include_router(settings_router.router, dependencies=_rbac)
 

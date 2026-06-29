@@ -60,7 +60,6 @@ const groups: { label: string; items: NavItem[] }[] = [
     items: [
       { href: "/mail-history", label: "Communication Hub", icon: MessagesSquare },
       { href: "/customer-mails", label: "Customer Mails", icon: Inbox },
-      { href: "/supplier-mails", label: "Supplier Inbox", icon: Inbox },
       { href: "/approvals", label: "Approvals", icon: MailCheck, minRole: "manager" },
       { href: "/tasks", label: "Tasks", icon: ListChecks },
       { href: "/tasks/analytics", label: "Task Analytics", icon: Activity, minRole: "viewer" },

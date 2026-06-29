@@ -334,26 +334,6 @@ export interface TaskAssignee {
   email?: string;
 }
 
-export interface SupplierMail {
-  id: number;
-  supplier_id?: number | null;
-  supplier_name?: string | null;
-  supplier_po_no?: string | null;
-  subject?: string | null;
-  body?: string | null;
-  sender_email?: string | null;
-  receiver_email?: string | null;
-  status?: string | null;
-  parsed_status?: string | null;
-  received_at?: string | null;
-  created_at?: string | null;
-}
-
-export interface SupplierMailListResponse {
-  items: SupplierMail[];
-  total: number;
-}
-
 export interface TaskAnalytics {
   totals: { total: number; open: number; overdue: number; done: number; due_today: number };
   by_status: Record<string, number>;

@@ -144,7 +144,6 @@ def _process_one(
     sender_domain = (
         sender_email.rsplit("@", 1)[-1].lower() if sender_email and "@" in sender_email else ""
     )
-    is_supplier_domain = sender_domain in settings.supplier_mail_domains
     parsed = mail_parser_service.parse_email(db, subject, body, supplier_id=supplier_id)
 
     rec = msg_service.find_procurement_record(
@@ -155,10 +154,8 @@ def _process_one(
     )
 
     # Mails from unknown senders (no supplier mapping AND no PO match) are
-    # routed into the Customer Mail inbox instead of the supplier comm hub —
-    # UNLESS the sender domain is a configured supplier domain (Supplier Inbox),
-    # in which case they fall through to the supplier pipeline below.
-    if supplier_id is None and rec is None and not is_supplier_domain:
+    # routed into the Customer Mail inbox instead of the supplier comm hub.
+    if supplier_id is None and rec is None:
         existing_customer = (
             db.query(CustomerMail).filter(CustomerMail.message_uid == message_id).first()
             if message_id
@@ -225,7 +222,6 @@ def _process_one(
         body=body,
         sender_email=sender_email,
         receiver_email=parseaddr(to_header)[1] or settings.IMAP_USER,
-        is_supplier_inbox=True,
         message_uid=message_id,
         in_reply_to=in_reply_to,
         parsed_status=parsed.get("status"),

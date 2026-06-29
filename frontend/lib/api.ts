@@ -42,8 +42,6 @@ import type {
   CronJobRunResult,
   CustomerMail,
   CustomerMailListResponse,
-  SupplierMail,
-  SupplierMailListResponse,
   CustomerMailAssignPayload,
   CustomerMailTaskPayload,
   CustomerMailMetaOptions,
@@ -495,16 +493,6 @@ export const api = {
     http<MailEngineHealth>(`/api/settings/engine/health`),
 
   // ─── Customer Mail Inbox ───────────────────────────────────────────────
-  listSupplierMails: (params: { search?: string; limit?: number; offset?: number } = {}) => {
-    const q = new URLSearchParams();
-    Object.entries(params).forEach(([k, v]) => {
-      if (v !== undefined && v !== null && v !== "") q.append(k, String(v));
-    });
-    const qs = q.toString();
-    return http<SupplierMailListResponse>(`/api/supplier-mails${qs ? `?${qs}` : ""}`);
-  },
-  getSupplierMail: (id: number) => http<SupplierMail>(`/api/supplier-mails/${id}`),
-
   listCustomerMails: (params: {
     status?: string;
     mail_type?: string;
