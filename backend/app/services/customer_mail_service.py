@@ -18,6 +18,7 @@ from ..models.customer_mail import (
     CustomerMail,
 )
 from ..models.procurement import ProcurementRecord
+from ..core.config import settings
 from . import ai_service
 from . import brand_email
 from . import communication_message_service as msg_service
@@ -47,6 +48,13 @@ def list_mails(
     if assigned_to:
         stmt = stmt.where(CustomerMail.assigned_to == assigned_to)
         count_stmt = count_stmt.where(CustomerMail.assigned_to == assigned_to)
+    # Customer inbox = mail from the configured customer domain(s) only; other
+    # unmatched senders (bounces, spam) stay stored but hidden from this view.
+    domains = settings.customer_mail_domains
+    if domains:
+        dom_clause = or_(*[CustomerMail.from_email.ilike(f"%@{d}") for d in domains])
+        stmt = stmt.where(dom_clause)
+        count_stmt = count_stmt.where(dom_clause)
     if search:
         like = f"%{search}%"
         clause = or_(

@@ -141,12 +141,21 @@ class Settings(BaseSettings):
     CRM_INGEST_INTERVAL_MINUTES: int = Field(default=3)
     CRM_HTTP_TIMEOUT_SECONDS: float = Field(default=40.0)
 
+    # Inbound mail from these sender domains is the Customer Emails inbox (the
+    # parties we correspond with, e.g. our customer group). Other unmatched
+    # senders (bounce-backs, spam) are still stored but hidden from that view.
+    CUSTOMER_MAIL_DOMAINS: str = Field(default="zanvargroup.com")
+
     # Courier tracking (self-hosted indian-courier-api sidecar). Whole feature is
     # off unless enabled; the poller is fully fail-safe.
     COURIER_API_ENABLED: bool = Field(default=False)
     COURIER_API_BASE_URL: str = Field(default="http://127.0.0.1:8787")
     COURIER_TRACKING_INTERVAL_MINUTES: int = Field(default=30)
     COURIER_HTTP_TIMEOUT_SECONDS: float = Field(default=20.0)
+
+    @property
+    def customer_mail_domains(self) -> set[str]:
+        return {d.strip().lower() for d in (self.CUSTOMER_MAIL_DOMAINS or "").split(",") if d.strip()}
 
     @property
     def embed_api_key(self) -> str | None:
