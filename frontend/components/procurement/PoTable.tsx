@@ -5,7 +5,7 @@ import { fmtDate, fmtNum, signalClass } from "@/lib/format";
 import { ChevronDown, ChevronRight, Mail, Sparkles, Loader2 } from "lucide-react";
 import type { ProcurementRecord } from "@/lib/types";
 
-const groupHeaders = [
+const baseGroupHeaders = [
   "",
   "Supplier PO No.",
   "Supplier Name",
@@ -14,7 +14,6 @@ const groupHeaders = [
   "Earliest Shipment",
   "Follow-ups",
   "HI Required",
-  "Action",
 ];
 
 const materialHeaders = [
@@ -87,6 +86,12 @@ export default function PoTable() {
   const filters = useStore((s) => s.filters);
   const setFilters = useStore((s) => s.setFilters);
   const selectPoGroup = useStore((s) => s.selectPoGroup);
+
+  // Employee scope is read-only: the "PO Mail" manual-queue action opens a modal
+  // backed by staff-only endpoints (/api/mail-drafts/generate-po), so hide it.
+  const scope = useStore((s) => s.scope);
+  const showActions = scope !== "employee";
+  const groupHeaders = showActions ? [...baseGroupHeaders, "Action"] : baseGroupHeaders;
 
   const rows = list?.items ?? [];
   const total = list?.total ?? 0;
@@ -190,20 +195,22 @@ export default function PoTable() {
                         <span className="text-brand-muted text-xs">NO</span>
                       )}
                     </td>
-                    <td className="px-3 py-2.5">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          selectPoGroup({
-                            supplier_name: g.supplier_name,
-                            supplier_po_no: g.supplier_po_no,
-                          });
-                        }}
-                        className="inline-flex items-center gap-1 px-2 py-1 rounded bg-signal-red text-white text-xs font-medium hover:opacity-90"
-                      >
-                        <Mail size={12} /> PO Mail
-                      </button>
-                    </td>
+                    {showActions && (
+                      <td className="px-3 py-2.5">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            selectPoGroup({
+                              supplier_name: g.supplier_name,
+                              supplier_po_no: g.supplier_po_no,
+                            });
+                          }}
+                          className="inline-flex items-center gap-1 px-2 py-1 rounded bg-signal-red text-white text-xs font-medium hover:opacity-90"
+                        >
+                          <Mail size={12} /> PO Mail
+                        </button>
+                      </td>
+                    )}
                   </tr>
                   {isOpen && (
                     <tr className="bg-slate-50/60">
