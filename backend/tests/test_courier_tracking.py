@@ -29,11 +29,13 @@ def _temp_db():
         engine.dispose()
 
 
-def _make_asn(db):
-    asn = AsnModel(
+def _make_asn(db, **overrides):
+    fields = dict(
         asn_no="ASN-2026-0001", supplier_id=1, supplier_po_no="PO-1",
         courier_code="delhivery", tracking_no="TRK123", status="IN_TRANSIT",
     )
+    fields.update(overrides)
+    asn = AsnModel(**fields)
     db.add(asn)
     db.commit()
     db.refresh(asn)
@@ -90,6 +92,60 @@ class PollTests(unittest.TestCase):
             # Stage advanced (out for delivery) but did not flip to DELIVERED.
             db.refresh(asn)
             self.assertEqual(asn.status, "OUT_FOR_DELIVERY")
+
+
+class IsTrackableTests(unittest.TestCase):
+    def test_trackable_requires_supported_courier_and_tracking_no(self) -> None:
+        with _temp_db() as db:
+            self.assertTrue(cts.is_trackable(_make_asn(db)))
+            self.assertFalse(cts.is_trackable(_make_asn(db, asn_no="A2", courier_code=None)))
+            self.assertFalse(cts.is_trackable(_make_asn(db, asn_no="A3", tracking_no=None)))
+            self.assertFalse(cts.is_trackable(_make_asn(db, asn_no="A4", courier_code="randomco")))
+
+
+class PollOneTests(unittest.TestCase):
+    def test_disabled_is_noop(self) -> None:
+        with _temp_db() as db:
+            asn = _make_asn(db)
+            with mock.patch.object(cts.settings, "COURIER_API_ENABLED", False):
+                out = cts.poll_one(db, asn)
+            self.assertFalse(out["enabled"])
+            self.assertEqual(out["updated"], 0)
+            self.assertEqual(db.scalar(select(AsnEventModel.id)), None)
+
+    def test_untrackable_asn_is_skipped(self) -> None:
+        with _temp_db() as db:
+            asn = _make_asn(db, courier_code=None)
+            with mock.patch.object(cts.settings, "COURIER_API_ENABLED", True), \
+                 mock.patch.object(cts, "_fetch", return_value=_CHECKPOINTS) as fetch:
+                out = cts.poll_one(db, asn)
+            self.assertTrue(out["enabled"])
+            self.assertFalse(out["trackable"])
+            fetch.assert_not_called()
+            self.assertEqual(db.scalar(select(AsnEventModel.id)), None)
+
+    def test_appends_geocoded_checkpoints_no_dupes(self) -> None:
+        with _temp_db() as db:
+            asn = _make_asn(db)
+            with mock.patch.object(cts.settings, "COURIER_API_ENABLED", True), \
+                 mock.patch.object(cts, "_fetch", return_value=_CHECKPOINTS):
+                out1 = cts.poll_one(db, asn)
+                out2 = cts.poll_one(db, asn)  # second run = no new events
+
+            self.assertEqual(out1["updated"], 3)
+            self.assertEqual(out2["updated"], 0)  # dedupe holds
+            db.refresh(asn)
+            self.assertEqual(asn.status, "OUT_FOR_DELIVERY")  # advanced, not DELIVERED
+
+    def test_fetch_error_is_fail_safe(self) -> None:
+        with _temp_db() as db:
+            asn = _make_asn(db)
+            with mock.patch.object(cts.settings, "COURIER_API_ENABLED", True), \
+                 mock.patch.object(cts, "_fetch", side_effect=RuntimeError("boom")):
+                out = cts.poll_one(db, asn)  # must not raise
+            self.assertEqual(out["errors"], 1)
+            self.assertEqual(out["updated"], 0)
+            self.assertEqual(db.scalar(select(AsnEventModel.id)), None)
 
 
 if __name__ == "__main__":

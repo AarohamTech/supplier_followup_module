@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..schemas.asn import AsnEventIn, AsnListOut, AsnOut, AsnSummaryOut, AsnUpdate
-from ..services import asn_service
+from ..services import asn_service, courier_tracking_service
 
 router = APIRouter(prefix="/api/asns", tags=["asns"])
 
@@ -46,6 +46,21 @@ def update_asn(asn_id: int, payload: AsnUpdate, db: Session = Depends(get_db)) -
     if asn is None:
         raise HTTPException(404, "ASN not found")
     asn = asn_service.update_asn(db, asn, payload.model_dump(exclude_unset=True))
+    return AsnOut.model_validate(asn)
+
+
+@router.post("/{asn_id}/refresh-tracking", response_model=AsnOut)
+def refresh_tracking(asn_id: int, db: Session = Depends(get_db)) -> AsnOut:
+    """Pull fresh courier checkpoints for this ASN on demand (drawer open).
+
+    Fail-safe: if courier polling is disabled, the ASN isn't trackable, or the
+    courier API is unreachable, this returns the ASN unchanged.
+    """
+    asn = asn_service.get_asn(db, asn_id)
+    if asn is None:
+        raise HTTPException(404, "ASN not found")
+    courier_tracking_service.poll_one(db, asn)
+    asn = asn_service.get_asn(db, asn_id)
     return AsnOut.model_validate(asn)
 
 

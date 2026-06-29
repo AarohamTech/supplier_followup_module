@@ -775,6 +775,9 @@ export const api = {
     http<Asn>(`/api/asns/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
   addAsnEvent: (id: number, body: AsnEventPayload) =>
     http<Asn>(`/api/asns/${id}/events`, { method: "POST", body: JSON.stringify(body) }),
+  // Pull fresh courier checkpoints on demand (drawer open). Fail-safe server-side.
+  refreshAsnTracking: (id: number) =>
+    http<Asn>(`/api/asns/${id}/refresh-tracking`, { method: "POST" }),
 
   // ─── Supplier portal (supplier accounts only) ─────────────────────────
   portalMe: () => http<PortalMe>("/api/portal/me"),
@@ -821,6 +824,8 @@ export const api = {
     http<Asn>(`/api/portal/asns/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
   addPortalAsnEvent: (id: number, body: AsnEventPayload) =>
     http<Asn>(`/api/portal/asns/${id}/events`, { method: "POST", body: JSON.stringify(body) }),
+  refreshPortalAsnTracking: (id: number) =>
+    http<Asn>(`/api/portal/asns/${id}/refresh-tracking`, { method: "POST" }),
 
   // Supplier assistant (Harmony Intelligent, scoped to this supplier's data).
   portalAssistantHealth: () => http<{ enabled: boolean }>("/api/portal/assistant/health"),

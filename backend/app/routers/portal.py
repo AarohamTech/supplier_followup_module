@@ -39,6 +39,7 @@ from ..schemas.portal import (
 from ..services import ai_service
 from ..services import ai_tools_service
 from ..services import asn_service
+from ..services import courier_tracking_service
 from ..services import communication_message_service as msg_service
 from ..services import notification_service as notif
 from ..services import po_followup_service
@@ -657,6 +658,23 @@ def update_asn(
 ) -> AsnOut:
     asn = _load_owned_asn(db, asn_id, user)
     asn = asn_service.update_asn(db, asn, payload.model_dump(exclude_unset=True))
+    return AsnOut.model_validate(asn)
+
+
+@router.post("/asns/{asn_id}/refresh-tracking", response_model=AsnOut)
+def refresh_tracking(
+    asn_id: int,
+    user: User = Depends(get_current_supplier),
+    db: Session = Depends(get_db),
+) -> AsnOut:
+    """Pull fresh courier checkpoints for this owned ASN on demand (drawer open).
+
+    Fail-safe: returns the ASN unchanged when courier polling is disabled, the
+    ASN isn't trackable, or the courier API is unreachable.
+    """
+    asn = _load_owned_asn(db, asn_id, user)
+    courier_tracking_service.poll_one(db, asn)
+    asn = _load_owned_asn(db, asn_id, user)
     return AsnOut.model_validate(asn)
 
 
