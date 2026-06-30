@@ -7,7 +7,7 @@ type Tone = "red" | "dark" | "emerald" | "amber" | "blue";
 
 const toneClass: Record<Tone, string> = {
   red: "bg-red-50 text-signal-red",
-  dark: "bg-gray-900 text-white",
+  dark: "bg-ink text-white",
   emerald: "bg-emerald-50 text-emerald-700",
   amber: "bg-amber-50 text-amber-700",
   blue: "bg-blue-50 text-blue-700",

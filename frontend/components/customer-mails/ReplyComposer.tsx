@@ -79,14 +79,14 @@ function ReplyComposerBase({
   }
 
   return (
-    <div className="border-t border-brand-border bg-white px-5 py-3">
+    <div className="border-t border-brand-border bg-card px-5 py-3">
       <textarea
         value={text}
         onChange={(e) => handleChange(e.target.value)}
         placeholder={`Type your response to ${recipientName}…`}
         aria-label={`Reply to ${recipientName}`}
         rows={2}
-        className="min-h-[4.5rem] w-full resize-none rounded-lg border border-brand-border bg-gray-50 px-3 py-2.5 text-sm outline-none focus:border-signal-red/40 focus:bg-white"
+        className="min-h-[4.5rem] w-full resize-none rounded-lg border border-brand-border bg-subtle px-3 py-2.5 text-sm outline-none focus:border-signal-red/40 focus:bg-card"
       />
       <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
         <span className="text-[11px] text-brand-muted">Draft autosaved locally</span>

@@ -43,7 +43,7 @@ function TaskPanelBase({
           type="button"
           onClick={onCreateTask}
           disabled={creating}
-          className="flex items-center justify-center gap-1.5 rounded-md border border-brand-border bg-white py-2 text-xs font-medium text-brand-dark hover:bg-gray-50 disabled:opacity-50"
+          className="flex items-center justify-center gap-1.5 rounded-md border border-brand-border bg-card py-2 text-xs font-medium text-brand-dark hover:bg-subtle disabled:opacity-50"
         >
           <Plus className="h-3.5 w-3.5" /> Create Task
         </button>
@@ -51,7 +51,7 @@ function TaskPanelBase({
           type="button"
           onClick={() => onQuickAction("stock")}
           disabled={creating}
-          className="flex items-center justify-center gap-1.5 rounded-md border border-brand-border bg-white py-2 text-xs font-medium text-brand-dark hover:bg-gray-50 disabled:opacity-50"
+          className="flex items-center justify-center gap-1.5 rounded-md border border-brand-border bg-card py-2 text-xs font-medium text-brand-dark hover:bg-subtle disabled:opacity-50"
         >
           <PackageSearch className="h-3.5 w-3.5" /> Stock Check
         </button>
@@ -59,7 +59,7 @@ function TaskPanelBase({
           type="button"
           onClick={() => onQuickAction("supplier")}
           disabled={creating}
-          className="flex items-center justify-center gap-1.5 rounded-md border border-brand-border bg-white py-2 text-xs font-medium text-brand-dark hover:bg-gray-50 disabled:opacity-50"
+          className="flex items-center justify-center gap-1.5 rounded-md border border-brand-border bg-card py-2 text-xs font-medium text-brand-dark hover:bg-subtle disabled:opacity-50"
         >
           <RefreshCw className="h-3.5 w-3.5" /> Supplier Update
         </button>
@@ -67,7 +67,7 @@ function TaskPanelBase({
           type="button"
           onClick={() => onQuickAction("planning")}
           disabled={creating}
-          className="flex items-center justify-center gap-1.5 rounded-md border border-brand-border bg-white py-2 text-xs font-medium text-brand-dark hover:bg-gray-50 disabled:opacity-50"
+          className="flex items-center justify-center gap-1.5 rounded-md border border-brand-border bg-card py-2 text-xs font-medium text-brand-dark hover:bg-subtle disabled:opacity-50"
         >
           <ClipboardCheck className="h-3.5 w-3.5" /> Planning Confirm
         </button>
@@ -78,7 +78,7 @@ function TaskPanelBase({
           <span className="text-[11px] font-semibold uppercase tracking-wide text-brand-muted">
             Open tasks
           </span>
-          <span className="rounded-full bg-gray-100 px-1.5 text-[11px] font-bold text-brand-muted">
+          <span className="rounded-full bg-subtle px-1.5 text-[11px] font-bold text-brand-muted">
             {openTasks.length}
           </span>
         </div>
@@ -95,7 +95,7 @@ function TaskPanelBase({
             {openTasks.map((task) => (
               <div
                 key={task.id}
-                className="rounded-lg border border-brand-border bg-white p-2.5 transition-colors hover:border-signal-red/30"
+                className="rounded-lg border border-brand-border bg-card p-2.5 transition-colors hover:border-signal-red/30"
               >
                 <div className="flex items-start justify-between gap-2">
                   <span className="text-xs font-medium text-brand-dark">{task.title}</span>

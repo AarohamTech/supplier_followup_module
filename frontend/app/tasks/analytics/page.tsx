@@ -71,7 +71,7 @@ export default function TaskAnalyticsPage() {
         <h2 className="mb-2 text-sm font-semibold text-brand-dark">Workload by assignee</h2>
         <div className="overflow-x-auto rounded-lg border border-brand-border">
           <table className="min-w-full text-sm">
-            <thead className="bg-slate-50 text-left text-xs text-brand-muted">
+            <thead className="bg-subtle text-left text-xs text-brand-muted">
               <tr>
                 <th className="p-2">Assignee</th>
                 <th className="p-2">Open</th>

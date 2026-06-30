@@ -7,7 +7,7 @@ import type { AsnEvent } from "@/lib/types";
 const ShipmentMapInner = dynamic(() => import("./ShipmentMapInner"), {
   ssr: false,
   loading: () => (
-    <div className="grid h-64 place-items-center rounded-lg border border-brand-border bg-gray-50 text-xs text-brand-muted">
+    <div className="grid h-64 place-items-center rounded-lg border border-brand-border bg-subtle text-xs text-brand-muted">
       Loading map…
     </div>
   ),

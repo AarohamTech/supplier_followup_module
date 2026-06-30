@@ -19,14 +19,14 @@ function bandClasses(band: string): string {
     case "LOW":
       return "bg-emerald-100 text-emerald-700";
     default:
-      return "bg-gray-100 text-brand-muted";
+      return "bg-subtle text-brand-muted";
   }
 }
 
 function signalDot(signal: string): string {
   switch ((signal || "").toUpperCase()) {
     case "BLACK":
-      return "bg-gray-900";
+      return "bg-ink";
     case "RED":
       return "bg-signal-red";
     case "YELLOW":
@@ -124,7 +124,7 @@ export default function InsightsPage() {
         icon={Gauge}
         actions={
           <>
-          {toast && <span className="rounded-md bg-brand-dark px-3 py-1.5 text-xs text-white">{toast}</span>}
+          {toast && <span className="rounded-md bg-ink px-3 py-1.5 text-xs text-white">{toast}</span>}
           {isManager && (
             <button
               onClick={rescore}
@@ -142,7 +142,7 @@ export default function InsightsPage() {
       {error && <div className="rounded-md bg-red-50 px-3 py-2 text-xs text-signal-red">{error}</div>}
 
       {/* Memory status strip */}
-      <div className="flex flex-wrap items-center gap-3 rounded-xl border border-brand-border bg-white p-3 text-xs">
+      <div className="flex flex-wrap items-center gap-3 rounded-xl border border-brand-border bg-card p-3 text-xs">
         <span className="flex items-center gap-1.5 font-medium text-brand-dark">
           <Database className="h-4 w-4 text-brand-muted" /> Semantic memory
         </span>
@@ -153,7 +153,7 @@ export default function InsightsPage() {
               ` · ${Object.entries(memory.store.by_source).map(([k, v]) => `${k}: ${v}`).join(", ")}`}
           </span>
         ) : (
-          <span className="rounded bg-gray-100 px-2 py-0.5 text-brand-muted">
+          <span className="rounded bg-subtle px-2 py-0.5 text-brand-muted">
             {memory?.indexer_enabled ? "ready (empty)" : "disabled (set RAG_ENABLED on Postgres)"}
           </span>
         )}
@@ -161,7 +161,7 @@ export default function InsightsPage() {
           <button
             onClick={backfill}
             disabled={busy === "backfill"}
-            className="ml-auto inline-flex items-center gap-1.5 rounded-md border border-brand-border px-2.5 py-1 text-brand-dark hover:bg-gray-50 disabled:opacity-50"
+            className="ml-auto inline-flex items-center gap-1.5 rounded-md border border-brand-border px-2.5 py-1 text-brand-dark hover:bg-subtle disabled:opacity-50"
           >
             {busy === "backfill" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Database className="h-3.5 w-3.5" />}
             Backfill embeddings
@@ -220,7 +220,7 @@ function RiskTable({
             key={b || "all"}
             onClick={() => setBand(b)}
             className={`rounded-full px-2.5 py-1 ${
-              band === b ? "bg-brand-dark text-white" : "bg-gray-100 text-brand-muted hover:bg-gray-200"
+              band === b ? "bg-ink text-white" : "bg-subtle text-brand-muted hover:bg-subtle"
             }`}
           >
             {b || "All"}
@@ -233,7 +233,7 @@ function RiskTable({
           No scored records yet. {`Click "Recompute risk" to generate scores.`}
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-brand-border bg-white">
+        <div className="overflow-x-auto rounded-xl border border-brand-border bg-card">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-brand-border bg-brand-surface text-left text-xs text-brand-muted">
@@ -299,7 +299,7 @@ function SupplierTable({ items }: { items: SupplierScorecard[] }) {
     );
   }
   return (
-    <div className="overflow-x-auto rounded-xl border border-brand-border bg-white">
+    <div className="overflow-x-auto rounded-xl border border-brand-border bg-card">
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-brand-border bg-brand-surface text-left text-xs text-brand-muted">
@@ -322,7 +322,7 @@ function SupplierTable({ items }: { items: SupplierScorecard[] }) {
               <td className="px-3 py-2 text-brand-dark">{s.supplier_name}</td>
               <td className="px-3 py-2">
                 <div className="flex items-center gap-2">
-                  <div className="h-1.5 w-16 overflow-hidden rounded-full bg-gray-100">
+                  <div className="h-1.5 w-16 overflow-hidden rounded-full bg-subtle">
                     <div
                       className={`h-full ${s.score >= 60 ? "bg-emerald-500" : s.score >= 40 ? "bg-amber-400" : "bg-signal-red"}`}
                       style={{ width: `${s.score}%` }}

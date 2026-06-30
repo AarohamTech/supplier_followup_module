@@ -121,12 +121,12 @@ export default function AsnCreateModal({
   return (
     <div className="fixed inset-0 z-50 bg-black/40 grid place-items-center p-4" onClick={onClose}>
       <div
-        className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto"
+        className="bg-card rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="px-5 py-3 border-b border-brand-border flex items-center justify-between sticky top-0 bg-white">
+        <div className="px-5 py-3 border-b border-brand-border flex items-center justify-between sticky top-0 bg-card">
           <div className="font-semibold">Create New ASN</div>
-          <button className="p-1 rounded hover:bg-gray-100" onClick={onClose}><X size={18} /></button>
+          <button className="p-1 rounded hover:bg-subtle" onClick={onClose}><X size={18} /></button>
         </div>
 
         <div className="p-5 space-y-4">
@@ -175,7 +175,7 @@ export default function AsnCreateModal({
             {lines.length > 0 && (
               <div className="table-shell">
                 <table className="min-w-full text-sm">
-                  <thead className="bg-gray-50">
+                  <thead className="bg-subtle">
                     <tr>
                       <th className="px-3 py-2 text-left table-header">Ship</th>
                       <th className="px-3 py-2 text-left table-header">Material</th>
@@ -222,7 +222,7 @@ export default function AsnCreateModal({
           </div>
         </div>
 
-        <div className="px-5 py-3 border-t border-brand-border flex items-center justify-end gap-2 sticky bottom-0 bg-white">
+        <div className="px-5 py-3 border-t border-brand-border flex items-center justify-end gap-2 sticky bottom-0 bg-card">
           <button className="btn-ghost" onClick={onClose}>Cancel</button>
           <button className="btn-outline" disabled={busy !== null} onClick={() => save(false)}>
             <Save size={14} /> {busy === "draft" ? "Saving…" : "Save Draft"}

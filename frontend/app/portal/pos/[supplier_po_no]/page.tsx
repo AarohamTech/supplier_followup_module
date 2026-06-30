@@ -19,7 +19,7 @@ function taskStatusBadge(status: string): string {
   if (s === "BLOCKED") return "bg-red-50 text-signal-red";
   if (s.startsWith("WAITING")) return "bg-amber-50 text-amber-700";
   if (s === "IN_PROGRESS") return "bg-blue-50 text-blue-600";
-  return "bg-gray-100 text-gray-600";
+  return "bg-subtle text-brand-muted";
 }
 
 function taskPriorityBadge(priority: string): string {
@@ -27,7 +27,7 @@ function taskPriorityBadge(priority: string): string {
   if (p === "P0") return "bg-red-50 text-signal-red";
   if (p === "P1") return "bg-amber-50 text-amber-700";
   if (p === "P2") return "bg-blue-50 text-blue-700";
-  return "bg-gray-100 text-gray-600";
+  return "bg-subtle text-brand-muted";
 }
 
 type Draft = { date: string; status: string; remark: string };
@@ -147,7 +147,7 @@ export default function PoDetailPage() {
           </button>
         </div>
 
-        <dl className="grid grid-cols-2 border-t border-brand-border bg-slate-50/70 sm:grid-cols-4">
+        <dl className="grid grid-cols-2 border-t border-brand-border bg-subtle/70 sm:grid-cols-4">
           {[
             ["CRM reference", po?.crm_no || "—"],
             ["Materials", String(materials.length)],
@@ -179,7 +179,7 @@ export default function PoDetailPage() {
 
         <div className="overflow-x-auto">
           <table className="min-w-[1120px] w-full text-sm">
-            <thead className="bg-slate-50">
+            <thead className="bg-subtle">
               <tr>
                 {["Material", "CRM", "Qty", "UOM", "PO date", "Required by", "Committed date", "Status", "Remark"].map((h) => (
                   <th key={h} className="whitespace-nowrap px-3 py-3 text-left table-header">{h}</th>
@@ -192,7 +192,7 @@ export default function PoDetailPage() {
               {materials.map((m) => {
                 const d = drafts[m.procurement_record_id] || { date: "", status: "CONFIRMED", remark: "" };
                 return (
-                  <tr key={m.procurement_record_id} className="border-t border-brand-border align-middle hover:bg-slate-50/60">
+                  <tr key={m.procurement_record_id} className="border-t border-brand-border align-middle hover:bg-subtle/60">
                     <td className="min-w-[260px] px-3 py-3 font-medium text-brand-dark">{m.material_name}</td>
                     <td className="whitespace-nowrap px-3 py-3 text-xs text-brand-muted">{m.crm_no}</td>
                     <td className="px-3 py-3">{fmtNum(m.qty)}</td>
@@ -217,7 +217,7 @@ export default function PoDetailPage() {
           </table>
         </div>
 
-        <div className="flex flex-col gap-3 border-t border-brand-border bg-slate-50/70 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-3 border-t border-brand-border bg-subtle/70 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
           <p className="max-w-3xl text-xs leading-relaxed text-brand-muted">
             Add a dispatch date to stop automated follow-ups for that material and notify your buyer.
           </p>
@@ -236,7 +236,7 @@ export default function PoDetailPage() {
               <p className="text-xs text-brand-muted">Read-only actions tracked by the buyer's team.</p>
             </div>
           </div>
-          <span className="badge bg-gray-100 text-gray-700">{tasks.length}</span>
+          <span className="badge bg-subtle text-brand-dark">{tasks.length}</span>
         </div>
 
         {tasks.length === 0 ? (
@@ -244,7 +244,7 @@ export default function PoDetailPage() {
         ) : (
           <div className="divide-y divide-brand-border">
             {tasks.map((t) => (
-              <article key={t.id} className="flex flex-col gap-2 px-4 py-3 hover:bg-slate-50/60 sm:flex-row sm:items-start sm:justify-between">
+              <article key={t.id} className="flex flex-col gap-2 px-4 py-3 hover:bg-subtle/60 sm:flex-row sm:items-start sm:justify-between">
                 <div className="min-w-0 flex-1">
                   <h3 className="text-sm font-medium leading-snug text-brand-dark">{t.title}</h3>
                   {t.description && <p className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-brand-muted">{t.description}</p>}

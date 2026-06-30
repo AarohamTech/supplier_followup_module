@@ -20,13 +20,13 @@ export default function ActionCenter() {
         {actions.map((a) => {
           const I = a.icon;
           return (
-            <Link key={a.title} href={a.href} className="group flex w-full items-center gap-3 rounded-md p-2.5 text-left hover:bg-gray-50">
-              <div className="grid h-8 w-8 shrink-0 place-content-center rounded-md bg-gray-100 text-gray-500 group-hover:text-brand-dark"><I size={14} /></div>
+            <Link key={a.title} href={a.href} className="group flex w-full items-center gap-3 rounded-md p-2.5 text-left hover:bg-subtle">
+              <div className="grid h-8 w-8 shrink-0 place-content-center rounded-md bg-subtle text-brand-muted group-hover:text-brand-dark"><I size={14} /></div>
               <div className="min-w-0 flex-1">
                 <div className="text-sm font-medium">{a.title}</div>
                 <div className="text-xs text-brand-muted">{a.desc}</div>
               </div>
-              <ArrowUpRight size={13} className="text-gray-300 group-hover:text-gray-500" />
+              <ArrowUpRight size={13} className="text-gray-300 group-hover:text-brand-muted" />
             </Link>
           );
         })}

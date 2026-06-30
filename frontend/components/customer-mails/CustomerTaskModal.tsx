@@ -40,7 +40,7 @@ function Field({
 }
 
 const INPUT =
-  "w-full rounded-md border border-brand-border bg-white px-2.5 py-2 text-[13px] outline-none focus:border-signal-red";
+  "w-full rounded-md border border-brand-border bg-card px-2.5 py-2 text-[13px] outline-none focus:border-signal-red";
 
 /**
  * Rich task creator for the Customer Response Workspace — same shape as the
@@ -117,7 +117,7 @@ export default function CustomerTaskModal({
       onClick={onCancel}
     >
       <div
-        className="w-full max-w-2xl rounded-xl bg-white shadow-2xl"
+        className="w-full max-w-2xl rounded-xl bg-card shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-brand-border px-5 py-3">
@@ -125,7 +125,7 @@ export default function CustomerTaskModal({
             <UserPlus size={16} className="text-signal-red" />
             <span className="font-semibold">Create Customer Task</span>
           </div>
-          <button className="rounded p-1 hover:bg-gray-100" onClick={onCancel}>
+          <button className="rounded p-1 hover:bg-subtle" onClick={onCancel}>
             <X size={18} />
           </button>
         </div>
@@ -171,7 +171,7 @@ export default function CustomerTaskModal({
             />
           </Field>
           <Field label="Customer email">
-            <input value={customerEmail} disabled className={`${INPUT} bg-gray-50 text-brand-muted`} />
+            <input value={customerEmail} disabled className={`${INPUT} bg-subtle text-brand-muted`} />
           </Field>
 
           <Field label="Linked PO number">
@@ -277,7 +277,7 @@ export default function CustomerTaskModal({
                     className={`rounded-full border px-2 py-1 text-[11px] ${
                       on
                         ? "border-signal-red/30 bg-red-50 text-signal-red"
-                        : "border-brand-border text-brand-muted hover:bg-gray-50"
+                        : "border-brand-border text-brand-muted hover:bg-subtle"
                     }`}
                   >
                     {on ? "✓ " : "+ "}
@@ -291,7 +291,7 @@ export default function CustomerTaskModal({
 
         <div className="flex justify-end gap-2 border-t border-brand-border px-5 py-3">
           <button
-            className="rounded-md px-3 py-1.5 text-sm text-brand-muted hover:bg-gray-100"
+            className="rounded-md px-3 py-1.5 text-sm text-brand-muted hover:bg-subtle"
             onClick={onCancel}
             disabled={saving}
           >

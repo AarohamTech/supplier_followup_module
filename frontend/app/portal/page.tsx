@@ -87,7 +87,7 @@ export default function PortalDashboard() {
             sub="Critical attention"
             value={loading ? "—" : summary?.blocked_count ?? 0}
             icon={ShieldAlert}
-            tint="bg-gray-100 text-gray-900"
+            tint="bg-subtle text-brand-dark"
             strong
           />
         </div>

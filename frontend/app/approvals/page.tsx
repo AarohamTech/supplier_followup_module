@@ -64,7 +64,7 @@ export default function ApprovalsPage() {
         description="Review system-drafted mails before they are sent."
         icon={MailCheck}
         tone="emerald"
-        actions={toast && <span className="rounded-md bg-brand-dark px-3 py-1.5 text-xs text-white">{toast}</span>}
+        actions={toast && <span className="rounded-md bg-ink px-3 py-1.5 text-xs text-white">{toast}</span>}
       />
 
       {error && (
@@ -83,14 +83,14 @@ export default function ApprovalsPage() {
       ) : (
         <div className="space-y-3">
           {drafts.map((d) => (
-            <article key={d.id} className="rounded-xl border border-brand-border bg-white p-4">
+            <article key={d.id} className="rounded-xl border border-brand-border bg-card p-4">
               <div className="mb-2 flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="truncate text-sm font-semibold text-brand-dark">
                     {d.subject || "(no subject)"}
                   </div>
                   <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-brand-muted">
-                    <span className="rounded bg-gray-100 px-1.5 py-0.5">{d.mail_type || "DRAFT"}</span>
+                    <span className="rounded bg-subtle px-1.5 py-0.5">{d.mail_type || "DRAFT"}</span>
                     <span>To: {d.to_emails.join(", ") || d.receiver_email || "—"}</span>
                     {d.supplier_po_no && <span className="text-signal-red">· PO {d.supplier_po_no}</span>}
                   </div>

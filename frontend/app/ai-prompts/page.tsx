@@ -87,7 +87,7 @@ export default function AiPromptsPage() {
           </div>
         </div>
         <div className="page-actions">
-          {toast && <span className="rounded-md bg-brand-dark px-3 py-1.5 text-xs text-white">{toast}</span>}
+          {toast && <span className="rounded-md bg-ink px-3 py-1.5 text-xs text-white">{toast}</span>}
           <button onClick={save} disabled={saving || !dirty} className="btn-primary disabled:opacity-50">
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
             Save changes
@@ -113,13 +113,13 @@ export default function AiPromptsPage() {
                   <div>
                     <div className="text-sm font-semibold text-brand-dark">{p.label}</div>
                     <div className="text-[11px] text-brand-muted">
-                      <code className="rounded bg-gray-100 px-1">{key}</code>
+                      <code className="rounded bg-subtle px-1">{key}</code>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
                     <span
                       className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                        p.is_custom ? "bg-violet-100 text-violet-700" : "bg-gray-100 text-brand-muted"
+                        p.is_custom ? "bg-violet-100 text-violet-700" : "bg-subtle text-brand-muted"
                       }`}
                     >
                       {p.is_custom ? "Custom" : "Default"}
@@ -139,7 +139,7 @@ export default function AiPromptsPage() {
                   value={value}
                   onChange={(e) => setDrafts((d) => ({ ...d, [key]: e.target.value }))}
                   rows={5}
-                  className="w-full resize-y rounded-md border border-brand-border bg-white px-3 py-2 text-xs leading-relaxed text-brand-dark outline-none focus:border-violet-400"
+                  className="w-full resize-y rounded-md border border-brand-border bg-card px-3 py-2 text-xs leading-relaxed text-brand-dark outline-none focus:border-violet-400"
                 />
                 <div className="mt-1 flex items-center justify-between text-[10px] text-brand-muted">
                   <span>{value.length} chars</span>

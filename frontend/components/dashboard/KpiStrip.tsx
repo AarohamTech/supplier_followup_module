@@ -17,7 +17,7 @@ export default function KpiStrip() {
       {items.map((it) => {
         const I = it.icon;
         return (
-          <div key={it.label} className="flex min-w-0 items-center gap-3 bg-white p-4 lg:p-5">
+          <div key={it.label} className="flex min-w-0 items-center gap-3 bg-card p-4 lg:p-5">
             <div className={"grid h-9 w-9 shrink-0 place-content-center rounded-md " + it.tint}>
               <I size={16} strokeWidth={1.8} />
             </div>

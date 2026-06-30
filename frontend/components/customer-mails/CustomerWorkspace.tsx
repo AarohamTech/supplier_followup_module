@@ -512,7 +512,7 @@ export default function CustomerWorkspace() {
         actions={
           <>
           {toast && (
-            <span className="rounded-md bg-brand-dark px-3 py-1.5 text-xs text-white">{toast}</span>
+            <span className="rounded-md bg-ink px-3 py-1.5 text-xs text-white">{toast}</span>
           )}
           {selected && (
             <>
@@ -567,7 +567,7 @@ export default function CustomerWorkspace() {
             </span>
           )}
           {selected.ai_category && (
-            <span className="rounded bg-gray-100 px-1.5 py-0.5 text-brand-dark">{selected.ai_category}</span>
+            <span className="rounded bg-subtle px-1.5 py-0.5 text-brand-dark">{selected.ai_category}</span>
           )}
           {selected.ai_action && (
             <span className="rounded bg-red-50 px-1.5 py-0.5 text-signal-red">→ {selected.ai_action}</span>
@@ -581,7 +581,7 @@ export default function CustomerWorkspace() {
       {/* Workspace grid */}
       <div className="flex min-h-0 flex-1 flex-col gap-3 md:flex-row">
         {/* Left queue */}
-        <aside className="h-[22rem] max-h-[45vh] w-full shrink-0 overflow-hidden rounded-xl border border-brand-border bg-white shadow-sm md:h-auto md:max-h-none md:w-72 xl:w-80">
+        <aside className="h-[22rem] max-h-[45vh] w-full shrink-0 overflow-hidden rounded-xl border border-brand-border bg-card shadow-sm md:h-auto md:max-h-none md:w-72 xl:w-80">
           <MailQueue
             tabs={QUEUE_TABS}
             activeTab={activeTab}
@@ -597,7 +597,7 @@ export default function CustomerWorkspace() {
         </aside>
 
         {/* Center conversation */}
-        <section className="flex min-h-[32rem] min-w-0 flex-1 overflow-hidden rounded-xl border border-brand-border bg-white shadow-sm md:min-h-0">
+        <section className="flex min-h-[32rem] min-w-0 flex-1 overflow-hidden rounded-xl border border-brand-border bg-card shadow-sm md:min-h-0">
           {selected ? (
             <div className="flex h-full min-h-0 w-full flex-col">
               {(agentBusy || agentReply) ? (
@@ -609,7 +609,7 @@ export default function CustomerWorkspace() {
                     <button
                       type="button"
                       onClick={() => { setAgentReply(null); setAgentActions([]); }}
-                      className="rounded p-0.5 text-brand-muted hover:bg-white"
+                      className="rounded p-0.5 text-brand-muted hover:bg-card"
                       aria-label="Dismiss HI"
                     >
                       <X className="h-3.5 w-3.5" />
@@ -640,7 +640,7 @@ export default function CustomerWorkspace() {
                   )}
                 </div>
               ) : (
-                <div className="m-3 mb-0 shrink-0 rounded-md bg-gray-50 px-3 py-1.5 text-[11px] text-brand-muted">
+                <div className="m-3 mb-0 shrink-0 rounded-md bg-subtle px-3 py-1.5 text-[11px] text-brand-muted">
                   Tip: type <span className="font-semibold text-signal-red">/hi</span> in the reply box to ask Harmony Intelligence — e.g. <em>/hi summarize</em>, <em>/hi draft a reply</em>, <em>/hi email @teammate</em>.
                 </div>
               )}
@@ -661,7 +661,7 @@ export default function CustomerWorkspace() {
         </section>
 
         {/* Right context stays a drawer until there is room for all three columns. */}
-        <aside className="hidden w-80 shrink-0 overflow-hidden rounded-xl border border-brand-border bg-white shadow-sm 2xl:block">
+        <aside className="hidden w-80 shrink-0 overflow-hidden rounded-xl border border-brand-border bg-card shadow-sm 2xl:block">
           {rightPanel}
         </aside>
       </div>
@@ -675,7 +675,7 @@ export default function CustomerWorkspace() {
             aria-hidden
           />
           <div
-            className="absolute right-0 top-0 flex h-full w-[90%] max-w-sm flex-col bg-white shadow-xl"
+            className="absolute right-0 top-0 flex h-full w-[90%] max-w-sm flex-col bg-card shadow-xl"
             role="dialog"
             aria-modal="true"
             aria-label="Procurement context"
@@ -686,7 +686,7 @@ export default function CustomerWorkspace() {
                 type="button"
                 onClick={closeContext}
                 aria-label="Close procurement context"
-                className="rounded-md p-1 text-brand-muted hover:bg-gray-100"
+                className="rounded-md p-1 text-brand-muted hover:bg-subtle"
               >
                 <X className="h-4 w-4" />
               </button>

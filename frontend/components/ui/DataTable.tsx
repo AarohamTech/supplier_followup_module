@@ -110,7 +110,7 @@ export function DataTable<T>({
                   setPage(0);
                 }}
                 placeholder={searchPlaceholder}
-                className="w-full rounded-md border border-brand-border bg-white py-1.5 pl-8 pr-3 text-sm outline-none focus:border-signal-red"
+                className="w-full rounded-md border border-brand-border bg-card py-1.5 pl-8 pr-3 text-sm outline-none focus:border-signal-red"
               />
             </div>
           )}
@@ -200,7 +200,7 @@ export function DataTable<T>({
             type="button"
             onClick={() => setPage((p) => Math.max(0, p - 1))}
             disabled={safePage === 0}
-            className="inline-flex items-center rounded-md border border-brand-border bg-white p-1 hover:bg-gray-50 disabled:opacity-40"
+            className="inline-flex items-center rounded-md border border-brand-border bg-card p-1 hover:bg-subtle disabled:opacity-40"
           >
             <ChevronLeft className="h-4 w-4" />
           </button>
@@ -208,7 +208,7 @@ export function DataTable<T>({
             type="button"
             onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
             disabled={safePage >= pageCount - 1}
-            className="inline-flex items-center rounded-md border border-brand-border bg-white p-1 hover:bg-gray-50 disabled:opacity-40"
+            className="inline-flex items-center rounded-md border border-brand-border bg-card p-1 hover:bg-subtle disabled:opacity-40"
           >
             <ChevronRight className="h-4 w-4" />
           </button>

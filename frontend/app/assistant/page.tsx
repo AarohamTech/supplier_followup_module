@@ -78,7 +78,7 @@ export default function AssistantPage() {
       />
 
       {/* Messages */}
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto rounded-xl border border-brand-border bg-white p-4">
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto rounded-xl border border-brand-border bg-card p-4">
         {messages.length === 0 ? (
           <div className="m-auto max-w-md text-center">
             <Bot className="mx-auto mb-3 h-8 w-8 text-brand-muted" />
@@ -88,7 +88,7 @@ export default function AssistantPage() {
                 <button
                   key={s}
                   onClick={() => void send(s)}
-                  className="block w-full rounded-lg border border-brand-border px-3 py-2 text-left text-sm text-brand-dark hover:bg-gray-50"
+                  className="block w-full rounded-lg border border-brand-border px-3 py-2 text-left text-sm text-brand-dark hover:bg-subtle"
                 >
                   {s}
                 </button>
@@ -101,7 +101,7 @@ export default function AssistantPage() {
               <div key={i} className={`flex gap-2.5 ${m.role === "user" ? "flex-row-reverse" : ""}`}>
                 <span
                   className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-white ${
-                    m.role === "user" ? "bg-brand-dark" : "bg-signal-red"
+                    m.role === "user" ? "bg-ink" : "bg-signal-red"
                   }`}
                 >
                   {m.role === "user" ? <User size={14} /> : <Bot size={14} />}
@@ -110,7 +110,7 @@ export default function AssistantPage() {
                   <div
                     className={`whitespace-pre-wrap rounded-xl px-3.5 py-2.5 text-sm leading-relaxed ${
                       m.role === "user"
-                        ? "bg-brand-dark text-white"
+                        ? "bg-ink text-white"
                         : "border border-brand-border bg-brand-surface text-brand-dark"
                     }`}
                   >
@@ -143,7 +143,7 @@ export default function AssistantPage() {
       )}
 
       {/* Composer */}
-      <div className="mt-3 flex items-end gap-2 rounded-xl border border-brand-border bg-white p-2">
+      <div className="mt-3 flex items-end gap-2 rounded-xl border border-brand-border bg-card p-2">
         <textarea
           value={input}
           onChange={(e) => setInput(e.target.value)}

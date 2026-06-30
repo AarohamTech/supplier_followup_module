@@ -107,7 +107,7 @@ const SIGNAL_DOT: Record<string, string> = {
   GREEN: "bg-emerald-500",
   YELLOW: "bg-amber-500",
   RED: "bg-signal-red",
-  BLACK: "bg-gray-900",
+  BLACK: "bg-ink",
 };
 
 const SIGNAL_LABEL: Record<string, string> = {
@@ -121,7 +121,7 @@ const SIGNAL_CHIP: Record<string, string> = {
   GREEN: "bg-emerald-50 text-emerald-700",
   YELLOW: "bg-amber-50 text-amber-700",
   RED: "bg-red-50 text-signal-red",
-  BLACK: "bg-gray-900 text-white",
+  BLACK: "bg-ink text-white",
 };
 
 const STATUS_GROUPS: { key: TaskStatus; label: string }[] = [
@@ -135,7 +135,7 @@ const PRIORITY_CHIP: Record<TaskPriority, string> = {
   P0: "bg-red-100 text-signal-red",
   P1: "bg-orange-100 text-orange-700",
   P2: "bg-amber-100 text-amber-700",
-  P3: "bg-gray-100 text-gray-600",
+  P3: "bg-subtle text-brand-muted",
 };
 
 type QueueFilter = "needs_reply" | "drafts" | "delayed" | "tasks" | "all";
@@ -949,16 +949,16 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
   const noPo = !activePo || !activeSupplier;
 
   const sourceToggle = showCustomers ? (
-    <div className="inline-flex shrink-0 rounded-lg border border-brand-border bg-gray-50 p-0.5 text-xs font-semibold">
+    <div className="inline-flex shrink-0 rounded-lg border border-brand-border bg-subtle p-0.5 text-xs font-semibold">
       <button
         onClick={() => setSource("suppliers")}
-        className={`rounded-md px-3 py-1.5 transition ${source === "suppliers" ? "bg-white text-signal-red shadow-sm" : "text-brand-muted hover:text-brand-dark"}`}
+        className={`rounded-md px-3 py-1.5 transition ${source === "suppliers" ? "bg-card text-signal-red shadow-sm" : "text-brand-muted hover:text-brand-dark"}`}
       >
         Suppliers
       </button>
       <button
         onClick={() => setSource("customers")}
-        className={`rounded-md px-3 py-1.5 transition ${source === "customers" ? "bg-white text-signal-red shadow-sm" : "text-brand-muted hover:text-brand-dark"}`}
+        className={`rounded-md px-3 py-1.5 transition ${source === "customers" ? "bg-card text-signal-red shadow-sm" : "text-brand-muted hover:text-brand-dark"}`}
       >
         Customers
       </button>
@@ -977,7 +977,7 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
   return (
     <div className="-m-5 flex h-[calc(100vh-65px)] flex-col bg-brand-surface sm:-m-6 lg:-m-8">
       {/* ── Header ───────────────────────────────────────────────────────── */}
-      <header className="flex flex-wrap items-center gap-3 border-b border-brand-border bg-white px-6 py-3">
+      <header className="flex flex-wrap items-center gap-3 border-b border-brand-border bg-card px-6 py-3">
         <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-red-50 text-signal-red">
           <MessagesSquare size={17} />
         </span>
@@ -991,7 +991,7 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
         {sourceToggle}
 
         <div className="relative ml-auto w-full min-w-[200px] max-w-sm flex-1">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-brand-muted" />
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -1010,7 +1010,7 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
       </header>
 
       {/* ── Filter tabs (slim) ───────────────────────────────────────────── */}
-      <div className="flex items-center gap-1 overflow-x-auto border-b border-brand-border bg-white px-6 py-2">
+      <div className="flex items-center gap-1 overflow-x-auto border-b border-brand-border bg-card px-6 py-2">
         {QUEUE_FILTERS.map((f) => {
           const count =
             f.key === "drafts"
@@ -1031,13 +1031,13 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
               className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition ${
                 active
                   ? "bg-red-50 text-signal-red ring-1 ring-signal-red/30"
-                  : "text-brand-muted hover:bg-gray-100"
+                  : "text-brand-muted hover:bg-subtle"
               }`}
             >
               {f.label}
               <span
                 className={`rounded-full px-1.5 text-[10px] font-bold ${
-                  active ? "bg-signal-red text-white" : "bg-gray-100 text-brand-muted"
+                  active ? "bg-signal-red text-white" : "bg-subtle text-brand-muted"
                 }`}
               >
                 {count}
@@ -1056,7 +1056,7 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
       {/* ── Workspace ────────────────────────────────────────────────────── */}
       <div className="flex flex-1 gap-4 overflow-hidden p-4">
         {/* LEFT — conversation list */}
-        <aside className="flex w-[340px] min-w-[300px] shrink-0 flex-col overflow-hidden rounded-xl border border-brand-border bg-white shadow-sm">
+        <aside className="flex w-[340px] min-w-[300px] shrink-0 flex-col overflow-hidden rounded-xl border border-brand-border bg-card shadow-sm">
           <div className="flex items-center justify-between px-4 py-2.5">
             <span className="text-xs font-semibold uppercase tracking-wide text-brand-muted">Suppliers</span>
             <span className="text-[11px] text-brand-muted">{filteredSuppliers.length}</span>
@@ -1088,7 +1088,7 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
             </div>
             {activeSupplier && (
               <div className="flex shrink-0 items-center gap-1.5">
-                <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-semibold text-brand-muted">
+                <span className="rounded-full bg-subtle px-2 py-0.5 text-[10px] font-semibold text-brand-muted">
                   {poList.length}
                 </span>
                 {/* Toggle: reveal incoming supplier mails that have no PO number. */}
@@ -1098,7 +1098,7 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
                   className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[10px] font-semibold transition ${
                     showOtherMails
                       ? "border-signal-red/30 bg-red-50 text-signal-red"
-                      : "border-brand-border text-brand-muted hover:bg-gray-50"
+                      : "border-brand-border text-brand-muted hover:bg-subtle"
                   }`}
                 >
                   Other
@@ -1137,7 +1137,7 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
                       <span className="text-[11px] font-semibold uppercase tracking-wide text-brand-muted">
                         Other Mails <span className="font-normal normal-case">(no PO)</span>
                       </span>
-                      <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-semibold text-brand-muted">
+                      <span className="rounded-full bg-subtle px-2 py-0.5 text-[10px] font-semibold text-brand-muted">
                         {otherMails.length}
                       </span>
                     </div>
@@ -1163,13 +1163,13 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
         </aside>
 
         {/* CENTER — conversation */}
-        <main className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-brand-border bg-white shadow-sm">
+        <main className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-brand-border bg-card shadow-sm">
           {(activePo && activeSupplier) || (inOther && thread) ? (
             <>
               {/* Clean single-line thread header */}
               {activePo && activeSupplier ? (
                 <div className="flex items-center gap-2 border-b border-brand-border px-5 py-3">
-                  <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${SIGNAL_DOT[threadSignal] ?? "bg-gray-300"}`} />
+                  <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${SIGNAL_DOT[threadSignal] ?? "bg-subtle"}`} />
                   <h2 className="truncate font-semibold text-brand-dark">
                     PO #{activePo.supplier_po_no}
                     <span className="ml-2 font-normal text-brand-muted">{activeSupplier.supplier_name}</span>
@@ -1186,8 +1186,8 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
                       onClick={() => setHeaderMatsOpen((v) => !v)}
                       className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium ${
                         headerMatsOpen
-                          ? "border-brand-dark/20 bg-gray-100 text-brand-dark"
-                          : "border-brand-border text-brand-dark hover:bg-gray-50"
+                          ? "border-brand-dark/20 bg-subtle text-brand-dark"
+                          : "border-brand-border text-brand-dark hover:bg-subtle"
                       }`}
                       title="Materials & committed dates"
                     >
@@ -1199,14 +1199,14 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
                       className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium ${
                         detailsOpen
                           ? "border-signal-red/30 bg-red-50 text-signal-red"
-                          : "border-brand-border text-brand-dark hover:bg-gray-50"
+                          : "border-brand-border text-brand-dark hover:bg-subtle"
                       }`}
                     >
                       <Sparkles size={13} /> Details
                     </button>
                     <button
                       onClick={seedAssign}
-                      className="p-1.5 text-gray-400 hover:text-brand-dark"
+                      className="p-1.5 text-brand-muted hover:text-brand-dark"
                       title="More"
                     >
                       <MoreHorizontal size={18} />
@@ -1223,7 +1223,7 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
                       <span className="ml-2 font-normal text-brand-muted">{otherSupplierName}</span>
                     )}
                   </h2>
-                  <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-brand-muted">
+                  <span className="rounded bg-subtle px-1.5 py-0.5 text-[10px] font-bold uppercase text-brand-muted">
                     No PO
                   </span>
                   <span className="ml-2 hidden text-xs text-brand-muted md:inline">
@@ -1234,17 +1234,17 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
 
               {/* Materials & committed dates — quick dropdown from the header */}
               {headerMatsOpen && activePo && (
-                <div className="border-b border-brand-border bg-gray-50/70 px-5 py-3">
+                <div className="border-b border-brand-border bg-subtle/70 px-5 py-3">
                   <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-brand-muted">
                     Materials &amp; committed dates
                   </div>
                   {(activePo.materials?.length ?? 0) === 0 ? (
                     <div className="text-xs text-brand-muted">No materials on this PO.</div>
                   ) : (
-                    <div className="overflow-x-auto rounded border border-brand-border bg-white">
+                    <div className="overflow-x-auto rounded border border-brand-border bg-card">
                       <table className="min-w-full text-left text-xs">
-                        <thead className="bg-slate-50">
-                          <tr className="text-[10px] uppercase tracking-wide text-slate-600">
+                        <thead className="bg-subtle">
+                          <tr className="text-[10px] uppercase tracking-wide text-brand-muted">
                             <th className="px-3 py-1.5 font-semibold">Material</th>
                             <th className="px-3 py-1.5 font-semibold">Committed date</th>
                           </tr>
@@ -1326,7 +1326,7 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
                       <div className="whitespace-pre-wrap text-brand-dark">{agentReply}</div>
                     )}
                     {agentActions.map((a, i) => (
-                      <div key={i} className="mt-2 flex items-center justify-between gap-2 rounded border border-brand-border bg-white p-2">
+                      <div key={i} className="mt-2 flex items-center justify-between gap-2 rounded border border-brand-border bg-card p-2">
                         <span className="min-w-0 truncate text-brand-dark">
                           {a.type === "draft"
                             ? `✉️ Email${a.recipient ? ` to ${a.recipient}` : ""}${a.subject ? `: ${a.subject}` : ""}`
@@ -1349,7 +1349,7 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
                             {a.type === "draft" ? "Send" : "Confirm"}
                           </button>
                           <button
-                            className="rounded-md border border-brand-border px-3 py-1 text-xs text-brand-muted hover:bg-gray-50"
+                            className="rounded-md border border-brand-border px-3 py-1 text-xs text-brand-muted hover:bg-subtle"
                             onClick={() => setAgentActions((prev) => prev.filter((_, j) => j !== i))}
                           >
                             Cancel
@@ -1361,7 +1361,7 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
                 )}
                 {/* /hi command hint */}
                 {/^\/hi\b/i.test(composer) && (
-                  <div className="mb-2 rounded-lg border border-signal-red/20 bg-white p-2 text-[11px] text-brand-muted">
+                  <div className="mb-2 rounded-lg border border-signal-red/20 bg-card p-2 text-[11px] text-brand-muted">
                     <span className="font-semibold text-signal-red">HI agent</span> — try:{" "}
                     {[
                       "summarise this",
@@ -1386,7 +1386,7 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
                     <button
                       key={t.label}
                       onClick={() => setComposer(t.body)}
-                      className="rounded-full border border-brand-border px-2.5 py-0.5 text-[11px] font-medium text-brand-muted hover:bg-gray-50 hover:text-brand-dark"
+                      className="rounded-full border border-brand-border px-2.5 py-0.5 text-[11px] font-medium text-brand-muted hover:bg-subtle hover:text-brand-dark"
                     >
                       {t.label}
                     </button>
@@ -1395,7 +1395,7 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
                 <div className="relative">
                   {/* @mention autocomplete dropdown (above the textarea) */}
                   {mentionQuery !== null && mentionMatches.length > 0 && (
-                    <div className="absolute bottom-full left-0 z-20 mb-1 w-72 overflow-hidden rounded-lg border border-brand-border bg-white shadow-lg">
+                    <div className="absolute bottom-full left-0 z-20 mb-1 w-72 overflow-hidden rounded-lg border border-brand-border bg-card shadow-lg">
                       <div className="border-b border-brand-border px-2 py-1 text-[10px] uppercase tracking-wide text-brand-muted">
                         Mention a teammate
                       </div>
@@ -1405,7 +1405,7 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
                           onMouseDown={(e) => { e.preventDefault(); insertMention(a.label); }}
                           onMouseEnter={() => setMentionIdx(i)}
                           className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm ${
-                            i === mentionIdx ? "bg-red-50 text-signal-red" : "text-brand-dark hover:bg-gray-50"
+                            i === mentionIdx ? "bg-red-50 text-signal-red" : "text-brand-dark hover:bg-subtle"
                           }`}
                         >
                           <span className="truncate font-medium">{a.label}</span>
@@ -1427,7 +1427,7 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
                       }
                     }}
                     placeholder="Type your message…  (tip: start with /hi to ask the HI agent)"
-                    className="h-24 w-full resize-none rounded-lg border border-brand-border bg-gray-50 p-3 pr-28 text-sm outline-none focus:border-signal-red/40 focus:bg-white"
+                    className="h-24 w-full resize-none rounded-lg border border-brand-border bg-subtle p-3 pr-28 text-sm outline-none focus:border-signal-red/40 focus:bg-card"
                   />
                   <div className="absolute bottom-3 right-3 flex items-center gap-1.5">
                     {/* HI reply + /hi agent are PO-thread features; hidden on non-PO mails. */}
@@ -1482,7 +1482,7 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
 
         {/* RIGHT — details + actions (collapsible) */}
         {detailsOpen ? (
-          <aside className="flex w-[330px] shrink-0 flex-col overflow-hidden rounded-xl border border-brand-border bg-white shadow-sm">
+          <aside className="flex w-[330px] shrink-0 flex-col overflow-hidden rounded-xl border border-brand-border bg-card shadow-sm">
             <div className="flex items-center justify-between border-b border-brand-border px-4 py-3">
               <div className="min-w-0">
                 <div className="text-sm font-semibold text-brand-dark">Details &amp; Actions</div>
@@ -1492,7 +1492,7 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
               </div>
               <button
                 onClick={() => setDetailsOpen(false)}
-                className="rounded-md p-1.5 text-brand-muted hover:bg-gray-100"
+                className="rounded-md p-1.5 text-brand-muted hover:bg-subtle"
                 title="Collapse"
               >
                 <ChevronRight size={16} />
@@ -1528,7 +1528,7 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
               {activePo && (
                 <div>
                   <SectionTitle>Harmony Intelligent summary</SectionTitle>
-                  <div className="space-y-1.5 rounded-lg border border-brand-border bg-gray-50/60 p-3 text-xs leading-relaxed text-gray-700">
+                  <div className="space-y-1.5 rounded-lg border border-brand-border bg-subtle/60 p-3 text-xs leading-relaxed text-brand-dark">
                     <p>
                       Conversation around {activePo.material_name || "this PO"} — {draftCount} draft / {sentCount} sent.
                     </p>
@@ -1567,10 +1567,10 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
                   {showMaterials && (
                     <div className="mt-2 overflow-x-auto rounded border border-brand-border">
                       <table className="min-w-full text-[11px]">
-                        <thead className="bg-slate-50">
+                        <thead className="bg-subtle">
                           <tr>
                             {["CRM", "Material", "Qty", "Due", "Status", "Commit"].map((h, i) => (
-                              <th key={i} className="whitespace-nowrap px-2 py-1.5 text-left font-semibold text-slate-600">
+                              <th key={i} className="whitespace-nowrap px-2 py-1.5 text-left font-semibold text-brand-muted">
                                 {h}
                               </th>
                             ))}
@@ -1589,7 +1589,7 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
                                 <td className="whitespace-nowrap px-2 py-1.5">{m.po_qty ?? "-"}</td>
                                 <td className="whitespace-nowrap px-2 py-1.5">{m.due_date ?? "-"}</td>
                                 <td className="whitespace-nowrap px-2 py-1.5">
-                                  <span className={`rounded px-1.5 py-0.5 text-[10px] ${SIGNAL_CHIP[(commit?.supplier_status || m.current_status || m.signal) as string] ?? "bg-gray-100 text-gray-700"}`}>
+                                  <span className={`rounded px-1.5 py-0.5 text-[10px] ${SIGNAL_CHIP[(commit?.supplier_status || m.current_status || m.signal) as string] ?? "bg-subtle text-brand-dark"}`}>
                                     {commit?.supplier_status || m.current_status || m.signal}
                                   </span>
                                 </td>
@@ -1627,7 +1627,7 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
             </div>
           </aside>
         ) : (
-          <aside className="flex w-12 shrink-0 flex-col items-center gap-2 rounded-xl border border-brand-border bg-white py-3 shadow-sm">
+          <aside className="flex w-12 shrink-0 flex-col items-center gap-2 rounded-xl border border-brand-border bg-card py-3 shadow-sm">
             <RailIcon title="Details & actions" onClick={() => setDetailsOpen(true)}>
               <Sparkles size={18} />
             </RailIcon>
@@ -1694,7 +1694,7 @@ function SupplierRow({ s, active, onClick }: { s: CommHubSupplier; active: boole
   return (
     <button
       onClick={onClick}
-      className={`w-full border-b border-brand-border px-4 py-3 text-left transition-colors hover:bg-gray-50 ${
+      className={`w-full border-b border-brand-border px-4 py-3 text-left transition-colors hover:bg-subtle ${
         active
           ? "bg-red-50/50 ring-1 ring-inset ring-red-100"
           : unread
@@ -1704,7 +1704,7 @@ function SupplierRow({ s, active, onClick }: { s: CommHubSupplier; active: boole
     >
       <div className="flex items-center gap-2">
         {unread && <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-500" title="Unread supplier replies" />}
-        <span className={`h-2 w-2 shrink-0 rounded-full ${SIGNAL_DOT[sig] ?? "bg-gray-300"}`} title={SIGNAL_LABEL[sig]} />
+        <span className={`h-2 w-2 shrink-0 rounded-full ${SIGNAL_DOT[sig] ?? "bg-subtle"}`} title={SIGNAL_LABEL[sig]} />
         <span className={`flex-1 truncate text-sm text-brand-dark ${unread ? "font-bold" : "font-medium"}`}>
           {s.supplier_name}
         </span>
@@ -1713,7 +1713,7 @@ function SupplierRow({ s, active, onClick }: { s: CommHubSupplier; active: boole
             {(s.unread_inbound ?? 0) > 99 ? "99+" : s.unread_inbound}
           </span>
         )}
-        <span className="text-[10px] text-gray-400">{relTime(s.last_activity_at)}</span>
+        <span className="text-[10px] text-brand-muted">{relTime(s.last_activity_at)}</span>
       </div>
       <p className={`mt-1 truncate pl-4 text-xs ${unread ? "font-medium text-brand-dark/80" : "text-brand-muted"}`}>
         {s.last_subject ?? "No subject"}
@@ -1726,7 +1726,7 @@ function SupplierRow({ s, active, onClick }: { s: CommHubSupplier; active: boole
             </span>
           )}
           {s.task_count > 0 && (
-            <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-semibold text-gray-700">
+            <span className="rounded bg-subtle px-1.5 py-0.5 text-[10px] font-semibold text-brand-dark">
               {s.task_count} task{s.task_count === 1 ? "" : "s"}
             </span>
           )}
@@ -1743,7 +1743,7 @@ function PoRow({ p, active, onClick }: { p: CommHubPO; active: boolean; onClick:
   return (
     <button
       onClick={onClick}
-      className={`w-full border-b border-brand-border px-4 py-3 text-left transition hover:bg-gray-50 ${
+      className={`w-full border-b border-brand-border px-4 py-3 text-left transition hover:bg-subtle ${
         active
           ? "bg-amber-50/60 ring-1 ring-inset ring-amber-100"
           : unread
@@ -1752,7 +1752,7 @@ function PoRow({ p, active, onClick }: { p: CommHubPO; active: boolean; onClick:
       }`}
     >
       <div className="flex items-center gap-2">
-        <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${SIGNAL_DOT[sig] ?? "bg-gray-300"}`} />
+        <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${SIGNAL_DOT[sig] ?? "bg-subtle"}`} />
         <span className={`truncate text-sm text-brand-dark ${unread ? "font-bold" : "font-medium"}`}>#{p.supplier_po_no}</span>
         {(p.unread_inbound ?? 0) > 0 && (
           <span className="rounded-full bg-emerald-500 px-1.5 py-0.5 text-[10px] font-bold text-white">
@@ -1764,11 +1764,11 @@ function PoRow({ p, active, onClick }: { p: CommHubPO; active: boolean; onClick:
         </span>
       </div>
       <div className="mt-1.5 flex items-center gap-2 pl-4 text-[11px] text-brand-muted">
-        <Package size={12} className="text-gray-400" />
+        <Package size={12} className="text-brand-muted" />
         <span>{materialCount} mat{materialCount === 1 ? "" : "s"}</span>
         <span>· {p.mail_count} mail{p.mail_count === 1 ? "" : "s"}</span>
         {p.task_count > 0 && <span>· {p.task_count} task{p.task_count === 1 ? "" : "s"}</span>}
-        <span className="ml-auto text-gray-400">{relTime(p.last_activity_at)}</span>
+        <span className="ml-auto text-brand-muted">{relTime(p.last_activity_at)}</span>
       </div>
     </button>
   );
@@ -1779,7 +1779,7 @@ function OtherMailRow({ t, active, onClick }: { t: OtherMailThread; active: bool
   return (
     <button
       onClick={onClick}
-      className={`w-full border-b border-brand-border px-4 py-2.5 text-left transition hover:bg-gray-50 ${
+      className={`w-full border-b border-brand-border px-4 py-2.5 text-left transition hover:bg-subtle ${
         active
           ? "bg-amber-50/60 ring-1 ring-inset ring-amber-100"
           : unread
@@ -1788,7 +1788,7 @@ function OtherMailRow({ t, active, onClick }: { t: OtherMailThread; active: bool
       }`}
     >
       <div className="flex items-center gap-2">
-        <Mail size={13} className="shrink-0 text-gray-400" />
+        <Mail size={13} className="shrink-0 text-brand-muted" />
         <span className={`truncate text-[13px] text-brand-dark ${unread ? "font-bold" : "font-medium"}`}>
           {t.subject || "(no subject)"}
         </span>
@@ -1802,7 +1802,7 @@ function OtherMailRow({ t, active, onClick }: { t: OtherMailThread; active: bool
         <span>
           {t.message_count} mail{t.message_count === 1 ? "" : "s"}
         </span>
-        <span className="ml-auto text-gray-400">{relTime(t.last_activity_at)}</span>
+        <span className="ml-auto text-brand-muted">{relTime(t.last_activity_at)}</span>
       </div>
     </button>
   );
@@ -1844,7 +1844,7 @@ function QuickAction({
           ? "border-red-200 bg-red-50 text-signal-red hover:bg-red-100"
           : accent
             ? "border-signal-red/30 bg-red-50 text-signal-red hover:bg-red-100"
-            : "border-brand-border bg-white text-brand-dark hover:bg-gray-50"
+            : "border-brand-border bg-card text-brand-dark hover:bg-subtle"
       }`}
     >
       {icon}
@@ -1870,7 +1870,7 @@ function RailIcon({
       disabled={disabled}
       title={title}
       aria-label={title}
-      className="rounded-md p-2 text-brand-muted hover:bg-gray-100 hover:text-brand-dark disabled:pointer-events-none disabled:opacity-30"
+      className="rounded-md p-2 text-brand-muted hover:bg-subtle hover:text-brand-dark disabled:pointer-events-none disabled:opacity-30"
     >
       {children}
     </button>
@@ -1898,29 +1898,29 @@ function MailBubble({ mail, onAssign }: { mail: CommHubMessage; onAssign: () => 
     <div className={`flex flex-col ${isIncoming ? "items-start" : "items-end"}`}>
       <div
         className={`group relative max-w-[82%] rounded-2xl border p-4 shadow-sm ${
-          isIncoming ? "border-brand-border bg-white" : "border-amber-100 bg-amber-50"
+          isIncoming ? "border-brand-border bg-card" : "border-amber-100 bg-amber-50"
         }`}
       >
         <div className="mb-1 flex items-center justify-between gap-3">
-          <span className="truncate text-xs font-semibold text-gray-700">{mail.subject || "(no subject)"}</span>
-          <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-gray-600">
+          <span className="truncate text-xs font-semibold text-brand-dark">{mail.subject || "(no subject)"}</span>
+          <span className="rounded bg-subtle px-1.5 py-0.5 text-[10px] font-semibold uppercase text-brand-muted">
             {mail.sent_status}
           </span>
         </div>
         {mail.table_format && (
           <div className="mb-2">
-            <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-slate-700">
+            <span className="rounded bg-subtle px-1.5 py-0.5 text-[10px] font-semibold uppercase text-brand-dark">
               {mail.table_format === "PO_MATERIALS" ? "PO Material Table" : "Supplier Reply Table"}
             </span>
           </div>
         )}
         {bodyText && (
-          <p className="whitespace-pre-wrap text-sm leading-relaxed text-gray-800">
+          <p className="whitespace-pre-wrap text-sm leading-relaxed text-brand-dark">
             {truncate(bodyText, tableRows.length > 0 ? 1200 : 600)}
           </p>
         )}
         {tableRows.length > 0 && <ThreadMessageTable rows={tableRows} />}
-        <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] text-gray-400">
+        <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] text-brand-muted">
           <span>{fmtTime(mail.sent_at ?? mail.received_at ?? mail.created_at)}</span>
           <span>·</span>
           <span>{mail.mail_type || mail.source || "MAIL"}</span>
@@ -1929,7 +1929,7 @@ function MailBubble({ mail, onAssign }: { mail: CommHubMessage; onAssign: () => 
         </div>
         <button
           onClick={onAssign}
-          className="absolute -left-9 top-2 rounded-full border border-brand-border bg-white p-1.5 text-gray-500 opacity-0 shadow transition-opacity hover:text-signal-red group-hover:opacity-100"
+          className="absolute -left-9 top-2 rounded-full border border-brand-border bg-card p-1.5 text-brand-muted opacity-0 shadow transition-opacity hover:text-signal-red group-hover:opacity-100"
           title="Assign task from this mail"
         >
           <UserPlus size={12} />
@@ -1941,14 +1941,14 @@ function MailBubble({ mail, onAssign }: { mail: CommHubMessage; onAssign: () => 
 
 function ThreadMessageTable({ rows }: { rows: ThreadTableRow[] }) {
   return (
-    <div className="mt-3 overflow-x-auto rounded border border-brand-border bg-white">
+    <div className="mt-3 overflow-x-auto rounded border border-brand-border bg-card">
       <table className="min-w-full text-xs">
-        <thead className="bg-slate-100">
+        <thead className="bg-subtle">
           <tr>
             {["CRM No", "Material Name", "Qty", "UOM", "Due Date", "Status", "Commitment Date", "Remark"].map((header) => (
               <th
                 key={header}
-                className="whitespace-nowrap border-b border-brand-border px-2 py-1.5 text-left font-semibold text-slate-700"
+                className="whitespace-nowrap border-b border-brand-border px-2 py-1.5 text-left font-semibold text-brand-dark"
               >
                 {header}
               </th>
@@ -1987,7 +1987,7 @@ function TaskCard({ task, onToggleDone }: { task: CommunicationTask; onToggleDon
   const sig = (task.signal || "YELLOW") as TaskSignal;
   return (
     <div
-      className={`rounded-lg border bg-white p-3 transition-colors hover:border-signal-red/30 ${done ? "opacity-60" : ""} ${
+      className={`rounded-lg border bg-card p-3 transition-colors hover:border-signal-red/30 ${done ? "opacity-60" : ""} ${
         sig === "BLACK" ? "border-gray-900/40" : sig === "RED" ? "border-red-200" : "border-brand-border"
       }`}
     >
@@ -1995,7 +1995,7 @@ function TaskCard({ task, onToggleDone }: { task: CommunicationTask; onToggleDon
         <button
           onClick={onToggleDone}
           className={`mt-0.5 grid h-4 w-4 shrink-0 place-items-center rounded-full border-2 ${
-            done ? "border-emerald-500 bg-emerald-500" : "border-gray-300 hover:border-signal-red"
+            done ? "border-emerald-500 bg-emerald-500" : "border-brand-border hover:border-signal-red"
           }`}
           title={done ? "Reopen" : "Mark done"}
         >
@@ -2012,11 +2012,11 @@ function TaskCard({ task, onToggleDone }: { task: CommunicationTask; onToggleDon
             </p>
           )}
         </div>
-        <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${SIGNAL_DOT[sig] ?? "bg-gray-300"}`} />
+        <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${SIGNAL_DOT[sig] ?? "bg-subtle"}`} />
       </div>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-1.5">
-          <span className={`rounded px-1.5 py-0.5 text-[9px] font-bold ${PRIORITY_CHIP[task.priority as TaskPriority] ?? "bg-gray-100 text-gray-600"}`}>
+          <span className={`rounded px-1.5 py-0.5 text-[9px] font-bold ${PRIORITY_CHIP[task.priority as TaskPriority] ?? "bg-subtle text-brand-muted"}`}>
             {task.priority}
           </span>
           {task.assigned_to && (

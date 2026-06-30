@@ -18,7 +18,7 @@ export default function Page() {
       />
       <div className="card overflow-hidden">
         <table className="min-w-full text-sm">
-          <thead className="bg-gray-50">
+          <thead className="bg-subtle">
             <tr>
               {["Supplier", "Signal", "Email Mapped", "Primary Email", "PO No."].map((h) => (
                 <th key={h} className="text-left px-4 py-3 table-header whitespace-nowrap">{h}</th>
@@ -36,7 +36,7 @@ export default function Page() {
             {suppliers.map((supplier) => {
               const sig = (supplier.latest_signal ?? "").toUpperCase();
               return (
-                <tr key={supplier.id} className="border-t border-brand-border hover:bg-gray-50">
+                <tr key={supplier.id} className="border-t border-brand-border hover:bg-subtle">
                   <td className="px-4 py-3 font-medium">{supplier.supplier_name}</td>
                   <td className="px-4 py-3">
                     {sig ? (

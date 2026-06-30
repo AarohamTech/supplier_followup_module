@@ -94,7 +94,7 @@ function NavList({ onNavigate }: { onNavigate?: () => void }) {
 
         return (
           <div key={group.label}>
-            <div className="mb-1.5 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-gray-400">
+            <div className="mb-1.5 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-brand-muted">
               {group.label}
             </div>
             <div className="space-y-1">
@@ -110,14 +110,14 @@ function NavList({ onNavigate }: { onNavigate?: () => void }) {
                     className={cn(
                       "group flex items-center gap-3 rounded-md px-3 py-2 text-[13px] font-medium",
                       active
-                        ? "bg-white text-brand-dark shadow-sm ring-1 ring-inset ring-brand-border"
-                        : "text-gray-600 hover:bg-white hover:text-brand-dark",
+                        ? "bg-card text-brand-dark shadow-sm ring-1 ring-inset ring-brand-border"
+                        : "text-brand-muted hover:bg-card hover:text-brand-dark",
                     )}
                   >
                     <Icon
                       size={16}
                       strokeWidth={1.8}
-                      className={cn("shrink-0", active ? "text-signal-red" : "text-gray-400 group-hover:text-gray-600")}
+                      className={cn("shrink-0", active ? "text-signal-red" : "text-brand-muted group-hover:text-brand-muted")}
                     />
                     <span className="truncate">{item.label}</span>
                   </Link>
@@ -134,7 +134,7 @@ function NavList({ onNavigate }: { onNavigate?: () => void }) {
 export default function Sidebar({ open = false, onClose }: { open?: boolean; onClose?: () => void }) {
   return (
     <>
-      <aside className="hidden w-64 shrink-0 border-r border-brand-border bg-slate-50 md:block">
+      <aside className="hidden w-64 shrink-0 border-r border-brand-border bg-subtle md:block">
         <div className="sticky top-16 h-[calc(100vh-4rem)] overflow-y-auto px-3 py-5">
           <NavList />
         </div>
@@ -148,13 +148,13 @@ export default function Sidebar({ open = false, onClose }: { open?: boolean; onC
             onClick={onClose}
             aria-label="Close navigation"
           />
-          <aside className="mobile-nav-drawer relative h-full w-[min(20rem,86vw)] border-r border-brand-border bg-slate-50 shadow-2xl">
+          <aside className="mobile-nav-drawer relative h-full w-[min(20rem,86vw)] border-r border-brand-border bg-subtle shadow-2xl">
             <div className="flex h-16 items-center justify-between border-b border-brand-border px-4">
               <div>
                 <div className="text-sm font-semibold text-brand-dark">Supplier Follow-up</div>
                 <div className="text-[11px] text-brand-muted">Procurement control tower</div>
               </div>
-              <button type="button" onClick={onClose} className="rounded-md p-2 text-brand-muted hover:bg-gray-100" aria-label="Close navigation">
+              <button type="button" onClick={onClose} className="rounded-md p-2 text-brand-muted hover:bg-subtle" aria-label="Close navigation">
                 <X size={18} />
               </button>
             </div>

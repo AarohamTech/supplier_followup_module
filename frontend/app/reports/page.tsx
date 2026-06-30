@@ -71,7 +71,7 @@ export default function Page() {
       <div className="card p-4">
         <div className="font-semibold text-sm mb-3">Critical Procurement Lines (RED + BLACK)</div>
         <table className="min-w-full text-sm">
-          <thead className="bg-gray-50">
+          <thead className="bg-subtle">
             <tr>{["PO No.", "SUPPLIER", "MATERIAL", "QTY", "SIGNAL", "STATUS"].map((h) => (
               <th key={h} className="text-left px-3 py-2 table-header">{h}</th>
             ))}</tr>

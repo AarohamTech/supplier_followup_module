@@ -26,7 +26,7 @@ export default function AsnTable({
   return (
     <div className="table-shell">
       <table className="min-w-full text-sm">
-        <thead className="bg-gray-50">
+        <thead className="bg-subtle">
           <tr>
             {cols.map((h) => (
               <th key={h} className="px-4 py-3 text-left table-header whitespace-nowrap">{h}</th>
@@ -45,7 +45,7 @@ export default function AsnTable({
             return (
               <tr
                 key={a.id}
-                className="border-t border-brand-border hover:bg-gray-50 cursor-pointer"
+                className="border-t border-brand-border hover:bg-subtle cursor-pointer"
                 onClick={() => onOpen(a)}
               >
                 <td className="px-4 py-3">
@@ -54,7 +54,7 @@ export default function AsnTable({
                 </td>
                 {showSupplier && <td className="px-4 py-3 text-xs">{a.supplier_name || "—"}</td>}
                 <td className="px-4 py-3">
-                  <span className="badge bg-gray-100 text-gray-700">{a.supplier_po_no}</span>
+                  <span className="badge bg-subtle text-brand-dark">{a.supplier_po_no}</span>
                 </td>
                 <td className="px-4 py-3">
                   <div className="text-sm">{a.carrier_name || "—"}</div>
@@ -65,7 +65,7 @@ export default function AsnTable({
                     <span className="text-brand-muted">{meta.label}</span>
                     <span className="text-brand-muted">{a.progress_percent}%</span>
                   </div>
-                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-gray-100">
+                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-subtle">
                     <div className={"h-full rounded-full " + meta.bar} style={{ width: `${a.progress_percent}%` }} />
                   </div>
                 </td>

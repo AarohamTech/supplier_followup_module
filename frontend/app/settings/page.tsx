@@ -45,12 +45,12 @@ const FOLLOWUP_STATUSES = [
 ];
 
 function statusBadge(status: string | null | undefined) {
-  if (!status) return "text-brand-muted bg-gray-100";
+  if (!status) return "text-brand-muted bg-subtle";
   const upper = status.toUpperCase();
   if (upper === "OK") return "text-green-700 bg-green-50";
   if (upper === "ERROR") return "text-red-700 bg-red-50";
   if (upper === "DISABLED") return "text-amber-700 bg-amber-50";
-  return "text-brand-muted bg-gray-100";
+  return "text-brand-muted bg-subtle";
 }
 
 function formatDateTime(value: string | null | undefined) {
@@ -403,7 +403,7 @@ export default function SettingsPage() {
               type="button"
               onClick={handleRunAllJobs}
               disabled={busyKey === "run-all-jobs"}
-              className="text-xs px-2 py-1 rounded bg-brand-dark text-white disabled:opacity-50"
+              className="text-xs px-2 py-1 rounded bg-ink text-white disabled:opacity-50"
             >
               {busyKey === "run-all-jobs" ? "Running…" : "Run All Jobs"}
             </button>
@@ -411,7 +411,7 @@ export default function SettingsPage() {
               type="button"
               onClick={refreshAll}
               disabled={loading}
-              className="text-xs px-2 py-1 rounded border border-brand-border bg-white"
+              className="text-xs px-2 py-1 rounded border border-brand-border bg-card"
             >
               Refresh
             </button>
@@ -517,7 +517,7 @@ export default function SettingsPage() {
             type="button"
             onClick={refreshAll}
             disabled={loading}
-            className="text-xs px-2 py-1 rounded border border-brand-border bg-white"
+            className="text-xs px-2 py-1 rounded border border-brand-border bg-card"
           >
             Refresh
           </button>
@@ -530,7 +530,7 @@ export default function SettingsPage() {
               <div key={rule.id} className="rounded border border-brand-border p-4 space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className={`px-2 py-0.5 rounded-full text-xs ring-1 ${signalClass[signal] || "bg-gray-100 text-brand-dark ring-gray-200"}`}>
+                    <span className={`px-2 py-0.5 rounded-full text-xs ring-1 ${signalClass[signal] || "bg-subtle text-brand-dark ring-gray-200"}`}>
                       {signal}
                     </span>
                     <span className="text-sm font-medium">{rule.template_name}</span>
@@ -832,7 +832,7 @@ export default function SettingsPage() {
             <div className="font-semibold text-sm">Recent Job Runs</div>
             <button
               type="button"
-              className="text-xs px-2 py-1 rounded border border-brand-border bg-white"
+              className="text-xs px-2 py-1 rounded border border-brand-border bg-card"
               onClick={refreshAll}
             >
               Refresh

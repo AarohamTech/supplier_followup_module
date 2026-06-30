@@ -31,7 +31,7 @@ function actionBadge(action: SupplierEmailAudit["action"]) {
     UPDATE: "bg-amber-50 text-amber-700",
     DELETE: "bg-red-50 text-signal-red",
   };
-  return map[action] ?? "bg-slate-100 text-brand-dark";
+  return map[action] ?? "bg-subtle text-brand-dark";
 }
 
 export default function EmailAuditModal({ onClose }: { onClose: () => void }) {
@@ -49,12 +49,12 @@ export default function EmailAuditModal({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="fixed inset-0 z-50 bg-black/40 grid place-items-center p-4" onClick={onClose}>
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-3xl max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+      <div className="bg-card rounded-lg shadow-xl w-full max-w-3xl max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
         <div className="px-5 py-3 border-b border-brand-border flex items-center justify-between">
           <div className="flex items-center gap-2 font-semibold text-brand-dark">
             <History size={16} /> Email Master — Change Log
           </div>
-          <button className="p-1 rounded hover:bg-gray-100" onClick={onClose}><X size={18} /></button>
+          <button className="p-1 rounded hover:bg-subtle" onClick={onClose}><X size={18} /></button>
         </div>
 
         <div className="overflow-y-auto p-4">

@@ -131,7 +131,7 @@ export default function Page() {
         <div className="card p-4 text-sm">
           <div className="mb-2 flex items-center justify-between">
             <div className="font-semibold text-brand-dark">Supplier login provisioning</div>
-            <button className="p-1 rounded hover:bg-gray-100" onClick={() => setProvisioning(null)}><X size={16} /></button>
+            <button className="p-1 rounded hover:bg-subtle" onClick={() => setProvisioning(null)}><X size={16} /></button>
           </div>
           {provisioning.created.length === 0 &&
           provisioning.reactivated.length === 0 &&
@@ -181,7 +181,7 @@ export default function Page() {
 
       <div className="card overflow-hidden">
         <table className="min-w-full text-sm">
-          <thead className="bg-gray-50">
+          <thead className="bg-subtle">
             <tr>
               {["Supplier", "Primary", "CC", "BCC", "Escalation", "Active", "Actions"].map((h) => (
                 <th key={h} className="text-left px-4 py-3 table-header whitespace-nowrap">{h}</th>
@@ -195,7 +195,7 @@ export default function Page() {
               </tr>
             )}
             {mappings.map((mapping) => (
-              <tr key={mapping.id} className="border-t border-brand-border hover:bg-gray-50">
+              <tr key={mapping.id} className="border-t border-brand-border hover:bg-subtle">
                 <td className="px-4 py-3 font-medium">{mapping.supplier_name}</td>
                 <td className="px-4 py-3 text-xs">{joinEmails(mapping.to_emails)}</td>
                 <td className="px-4 py-3 text-xs">{joinEmails(mapping.cc_emails)}</td>
@@ -209,12 +209,12 @@ export default function Page() {
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-2">
                     {isAdmin && (
-                      <button title="Supplier logins" onClick={() => setLoginsFor(mapping)} className="p-1 rounded hover:bg-gray-100">
+                      <button title="Supplier logins" onClick={() => setLoginsFor(mapping)} className="p-1 rounded hover:bg-subtle">
                         <KeyRound size={14} />
                       </button>
                     )}
                     {canEdit && (
-                      <button title="Edit" onClick={() => edit(mapping)} className="p-1 rounded hover:bg-gray-100">
+                      <button title="Edit" onClick={() => edit(mapping)} className="p-1 rounded hover:bg-subtle">
                         <Pencil size={14} />
                       </button>
                     )}
@@ -233,17 +233,17 @@ export default function Page() {
 
       {editing && (
         <div className="fixed inset-0 z-50 bg-black/40 grid place-items-center p-4" onClick={() => setEditing(null)}>
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-card rounded-lg shadow-xl w-full max-w-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="px-5 py-3 border-b border-brand-border flex items-center justify-between">
               <div className="font-semibold">{editing.id ? "Edit" : "Add"} Email Mapping</div>
-              <button className="p-1 rounded hover:bg-gray-100" onClick={() => setEditing(null)}><X size={18} /></button>
+              <button className="p-1 rounded hover:bg-subtle" onClick={() => setEditing(null)}><X size={18} /></button>
             </div>
             <div className="p-5 space-y-4">
               {error && <div className="text-sm text-signal-red bg-red-50 border border-red-100 rounded-md px-3 py-2">{error}</div>}
               <div>
                 <div className="text-[10px] uppercase tracking-wider text-brand-muted font-semibold mb-1">Supplier Dropdown *</div>
                 <select
-                  className="w-full border border-brand-border rounded-md px-3 py-2 text-sm bg-white"
+                  className="w-full border border-brand-border rounded-md px-3 py-2 text-sm bg-card"
                   value={editing.supplier_id ?? ""}
                   onChange={(event) => {
                     const supplierId = Number(event.target.value);
@@ -373,7 +373,7 @@ const TagsInput = forwardRef<TagsHandle, { label: string; values: string[]; onCh
   return (
     <div>
       <div className="text-[10px] uppercase tracking-wider text-brand-muted font-semibold mb-1">{label}</div>
-      <div className="min-h-10 w-full border border-brand-border rounded-md px-2 py-1.5 flex flex-wrap items-center gap-1.5 bg-white">
+      <div className="min-h-10 w-full border border-brand-border rounded-md px-2 py-1.5 flex flex-wrap items-center gap-1.5 bg-card">
         {values.map((email) => (
           <span key={email} className="chip py-0.5">
             {email}

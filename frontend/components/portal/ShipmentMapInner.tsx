@@ -36,7 +36,7 @@ export default function ShipmentMapInner({ events }: { events: AsnEvent[] }) {
 
   if (points.length === 0) {
     return (
-      <div className="grid h-64 place-items-center rounded-lg border border-brand-border bg-gray-50 text-xs text-brand-muted">
+      <div className="grid h-64 place-items-center rounded-lg border border-brand-border bg-subtle text-xs text-brand-muted">
         No mappable checkpoints yet.
       </div>
     );

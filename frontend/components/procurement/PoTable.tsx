@@ -130,7 +130,7 @@ export default function PoTable() {
       )}
       <div className="overflow-x-auto">
         <table className="min-w-full text-sm border-collapse">
-          <thead className="bg-gray-50">
+          <thead className="bg-subtle">
             <tr>
               {groupHeaders.map((h, i) => (
                 <th key={i} className="text-left px-3 py-2.5 table-header whitespace-nowrap border-b border-brand-border">
@@ -153,7 +153,7 @@ export default function PoTable() {
               return (
                 <Fragment key={g.key}>
                   <tr
-                    className="border-t border-brand-border bg-white hover:bg-blue-50/40 cursor-pointer"
+                    className="border-t border-brand-border bg-card hover:bg-blue-50/40 cursor-pointer"
                     onClick={() => toggle(g.key)}
                   >
                     <td className="px-3 py-2.5 w-8">
@@ -166,7 +166,7 @@ export default function PoTable() {
                       </div>
                     </td>
                     <td className="px-3 py-2.5 whitespace-nowrap">
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-100 text-slate-700 text-xs font-semibold">
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-subtle text-brand-dark text-xs font-semibold">
                         {g.records.length} material(s)
                       </span>
                     </td>
@@ -213,16 +213,16 @@ export default function PoTable() {
                     )}
                   </tr>
                   {isOpen && (
-                    <tr className="bg-slate-50/60">
+                    <tr className="bg-subtle/60">
                       <td colSpan={groupHeaders.length} className="px-3 py-3">
                         <div className="overflow-x-auto">
-                          <table className="min-w-full text-xs border border-brand-border bg-white">
-                            <thead className="bg-slate-100">
+                          <table className="min-w-full text-xs border border-brand-border bg-card">
+                            <thead className="bg-subtle">
                               <tr>
                                 {materialHeaders.map((h, i) => (
                                   <th
                                     key={i}
-                                    className="text-left px-2 py-1.5 font-semibold text-slate-700 border-b border-brand-border whitespace-nowrap"
+                                    className="text-left px-2 py-1.5 font-semibold text-brand-dark border-b border-brand-border whitespace-nowrap"
                                   >
                                     {h}
                                   </th>
@@ -286,7 +286,7 @@ export default function PoTable() {
           <button
             disabled={page <= 1}
             onClick={() => setFilters({ page: page - 1 })}
-            className="px-2.5 py-1 rounded text-sm hover:bg-gray-100 disabled:opacity-40"
+            className="px-2.5 py-1 rounded text-sm hover:bg-subtle disabled:opacity-40"
           >
             Prev
           </button>
@@ -294,7 +294,7 @@ export default function PoTable() {
           <button
             disabled={page >= pages}
             onClick={() => setFilters({ page: page + 1 })}
-            className="px-2.5 py-1 rounded text-sm hover:bg-gray-100 disabled:opacity-40"
+            className="px-2.5 py-1 rounded text-sm hover:bg-subtle disabled:opacity-40"
           >
             Next
           </button>

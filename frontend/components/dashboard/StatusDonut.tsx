@@ -1,14 +1,17 @@
 "use client";
 import { useStore } from "@/lib/store";
+import { useTheme } from "@/lib/theme";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
 
 export default function StatusDonut() {
   const k = useStore((s) => s.kpis);
+  const isDark = useTheme((s) => s.isDark);
   const data = [
-    { name: "Green", value: k?.green_count ?? 0, color: "#10B981" },
-    { name: "Yellow", value: k?.yellow_count ?? 0, color: "#F59E0B" },
-    { name: "Red", value: k?.red_count ?? 0, color: "#E11D2E" },
-    { name: "Black", value: k?.black_count ?? 0, color: "#111827" },
+    { name: "Green", value: k?.green_count ?? 0, color: isDark ? "#34D399" : "#10B981" },
+    { name: "Yellow", value: k?.yellow_count ?? 0, color: isDark ? "#FBBF24" : "#F59E0B" },
+    { name: "Red", value: k?.red_count ?? 0, color: isDark ? "#F4434E" : "#E11D2E" },
+    // "Black" would vanish on a dark card — use a light ink in dark mode.
+    { name: "Black", value: k?.black_count ?? 0, color: isDark ? "#E6EAF0" : "#111827" },
   ];
   const total = data.reduce((a, b) => a + b.value, 0);
   return (

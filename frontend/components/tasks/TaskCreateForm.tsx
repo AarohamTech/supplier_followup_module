@@ -103,13 +103,13 @@ export default function TaskCreateForm({
 
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" onClick={onCancel}>
-      <div className="w-full max-w-2xl rounded-xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+      <div className="w-full max-w-2xl rounded-xl bg-card shadow-2xl" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between border-b border-brand-border px-5 py-3">
           <div className="flex items-center gap-2">
             <UserPlus size={16} className="text-signal-red" />
             <span className="font-semibold">Create Task</span>
           </div>
-          <button className="rounded p-1 hover:bg-gray-100" onClick={onCancel}>
+          <button className="rounded p-1 hover:bg-subtle" onClick={onCancel}>
             <X size={18} />
           </button>
         </div>

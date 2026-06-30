@@ -52,21 +52,21 @@ function ConversationPanelBase({
           </h2>
           <span
             className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ${
-              PRIORITY_TONE[mail.priority] || "bg-gray-200 text-brand-dark"
+              PRIORITY_TONE[mail.priority] || "bg-subtle text-brand-dark"
             }`}
           >
             {mail.priority}
           </span>
           <button
             type="button"
-            className="rounded-md p-1.5 text-gray-400 hover:bg-gray-100 hover:text-brand-dark"
+            className="rounded-md p-1.5 text-brand-muted hover:bg-subtle hover:text-brand-dark"
             title="Schedule"
           >
             <Calendar className="h-4 w-4" />
           </button>
           <button
             type="button"
-            className="rounded-md p-1.5 text-gray-400 hover:bg-gray-100 hover:text-brand-dark"
+            className="rounded-md p-1.5 text-brand-muted hover:bg-subtle hover:text-brand-dark"
             title="History"
           >
             <Clock className="h-4 w-4" />
@@ -74,7 +74,7 @@ function ConversationPanelBase({
           <button
             type="button"
             onClick={onOpenContext}
-            className="rounded-md p-1.5 text-gray-400 hover:bg-gray-100 hover:text-brand-dark 2xl:hidden"
+            className="rounded-md p-1.5 text-brand-muted hover:bg-subtle hover:text-brand-dark 2xl:hidden"
             title="Procurement context"
           >
             <PanelRightOpen className="h-4 w-4" />
@@ -95,7 +95,7 @@ function ConversationPanelBase({
       <div className="min-h-0 flex-1 space-y-5 overflow-y-auto bg-brand-surface/40 px-4 py-5 sm:px-6">
         {/* Incoming customer mail — left */}
         <div className="flex justify-start">
-          <article className="max-w-[90%] rounded-xl border border-brand-border bg-white p-4 lg:max-w-[72ch]">
+          <article className="max-w-[90%] rounded-xl border border-brand-border bg-card p-4 lg:max-w-[72ch]">
             <div className="mb-2 flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">
                 <span className="flex h-7 w-7 items-center justify-center rounded-md bg-signal-red text-[11px] font-semibold text-white">
@@ -121,12 +121,12 @@ function ConversationPanelBase({
         {/* Outgoing replies — right */}
         {localReplies.map((reply) => (
           <div key={reply.id} className="flex justify-end">
-            <article className="max-w-[90%] rounded-xl border border-gray-200 bg-gray-50 p-4 lg:max-w-[72ch]">
+            <article className="max-w-[90%] rounded-xl border border-brand-border bg-subtle p-4 lg:max-w-[72ch]">
               <div className="mb-1.5 flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-semibold text-brand-dark">You replied</span>
                   {replyStatusLabel(reply.status) && (
-                    <span className="rounded-full border border-brand-border bg-white px-1.5 py-0.5 text-[10px] font-medium text-brand-muted">
+                    <span className="rounded-full border border-brand-border bg-card px-1.5 py-0.5 text-[10px] font-medium text-brand-muted">
                       {replyStatusLabel(reply.status)}
                     </span>
                   )}

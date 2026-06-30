@@ -102,7 +102,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <>
       <StoreBootstrap />
-      <div className="flex min-h-screen flex-col bg-[#F4F5F7]">
+      <div className="flex min-h-screen flex-col bg-brand-surface">
         <Topbar onMenuClick={() => setSidebarOpen(true)} />
         <div className="flex-1 flex min-h-0">
           <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />

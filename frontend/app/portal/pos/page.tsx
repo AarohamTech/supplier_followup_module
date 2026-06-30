@@ -61,7 +61,7 @@ export default function PortalPosPage() {
 
       <div className="table-shell">
         <table className="min-w-full text-sm">
-          <thead className="bg-gray-50">
+          <thead className="bg-subtle">
             <tr>
               {["PO Reference", "CRM No", "Materials", "Signal", "Earliest Due", "ASNs", "Messages", "Status", ""].map((h) => (
                 <th key={h} className="px-4 py-3 text-left table-header whitespace-nowrap">{h}</th>
@@ -80,7 +80,7 @@ export default function PortalPosPage() {
                 key={p.supplier_po_no}
                 onClick={() => open(p.supplier_po_no)}
                 className={cn(
-                  "cursor-pointer border-t border-brand-border hover:bg-gray-50",
+                  "cursor-pointer border-t border-brand-border hover:bg-subtle",
                   p.escalated && "bg-red-50/50",
                 )}
               >

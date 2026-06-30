@@ -56,13 +56,13 @@ const PRIORITY_BADGE: Record<string, string> = {
   P0: "bg-rose-100 text-rose-700",
   P1: "bg-amber-100 text-amber-700",
   P2: "bg-blue-100 text-blue-700",
-  P3: "bg-slate-100 text-slate-600",
+  P3: "bg-subtle text-brand-muted",
 };
 
 const SOURCE_BADGE: Record<string, string> = {
   SUPPLIER: "bg-violet-100 text-violet-700",
   CUSTOMER: "bg-cyan-100 text-cyan-700",
-  INTERNAL: "bg-slate-100 text-slate-600",
+  INTERNAL: "bg-subtle text-brand-muted",
   ESCALATION: "bg-rose-100 text-rose-700",
 };
 
@@ -77,7 +77,7 @@ function signalDot(signal?: string | null) {
     case "GREEN":
       return "bg-green-500";
     default:
-      return "bg-slate-300";
+      return "bg-subtle";
   }
 }
 
@@ -295,7 +295,7 @@ export default function PortalTaskWorkspace({
 
       {/* KPI strip */}
       <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2.5">
-        <Kpi label="Total" value={kpiCounts.total_tasks} icon={<ListChecks size={16} className="text-slate-600" />} tone="bg-slate-100" />
+        <Kpi label="Total" value={kpiCounts.total_tasks} icon={<ListChecks size={16} className="text-brand-muted" />} tone="bg-subtle" />
         <Kpi label="Open" value={(kpiCounts.total_tasks ?? 0) - (kpiCounts.done ?? 0)} icon={<Clock size={16} className="text-blue-600" />} tone="bg-blue-100" />
         <Kpi label="Overdue" value={kpiCounts.overdue} icon={<AlertTriangle size={16} className="text-rose-600" />} tone="bg-rose-100" />
         <Kpi label="Due Today" value={kpiCounts.due_today} icon={<CalendarClock size={16} className="text-amber-600" />} tone="bg-amber-100" />
@@ -342,13 +342,13 @@ export default function PortalTaskWorkspace({
         <div className="flex gap-3 overflow-x-auto pb-3">
           {COLUMNS.map((col) => (
             <div key={col.key} className="flex-shrink-0 w-72">
-              <div className="rounded-lg border border-brand-border bg-white shadow-sm">
+              <div className="rounded-lg border border-brand-border bg-card shadow-sm">
                 <div className="flex items-center justify-between px-3 py-2 border-b border-brand-border">
                   <div className="flex items-center gap-2">
                     <span className={`h-2 w-2 rounded-full ${col.dot}`} />
                     <span className="text-xs font-semibold">{col.label}</span>
                   </div>
-                  <span className="text-[11px] text-brand-muted bg-gray-100 rounded-full px-1.5">
+                  <span className="text-[11px] text-brand-muted bg-subtle rounded-full px-1.5">
                     {grouped[col.key].length}
                   </span>
                 </div>
@@ -361,7 +361,7 @@ export default function PortalTaskWorkspace({
                         key={task.id}
                         type="button"
                         onClick={() => setSelected(task)}
-                        className="w-full rounded-lg border border-brand-border bg-white p-2.5 text-left shadow-sm transition hover:border-gray-300 hover:shadow-md"
+                        className="w-full rounded-lg border border-brand-border bg-card p-2.5 text-left shadow-sm transition hover:border-brand-border hover:shadow-md"
                       >
                         <div className="flex items-start justify-between gap-2">
                           <span className="text-sm font-medium leading-snug line-clamp-2">{task.title}</span>
@@ -407,13 +407,13 @@ export default function PortalTaskWorkspace({
                         </div>
                         {!permissions.readOnly && task.assigned_to && (
                           <div className="mt-1.5 flex items-center gap-1">
-                            <span className="h-5 w-5 rounded-full bg-brand-dark text-white text-[9px] flex items-center justify-center">
+                            <span className="h-5 w-5 rounded-full bg-ink text-white text-[9px] flex items-center justify-center">
                               {task.assigned_to.slice(0, 2).toUpperCase()}
                             </span>
                             <span className="text-[11px] text-brand-muted truncate">{task.assigned_to}</span>
                           </div>
                         )}
-                        <div className="mt-2 h-1.5 w-full rounded-full bg-gray-100">
+                        <div className="mt-2 h-1.5 w-full rounded-full bg-subtle">
                           <div
                             className="h-1.5 rounded-full bg-emerald-500"
                             style={{ width: `${task.progress_percent ?? 0}%` }}
@@ -446,7 +446,7 @@ export default function PortalTaskWorkspace({
             </thead>
             <tbody className="divide-y divide-brand-border">
               {filtered.map((task) => (
-                <tr key={task.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => setSelected(task)}>
+                <tr key={task.id} className="hover:bg-subtle cursor-pointer" onClick={() => setSelected(task)}>
                   <td className="py-2 pr-3">
                     <div className="font-medium">{task.title}</div>
                     <div className="text-brand-muted truncate max-w-[280px]">{task.material_name}</div>
@@ -549,14 +549,14 @@ function PortalTaskHeader({
           <button
             type="button"
             onClick={() => setView("kanban")}
-            className={`px-3 py-1.5 ${view === "kanban" ? "bg-brand-dark text-white" : "bg-white text-brand-dark"}`}
+            className={`px-3 py-1.5 ${view === "kanban" ? "bg-ink text-white" : "bg-card text-brand-dark"}`}
           >
             Kanban
           </button>
           <button
             type="button"
             onClick={() => setView("table")}
-            className={`px-3 py-1.5 ${view === "table" ? "bg-brand-dark text-white" : "bg-white text-brand-dark"}`}
+            className={`px-3 py-1.5 ${view === "table" ? "bg-ink text-white" : "bg-card text-brand-dark"}`}
           >
             Table
           </button>
@@ -671,7 +671,7 @@ function PortalTaskDrawer({
   return (
     <div className="fixed inset-0 z-50 grid place-items-center p-3 sm:p-6 bg-black/50" onClick={onClose}>
       <div
-        className="relative w-full max-w-4xl max-h-[90vh] bg-white rounded-xl shadow-2xl flex flex-col overflow-hidden"
+        className="relative w-full max-w-4xl max-h-[90vh] bg-card rounded-xl shadow-2xl flex flex-col overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -692,7 +692,7 @@ function PortalTaskDrawer({
             </div>
             <h2 className="text-lg font-semibold text-brand-dark leading-snug truncate">{task.title}</h2>
           </div>
-          <button onClick={onClose} className="p-1.5 rounded hover:bg-gray-100 text-brand-muted">
+          <button onClick={onClose} className="p-1.5 rounded hover:bg-subtle text-brand-muted">
             <X size={18} />
           </button>
         </div>
@@ -731,7 +731,7 @@ function PortalTaskDrawer({
                       <button
                         onClick={submitComment}
                         disabled={busy || !newComment.trim()}
-                        className="text-xs px-3 py-1.5 rounded-md bg-brand-dark text-white disabled:opacity-50"
+                        className="text-xs px-3 py-1.5 rounded-md bg-ink text-white disabled:opacity-50"
                       >
                         Send
                       </button>
@@ -757,20 +757,20 @@ function PortalTaskDrawer({
             </div>
 
             {/* SIDEBAR — fields */}
-            <aside className="p-4 space-y-4 bg-slate-50">
+            <aside className="p-4 space-y-4 bg-subtle">
               <Field label="Status">
                 {editable ? (
                   <select
                     value={task.status}
                     onChange={(e) => onMove(task, e.target.value as TaskStatus)}
-                    className="border border-brand-border rounded-md px-2 py-1.5 text-sm w-full bg-white"
+                    className="border border-brand-border rounded-md px-2 py-1.5 text-sm w-full bg-card"
                   >
                     {COLUMNS.map((c) => (
                       <option key={c.key} value={c.key}>{c.label}</option>
                     ))}
                   </select>
                 ) : (
-                  <div className="px-2 py-1.5 text-sm rounded-md border border-brand-border bg-white">{statusCol?.label ?? task.status}</div>
+                  <div className="px-2 py-1.5 text-sm rounded-md border border-brand-border bg-card">{statusCol?.label ?? task.status}</div>
                 )}
               </Field>
 
@@ -780,18 +780,18 @@ function PortalTaskDrawer({
                     <select
                       value={task.priority}
                       onChange={(e) => patch({ priority: e.target.value as CommunicationTask["priority"] })}
-                      className="border border-brand-border rounded-md px-2 py-1.5 text-sm w-full bg-white"
+                      className="border border-brand-border rounded-md px-2 py-1.5 text-sm w-full bg-card"
                     >
                       {PRIORITY_OPTS.map((p) => (
                         <option key={p} value={p}>{p}</option>
                       ))}
                     </select>
                   ) : (
-                    <div className="px-2 py-1.5 text-sm rounded-md border border-brand-border bg-white">{task.priority}</div>
+                    <div className="px-2 py-1.5 text-sm rounded-md border border-brand-border bg-card">{task.priority}</div>
                   )}
                 </Field>
                 <Field label="Signal">
-                  <div className="px-2 py-1.5 text-sm rounded-md border border-brand-border bg-white flex items-center gap-1.5">
+                  <div className="px-2 py-1.5 text-sm rounded-md border border-brand-border bg-card flex items-center gap-1.5">
                     <span className={`h-2 w-2 rounded-full ${signalDot(task.signal)}`} /> {task.signal}
                   </div>
                 </Field>
@@ -806,7 +806,7 @@ function PortalTaskDrawer({
                       onChange={(id) => patch({ assigned_to_user_id: id })}
                     />
                   ) : (
-                    <div className="px-2 py-1.5 text-sm rounded-md border border-brand-border bg-white">{task.assigned_to || "Unassigned"}</div>
+                    <div className="px-2 py-1.5 text-sm rounded-md border border-brand-border bg-card">{task.assigned_to || "Unassigned"}</div>
                   )}
                 </Field>
               )}
@@ -826,19 +826,19 @@ function PortalTaskDrawer({
                       onKeyUp={(e) => patch({ progress_percent: Number((e.target as HTMLInputElement).value) })}
                       className="w-full"
                     />
-                    <div className="mt-1 h-1.5 w-full rounded-full bg-gray-200">
+                    <div className="mt-1 h-1.5 w-full rounded-full bg-subtle">
                       <div className="h-1.5 rounded-full bg-emerald-500" style={{ width: `${progressLocal}%` }} />
                     </div>
                   </>
                 ) : (
-                  <div className="mt-1 h-1.5 w-full rounded-full bg-gray-200">
+                  <div className="mt-1 h-1.5 w-full rounded-full bg-subtle">
                     <div className="h-1.5 rounded-full bg-emerald-500" style={{ width: `${progressLocal}%` }} />
                   </div>
                 )}
               </Field>
 
               {/* Linked context */}
-              <div className="rounded-lg border border-brand-border p-3 space-y-1.5 bg-white">
+              <div className="rounded-lg border border-brand-border p-3 space-y-1.5 bg-card">
                 <div className="text-[11px] font-semibold uppercase tracking-wide text-brand-muted flex items-center gap-1">
                   <Link2 size={12} /> Linked context
                 </div>
@@ -867,7 +867,7 @@ function PortalTaskDrawer({
                   type="button"
                   onClick={remove}
                   disabled={busy}
-                  className="w-full text-sm px-3 py-1.5 rounded-md border border-brand-border text-brand-muted hover:bg-gray-100 disabled:opacity-50"
+                  className="w-full text-sm px-3 py-1.5 rounded-md border border-brand-border text-brand-muted hover:bg-subtle disabled:opacity-50"
                 >
                   Delete task
                 </button>
@@ -923,13 +923,13 @@ function PortalTaskCreateForm({
 
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" onClick={onCancel}>
-      <div className="w-full max-w-2xl rounded-xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+      <div className="w-full max-w-2xl rounded-xl bg-card shadow-2xl" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between border-b border-brand-border px-5 py-3">
           <div className="flex items-center gap-2">
             <Plus size={16} className="text-signal-red" />
             <span className="font-semibold">Create Task</span>
           </div>
-          <button className="rounded p-1 hover:bg-gray-100" onClick={onCancel}>
+          <button className="rounded p-1 hover:bg-subtle" onClick={onCancel}>
             <X size={18} />
           </button>
         </div>

@@ -48,13 +48,13 @@ function MailQueueBase({
     <div className="flex h-full flex-col">
       <div className="px-3 pt-3">
         <div className="relative">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-brand-muted" />
           <input
             value={searchInput}
             onChange={(e) => onSearchChange(e.target.value)}
             placeholder="Search subject or sender…"
             aria-label="Search mails by subject or sender"
-            className="w-full rounded-lg border border-brand-border bg-white py-2 pl-8 pr-3 text-sm outline-none focus:border-signal-red/40"
+            className="w-full rounded-lg border border-brand-border bg-card py-2 pl-8 pr-3 text-sm outline-none focus:border-signal-red/40"
           />
         </div>
       </div>
@@ -71,13 +71,13 @@ function MailQueueBase({
                 "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-semibold transition",
                 active
                   ? "bg-red-50 text-signal-red ring-1 ring-signal-red/30"
-                  : "text-brand-muted hover:bg-gray-100",
+                  : "text-brand-muted hover:bg-subtle",
               ].join(" ")}
             >
               {t.label}
               <span
                 className={`rounded-full px-1.5 text-[10px] font-bold ${
-                  active ? "bg-signal-red text-white" : "bg-gray-100 text-brand-muted"
+                  active ? "bg-signal-red text-white" : "bg-subtle text-brand-muted"
                 }`}
               >
                 {counts[t.key] ?? 0}
@@ -92,7 +92,7 @@ function MailQueueBase({
           <div className="py-8 text-center text-xs text-brand-muted">Loading…</div>
         ) : mails.length === 0 ? (
           <div className="flex flex-col items-center px-6 py-10 text-center">
-            <span className="mb-3 grid h-9 w-9 place-items-center rounded-lg bg-gray-100 text-gray-400">
+            <span className="mb-3 grid h-9 w-9 place-items-center rounded-lg bg-subtle text-brand-muted">
               <Inbox className="h-4 w-4" />
             </span>
             <p className="text-xs font-medium text-brand-dark">No conversations in {activeLabel}</p>
@@ -114,7 +114,7 @@ function MailQueueBase({
               <button
                 type="button"
                 onClick={() => setVisible((v) => v + PAGE)}
-                className="w-full border-b border-brand-border py-2.5 text-xs text-brand-muted hover:bg-gray-50"
+                className="w-full border-b border-brand-border py-2.5 text-xs text-brand-muted hover:bg-subtle"
               >
                 Load more ({mails.length - visible} remaining)
               </button>

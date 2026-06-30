@@ -82,7 +82,7 @@ export default function PoChatPanel({
   if (!po) {
     return (
       <div className="flex h-full flex-col items-center justify-center text-center text-brand-muted">
-        <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-gray-100">
+        <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-subtle">
           <MessageSquare size={22} />
         </div>
         <div className="font-medium text-brand-dark">Select a PO to read</div>
@@ -113,7 +113,7 @@ export default function PoChatPanel({
       {/* Header */}
       <div className="flex items-center gap-2 border-b border-brand-border px-4 py-3">
         {onBack && (
-          <button onClick={onBack} className="md:hidden p-1 rounded hover:bg-gray-100" aria-label="Back">
+          <button onClick={onBack} className="md:hidden p-1 rounded hover:bg-subtle" aria-label="Back">
             <ArrowLeft size={18} />
           </button>
         )}
@@ -141,7 +141,7 @@ export default function PoChatPanel({
             <div
               className={cn(
                 "max-w-[80%] rounded-lg px-3 py-2 text-sm shadow-sm",
-                m.mine ? "bg-signal-red text-white" : "bg-white border border-brand-border text-brand-dark",
+                m.mine ? "bg-signal-red text-white" : "bg-card border border-brand-border text-brand-dark",
               )}
             >
               <div className={cn("mb-0.5 text-[10px] font-semibold", m.mine ? "text-white/80" : "text-brand-muted")}>

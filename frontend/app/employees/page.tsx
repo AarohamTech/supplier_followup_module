@@ -253,7 +253,7 @@ export default function EmployeesAdminPage() {
       {/* Existing logins */}
       <div className="card overflow-x-auto">
         <table className="w-full min-w-[760px] text-sm">
-          <thead className="bg-slate-50 text-left text-[11px] uppercase tracking-wider text-brand-muted">
+          <thead className="bg-subtle text-left text-[11px] uppercase tracking-wider text-brand-muted">
             <tr>
               <th className="px-3 py-2">Username</th>
               <th className="px-3 py-2">Name</th>
@@ -293,7 +293,7 @@ export default function EmployeesAdminPage() {
                   <td className="px-3 py-2">
                     <span
                       className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                        u.is_active ? "bg-emerald-50 text-emerald-700" : "bg-gray-100 text-gray-500"
+                        u.is_active ? "bg-emerald-50 text-emerald-700" : "bg-subtle text-brand-muted"
                       }`}
                     >
                       {u.is_active ? "Active" : "Inactive"}
@@ -307,13 +307,13 @@ export default function EmployeesAdminPage() {
                   <td className="px-3 py-2 text-xs text-brand-muted">{fmtDate(u.last_login_at)}</td>
                   <td className="px-3 py-2">
                     <div className="flex items-center justify-end gap-1">
-                      <button onClick={() => openEdit(u)} disabled={busy} title="Edit email / name" className="rounded p-1.5 text-brand-muted hover:bg-gray-100 hover:text-brand-dark">
+                      <button onClick={() => openEdit(u)} disabled={busy} title="Edit email / name" className="rounded p-1.5 text-brand-muted hover:bg-subtle hover:text-brand-dark">
                         <Pencil size={15} />
                       </button>
-                      <button onClick={() => onReset(u)} disabled={busy} title="Reset password" className="rounded p-1.5 text-brand-muted hover:bg-gray-100 hover:text-brand-dark">
+                      <button onClick={() => onReset(u)} disabled={busy} title="Reset password" className="rounded p-1.5 text-brand-muted hover:bg-subtle hover:text-brand-dark">
                         <KeyRound size={15} />
                       </button>
-                      <button onClick={() => onToggleActive(u)} disabled={busy} title={u.is_active ? "Deactivate" : "Activate"} className="rounded p-1.5 text-brand-muted hover:bg-gray-100 hover:text-brand-dark">
+                      <button onClick={() => onToggleActive(u)} disabled={busy} title={u.is_active ? "Deactivate" : "Activate"} className="rounded p-1.5 text-brand-muted hover:bg-subtle hover:text-brand-dark">
                         <Power size={15} />
                       </button>
                       <button onClick={() => onDelete(u)} disabled={busy} title="Delete" className="rounded p-1.5 text-brand-muted hover:bg-red-50 hover:text-signal-red">
@@ -335,12 +335,12 @@ export default function EmployeesAdminPage() {
       {/* Edit employee modal */}
       {editUser && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4" onClick={() => setEditUser(null)}>
-          <div className="w-full max-w-md rounded-xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+          <div className="w-full max-w-md rounded-xl bg-card shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between border-b border-brand-border px-5 py-3">
               <div className="text-sm font-semibold text-brand-dark">
                 Edit {editUser.username}
               </div>
-              <button onClick={() => setEditUser(null)} className="rounded p-1 text-brand-muted hover:bg-gray-100">
+              <button onClick={() => setEditUser(null)} className="rounded p-1 text-brand-muted hover:bg-subtle">
                 <X size={16} />
               </button>
             </div>

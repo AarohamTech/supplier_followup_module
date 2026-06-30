@@ -55,7 +55,7 @@ export default function DashboardPage() {
             <div className="p-4">
               <FiltersBar />
             </div>
-            <div className="border-t border-brand-border bg-slate-50/70 p-3">
+            <div className="border-t border-brand-border bg-subtle/70 p-3">
               <QuickFilters />
             </div>
           </section>

@@ -66,13 +66,13 @@ export default function SupplierLoginsModal({
 
   return (
     <div className="fixed inset-0 z-50 bg-black/40 grid place-items-center p-4" onClick={onClose}>
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl" onClick={(e) => e.stopPropagation()}>
+      <div className="bg-card rounded-lg shadow-xl w-full max-w-2xl" onClick={(e) => e.stopPropagation()}>
         <div className="px-5 py-3 border-b border-brand-border flex items-center justify-between">
           <div>
             <div className="font-semibold">Supplier Logins</div>
             <div className="text-xs text-brand-muted">{mapping.supplier_name}</div>
           </div>
-          <button className="p-1 rounded hover:bg-gray-100" onClick={onClose}><X size={18} /></button>
+          <button className="p-1 rounded hover:bg-subtle" onClick={onClose}><X size={18} /></button>
         </div>
 
         <div className="p-5 space-y-4">
@@ -88,7 +88,7 @@ export default function SupplierLoginsModal({
 
           <div className="table-shell">
             <table className="min-w-full text-sm">
-              <thead className="bg-gray-50">
+              <thead className="bg-subtle">
                 <tr>
                   {["Email", "Active", "First login", "Last login", "Actions"].map((h) => (
                     <th key={h} className="px-3 py-2 text-left table-header whitespace-nowrap">{h}</th>
@@ -112,10 +112,10 @@ export default function SupplierLoginsModal({
                     <td className="px-3 py-2 text-xs text-brand-muted">{l.last_login_at ? fmtDate(l.last_login_at) : "—"}</td>
                     <td className="px-3 py-2">
                       <div className="flex items-center gap-1">
-                        <button title="Reset password" disabled={busyId === l.id} onClick={() => reset(l.id)} className="p-1 rounded hover:bg-gray-100">
+                        <button title="Reset password" disabled={busyId === l.id} onClick={() => reset(l.id)} className="p-1 rounded hover:bg-subtle">
                           {busyId === l.id ? <RefreshCw size={14} className="animate-spin" /> : <KeyRound size={14} />}
                         </button>
-                        <button title={l.is_active ? "Deactivate" : "Activate"} disabled={busyId === l.id} onClick={() => toggle(l)} className="p-1 rounded hover:bg-gray-100 text-brand-muted">
+                        <button title={l.is_active ? "Deactivate" : "Activate"} disabled={busyId === l.id} onClick={() => toggle(l)} className="p-1 rounded hover:bg-subtle text-brand-muted">
                           <Power size={14} className={l.is_active ? "text-emerald-600" : "text-signal-red"} />
                         </button>
                       </div>

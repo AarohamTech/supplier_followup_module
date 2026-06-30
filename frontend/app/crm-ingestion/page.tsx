@@ -16,7 +16,7 @@ function fmt(d?: string | null) {
 const STATUS_CLASS: Record<string, string> = {
   OK: "bg-emerald-50 text-emerald-700",
   ERROR: "bg-red-50 text-signal-red",
-  DISABLED: "bg-gray-100 text-gray-500",
+  DISABLED: "bg-subtle text-brand-muted",
 };
 
 export default function CrmIngestionPage() {
@@ -104,7 +104,7 @@ export default function CrmIngestionPage() {
 
       <div className="card overflow-x-auto">
         <table className="w-full min-w-[820px] text-sm">
-          <thead className="bg-slate-50 text-left text-[11px] uppercase tracking-wider text-brand-muted">
+          <thead className="bg-subtle text-left text-[11px] uppercase tracking-wider text-brand-muted">
             <tr>
               <th className="px-3 py-2">Time</th>
               <th className="px-3 py-2">Trigger</th>
@@ -138,7 +138,7 @@ export default function CrmIngestionPage() {
                   <td className="whitespace-nowrap px-3 py-2">{fmt(l.ran_at)}</td>
                   <td className="px-3 py-2">{l.trigger}</td>
                   <td className="px-3 py-2">
-                    <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ${STATUS_CLASS[l.status] || "bg-gray-100 text-gray-600"}`}>
+                    <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ${STATUS_CLASS[l.status] || "bg-subtle text-brand-muted"}`}>
                       {l.status}
                     </span>
                   </td>

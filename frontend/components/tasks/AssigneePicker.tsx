@@ -57,11 +57,11 @@ export function WatcherPicker({
         {labels.length ? labels.join(", ") : "No watchers"}
       </button>
       {open && (
-        <div className="absolute z-10 mt-1 max-h-48 w-full overflow-y-auto rounded-md border border-brand-border bg-white shadow">
+        <div className="absolute z-10 mt-1 max-h-48 w-full overflow-y-auto rounded-md border border-brand-border bg-card shadow">
           {assignees.map((a) => (
             <label
               key={a.id}
-              className="flex items-center gap-2 px-2 py-1 text-sm hover:bg-gray-50"
+              className="flex items-center gap-2 px-2 py-1 text-sm hover:bg-subtle"
             >
               <input
                 type="checkbox"

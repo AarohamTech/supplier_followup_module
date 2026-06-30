@@ -3,6 +3,40 @@
 @tailwind utilities;
 
 @layer base {
+  /* Theme tokens (values are space-separated RGB so Tailwind can apply opacity).
+     Light is the default; `.dark` on <html> swaps to the dark palette. */
+  :root {
+    --brand-red: 225 29 46;
+    --brand-dark: 17 24 39;      /* primary text */
+    --brand-muted: 107 114 128;  /* secondary text */
+    --brand-surface: 247 248 250;/* page background */
+    --brand-border: 229 231 235;
+    --signal-green: 22 163 74;
+    --signal-yellow: 245 158 11;
+    --signal-red: 225 29 46;
+    --signal-black: 17 24 39;
+    --card: 255 255 255;         /* elevated/card background */
+    --subtle: 243 244 246;       /* subtle/hover background */
+    --ink: 17 24 39;             /* always-dark background */
+    --focus-ring: 225 29 46;
+  }
+
+  .dark {
+    --brand-red: 244 63 78;      /* slightly brighter red for dark contrast */
+    --brand-dark: 230 234 240;   /* primary text -> light */
+    --brand-muted: 155 163 174;  /* secondary text -> lighter gray */
+    --brand-surface: 13 17 23;   /* page background -> near-black */
+    --brand-border: 38 44 54;
+    --signal-green: 52 211 153;
+    --signal-yellow: 251 191 36;
+    --signal-red: 244 63 78;
+    --signal-black: 230 234 240; /* "black" dot needs to be visible on dark */
+    --card: 22 27 34;
+    --subtle: 31 38 48;
+    --ink: 22 27 34;
+    --focus-ring: 244 63 78;
+  }
+
   html {
     scroll-behavior: smooth;
     scrollbar-gutter: stable;
@@ -11,13 +45,13 @@
   html,
   body {
     min-height: 100%;
-    background: #F7F8FA;
-    color: #111827;
+    background: rgb(var(--brand-surface));
+    color: rgb(var(--brand-dark));
     text-rendering: optimizeLegibility;
   }
 
   ::selection {
-    background: rgba(225, 29, 46, 0.14);
+    background: rgb(var(--brand-red) / 0.14);
   }
 
   button,
@@ -33,13 +67,13 @@
   input:focus-visible,
   select:focus-visible,
   textarea:focus-visible {
-    outline: 2px solid rgba(225, 29, 46, 0.45);
+    outline: 2px solid rgb(var(--focus-ring) / 0.45);
     outline-offset: 2px;
   }
 }
 
 @layer components {
-  .card { @apply rounded-lg border border-brand-border bg-white shadow-card; }
+  .card { @apply rounded-lg border border-brand-border bg-card shadow-card; }
   .kpi-num { @apply text-3xl font-semibold tracking-tight; }
   .page-stack { @apply space-y-5; }
   .page-header { @apply flex flex-wrap items-start justify-between gap-3; }
@@ -48,19 +82,19 @@
   .page-subtitle { @apply mt-0.5 text-xs leading-relaxed text-brand-muted; }
   .icon-tile { @apply flex h-9 w-9 shrink-0 items-center justify-center rounded-lg; }
   .badge { @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold; }
-  .badge-overdue { @apply bg-red-50 text-signal-red; }
-  .badge-due { @apply bg-amber-50 text-amber-600; }
-  .badge-track { @apply bg-emerald-50 text-emerald-600; }
-  .badge-critical { @apply bg-black text-white; }
-  .chip { @apply inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs bg-gray-50 border border-brand-border text-brand-dark; }
+  .badge-overdue { @apply bg-red-50 text-signal-red dark:bg-red-500/15 dark:text-red-300; }
+  .badge-due { @apply bg-amber-50 text-amber-600 dark:bg-amber-500/15 dark:text-amber-300; }
+  .badge-track { @apply bg-emerald-50 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-300; }
+  .badge-critical { @apply bg-black text-white dark:bg-white/15 dark:text-white; }
+  .chip { @apply inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs bg-subtle border border-brand-border text-brand-dark; }
   .btn-primary { @apply inline-flex items-center justify-center gap-2 rounded-md bg-signal-red px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-red-700 active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50; }
-  .btn-dark { @apply inline-flex items-center justify-center gap-2 rounded-md bg-brand-dark px-3 py-1.5 text-sm font-medium text-white shadow-sm hover:bg-gray-800 active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50; }
-  .btn-outline { @apply inline-flex items-center justify-center gap-2 rounded-md border border-brand-border bg-white px-3 py-1.5 text-sm font-medium text-brand-dark hover:bg-gray-50 active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50; }
-  .btn-ghost { @apply inline-flex items-center justify-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium text-brand-muted hover:bg-gray-100 hover:text-brand-dark active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50; }
-  .input { @apply w-full rounded-md border border-brand-border bg-white px-3 py-2 text-sm text-brand-dark outline-none placeholder:text-brand-muted focus:border-signal-red; }
+  .btn-dark { @apply inline-flex items-center justify-center gap-2 rounded-md bg-ink px-3 py-1.5 text-sm font-medium text-white shadow-sm hover:opacity-90 active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50; }
+  .btn-outline { @apply inline-flex items-center justify-center gap-2 rounded-md border border-brand-border bg-card px-3 py-1.5 text-sm font-medium text-brand-dark hover:bg-subtle active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50; }
+  .btn-ghost { @apply inline-flex items-center justify-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium text-brand-muted hover:bg-subtle hover:text-brand-dark active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50; }
+  .input { @apply w-full rounded-md border border-brand-border bg-card px-3 py-2 text-sm text-brand-dark outline-none placeholder:text-brand-muted focus:border-signal-red; }
   .table-header { @apply text-[11px] uppercase tracking-wider text-brand-muted font-semibold; }
-  .table-shell { @apply overflow-x-auto rounded-lg border border-brand-border bg-white; }
-  .empty-state { @apply rounded-lg border border-dashed border-brand-border bg-white p-8 text-center text-sm text-brand-muted; }
+  .table-shell { @apply overflow-x-auto rounded-lg border border-brand-border bg-card; }
+  .empty-state { @apply rounded-lg border border-dashed border-brand-border bg-card p-8 text-center text-sm text-brand-muted; }
 }
 
 /* Animations (system-wide). */

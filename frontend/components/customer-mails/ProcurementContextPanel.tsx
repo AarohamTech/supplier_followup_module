@@ -82,7 +82,7 @@ function ProcurementContextPanelBase({
       </div>
 
       {/* One grouped order summary is easier to scan than a stack of nested cards. */}
-      <div className="overflow-hidden rounded-lg border border-brand-border bg-white">
+      <div className="overflow-hidden rounded-lg border border-brand-border bg-card">
         <div className="bg-red-50/50 p-3">
           <div className="flex items-center justify-between gap-2">
             <div className="text-[10px] font-medium uppercase tracking-wide text-brand-muted">
@@ -98,7 +98,7 @@ function ProcurementContextPanelBase({
             {c?.material || "No linked material"}
           </div>
         </div>
-        <div className="grid grid-cols-2 bg-gray-50/60">
+        <div className="grid grid-cols-2 bg-subtle/60">
           <DataField label="Customer PO" value={c?.customerPo ?? null} />
           <DataField label="Supplier PO" value={c?.supplierPo ?? null} />
           <DataField label="Balance Qty" value={c?.balanceQty ?? null} />
@@ -119,7 +119,7 @@ function ProcurementContextPanelBase({
 
       {/* Linked materials */}
       {c && c.materials.length > 0 && (
-        <div className="rounded-lg border border-brand-border bg-gray-50/60 p-2.5">
+        <div className="rounded-lg border border-brand-border bg-subtle/60 p-2.5">
           <div className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-brand-muted">
             Linked Materials (PO Items)
           </div>
@@ -146,7 +146,7 @@ function ProcurementContextPanelBase({
           <button
             type="button"
             onClick={onUseSuggestion}
-            className="flex-1 rounded-md border border-brand-border bg-white py-1.5 text-xs font-medium text-brand-dark hover:bg-gray-50"
+            className="flex-1 rounded-md border border-brand-border bg-card py-1.5 text-xs font-medium text-brand-dark hover:bg-subtle"
           >
             Use this reply
           </button>

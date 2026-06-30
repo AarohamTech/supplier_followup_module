@@ -57,7 +57,7 @@ export default function EmployeeDashboard() {
         <StatCard label="Total POs" value={loading ? "—" : summary?.total_pos ?? 0} icon={Layers} tint="bg-blue-50 text-blue-600" />
         <StatCard label="Materials" value={loading ? "—" : summary?.total_materials ?? 0} icon={Boxes} tint="bg-indigo-50 text-indigo-600" />
         <StatCard label="Red" value={loading ? "—" : summary?.red ?? 0} icon={AlertTriangle} tint="bg-red-50 text-signal-red" />
-        <StatCard label="Black" value={loading ? "—" : summary?.black ?? 0} icon={ShieldAlert} tint="bg-gray-100 text-gray-900" strong />
+        <StatCard label="Black" value={loading ? "—" : summary?.black ?? 0} icon={ShieldAlert} tint="bg-subtle text-brand-dark" strong />
         <StatCard label="Overdue POs" value={loading ? "—" : summary?.overdue_pos ?? 0} icon={Clock} tint="bg-amber-50 text-amber-600" />
         <StatCard label="Escalated" value={loading ? "—" : summary?.escalated_pos ?? 0} icon={ShieldAlert} tint="bg-orange-50 text-orange-600" />
       </div>

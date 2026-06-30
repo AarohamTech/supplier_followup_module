@@ -45,7 +45,7 @@ export const PRIORITY_TONE: Record<string, string> = {
   P0: "bg-red-100 text-signal-red",
   P1: "bg-orange-100 text-orange-700",
   P2: "bg-amber-100 text-amber-700",
-  P3: "bg-gray-100 text-gray-600",
+  P3: "bg-subtle text-brand-muted",
 };
 
 /** AI-triage urgency badge tones. */
@@ -88,7 +88,7 @@ export const RISK_TONE: Record<string, string> = {
   GREEN: "bg-emerald-50 text-emerald-700 border-emerald-200",
   YELLOW: "bg-amber-50 text-amber-700 border-amber-200",
   RED: "bg-red-50 text-signal-red border-red-200",
-  BLACK: "bg-gray-900 text-white border-gray-900",
+  BLACK: "bg-ink text-white border-gray-900",
 };
 
 export function formatDateTime(value: string | null | undefined): string {

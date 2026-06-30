@@ -25,7 +25,7 @@ function MailCardBase({ mail, selected, onSelect }: MailCardProps) {
       type="button"
       onClick={() => onSelect(mail.id)}
       className={[
-        "w-full border-b border-brand-border px-4 py-3 text-left transition-colors hover:bg-gray-50",
+        "w-full border-b border-brand-border px-4 py-3 text-left transition-colors hover:bg-subtle",
         selected ? "bg-red-50/50 ring-1 ring-inset ring-red-100" : "",
       ].join(" ")}
     >
@@ -33,7 +33,7 @@ function MailCardBase({ mail, selected, onSelect }: MailCardProps) {
         <span className="flex-1 truncate text-sm font-semibold text-brand-dark">
           {mail.subject || "(no subject)"}
         </span>
-        <span className="shrink-0 text-[10px] text-gray-400">{formatDateTime(mail.received_at)}</span>
+        <span className="shrink-0 text-[10px] text-brand-muted">{formatDateTime(mail.received_at)}</span>
       </div>
 
       <div className="mt-0.5 truncate text-xs text-brand-muted">
@@ -43,7 +43,7 @@ function MailCardBase({ mail, selected, onSelect }: MailCardProps) {
       <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
         <span
           className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${
-            PRIORITY_TONE[mail.priority] || "bg-gray-100 text-gray-600"
+            PRIORITY_TONE[mail.priority] || "bg-subtle text-brand-muted"
           }`}
         >
           {mail.priority}
@@ -54,14 +54,14 @@ function MailCardBase({ mail, selected, onSelect }: MailCardProps) {
           </span>
         )}
         {openTasks > 0 && (
-          <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-700">
+          <span className="rounded bg-subtle px-1.5 py-0.5 text-[10px] font-medium text-brand-dark">
             {openTasks} task{openTasks === 1 ? "" : "s"}
           </span>
         )}
         {mail.ai_urgency && (
           <span
             className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${
-              URGENCY_TONE[mail.ai_urgency] || "bg-gray-100 text-brand-muted"
+              URGENCY_TONE[mail.ai_urgency] || "bg-subtle text-brand-muted"
             }`}
             title={`Harmony Intelligent triage${mail.ai_category ? ` · ${mail.ai_category}` : ""}${
               mail.ai_action ? ` · ${mail.ai_action}` : ""

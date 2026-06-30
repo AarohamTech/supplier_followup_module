@@ -77,7 +77,7 @@ export default function SendToaster() {
       {toasts.map((t) => (
         <div
           key={t.key}
-          className="animate-slide-down flex items-start gap-2 rounded-lg border border-emerald-200 bg-white px-3 py-2 shadow-lg"
+          className="animate-slide-down flex items-start gap-2 rounded-lg border border-emerald-200 bg-card px-3 py-2 shadow-lg"
         >
           <span className="mt-0.5 text-emerald-600">
             <Mail className="h-4 w-4" />

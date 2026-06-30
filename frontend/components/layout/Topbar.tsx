@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Logo } from "@/components/brand/Logo";
 import { useAuth } from "@/lib/auth";
 import NotificationBell from "@/components/NotificationBell";
+import ThemeToggle from "@/components/layout/ThemeToggle";
 
 const ROLE_LABEL: Record<string, string> = {
   admin: "Administrator",
@@ -20,12 +21,12 @@ export default function Topbar({ onMenuClick }: { onMenuClick?: () => void }) {
   const initial = name.charAt(0).toUpperCase();
 
   return (
-    <header className="sticky top-0 z-30 border-b border-brand-border bg-white">
+    <header className="sticky top-0 z-30 border-b border-brand-border bg-card">
       <div className="mx-auto flex h-16 max-w-[1600px] items-center gap-2 px-4 sm:gap-4 sm:px-6 lg:px-8">
         <button
           type="button"
           onClick={onMenuClick}
-          className="grid h-9 w-9 place-items-center rounded-md text-brand-muted hover:bg-gray-100 hover:text-brand-dark md:hidden"
+          className="grid h-9 w-9 place-items-center rounded-md text-brand-muted hover:bg-subtle hover:text-brand-dark md:hidden"
           aria-label="Open navigation"
         >
           <Menu size={18} />
@@ -42,6 +43,7 @@ export default function Topbar({ onMenuClick }: { onMenuClick?: () => void }) {
           </div>
         </Link>
         <div className="flex-1" />
+        <ThemeToggle />
         <NotificationBell />
         <div className="hidden h-6 w-px bg-brand-border sm:block" />
         <div className="flex items-center gap-1 sm:gap-2.5">
@@ -57,7 +59,7 @@ export default function Topbar({ onMenuClick }: { onMenuClick?: () => void }) {
           <button
             onClick={logout}
             title="Sign out"
-            className="grid h-9 w-9 place-items-center rounded-md text-brand-muted hover:bg-gray-100 hover:text-signal-red"
+            className="grid h-9 w-9 place-items-center rounded-md text-brand-muted hover:bg-subtle hover:text-signal-red"
           >
             <LogOut size={18} />
           </button>

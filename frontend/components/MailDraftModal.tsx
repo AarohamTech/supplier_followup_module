@@ -123,7 +123,7 @@ export default function MailDraftModal() {
   return (
     <div className="fixed inset-0 z-50 bg-black/40 grid place-items-center p-4" onClick={dismiss}>
       <div
-        className="bg-white rounded-lg shadow-xl w-full max-w-4xl"
+        className="bg-card rounded-lg shadow-xl w-full max-w-4xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="px-5 py-3 border-b border-brand-border flex items-center justify-between">
@@ -147,13 +147,13 @@ export default function MailDraftModal() {
             )}
             {isPo && draft && (
               <>
-                <span className="chip ml-1 bg-slate-50 text-slate-700 border-slate-200">
+                <span className="chip ml-1 bg-subtle text-brand-dark border-brand-border">
                   PO {(draft as MailDraftPo).supplier_po_no}
                 </span>
-                <span className="chip ml-1 bg-slate-50 text-slate-700 border-slate-200">
+                <span className="chip ml-1 bg-subtle text-brand-dark border-brand-border">
                   {(draft as MailDraftPo).material_count} material(s)
                 </span>
-                <span className="chip ml-1 bg-slate-50 text-slate-700 border-slate-200">
+                <span className="chip ml-1 bg-subtle text-brand-dark border-brand-border">
                   Signal {(draft as MailDraftPo).overall_signal}
                 </span>
                 {(draft as MailDraftPo).reused_existing && (
@@ -165,7 +165,7 @@ export default function MailDraftModal() {
             )}
             {draft && <span className="chip ml-1">{status}</span>}
           </div>
-          <button className="p-1 rounded hover:bg-gray-100" onClick={dismiss}>
+          <button className="p-1 rounded hover:bg-subtle" onClick={dismiss}>
             <X size={18} />
           </button>
         </div>
@@ -197,10 +197,10 @@ export default function MailDraftModal() {
                   </div>
                   <div className="overflow-x-auto border border-brand-border rounded">
                     <table className="min-w-full text-xs">
-                      <thead className="bg-slate-100">
+                      <thead className="bg-subtle">
                         <tr>
                           {["Sr", "CRM No", "Material Name", "PO Qty", "UOM", "Due", "Status", "Commit Date", "Remark"].map((h, i) => (
-                            <th key={i} className="text-left px-2 py-1.5 font-semibold text-slate-700 border-b border-brand-border whitespace-nowrap">
+                            <th key={i} className="text-left px-2 py-1.5 font-semibold text-brand-dark border-b border-brand-border whitespace-nowrap">
                               {h}
                             </th>
                           ))}
@@ -238,7 +238,7 @@ export default function MailDraftModal() {
                       <button
                         className={
                           "px-2 py-0.5 rounded " +
-                          (viewMode === "html" ? "bg-slate-200" : "hover:bg-slate-100")
+                          (viewMode === "html" ? "bg-subtle" : "hover:bg-subtle")
                         }
                         onClick={() => setViewMode("html")}
                       >
@@ -247,7 +247,7 @@ export default function MailDraftModal() {
                       <button
                         className={
                           "px-2 py-0.5 rounded " +
-                          (viewMode === "text" ? "bg-slate-200" : "hover:bg-slate-100")
+                          (viewMode === "text" ? "bg-subtle" : "hover:bg-subtle")
                         }
                         onClick={() => setViewMode("text")}
                       >
@@ -258,7 +258,7 @@ export default function MailDraftModal() {
                 </div>
                 {isPo && viewMode === "html" ? (
                   <div
-                    className="border border-brand-border rounded-md px-3 py-2 text-sm bg-white overflow-x-auto"
+                    className="border border-brand-border rounded-md px-3 py-2 text-sm bg-card overflow-x-auto"
                     dangerouslySetInnerHTML={{ __html: (draft as MailDraftPo).body_html }}
                   />
                 ) : (
@@ -332,7 +332,7 @@ function Field({ label, value }: { label: string; value: string }) {
       <div className="text-[10px] uppercase tracking-wider text-brand-muted font-semibold mb-1">
         {label}
       </div>
-      <div className="border border-brand-border rounded-md px-3 py-1.5 text-sm bg-gray-50 break-words">
+      <div className="border border-brand-border rounded-md px-3 py-1.5 text-sm bg-subtle break-words">
         {value || "-"}
       </div>
     </div>

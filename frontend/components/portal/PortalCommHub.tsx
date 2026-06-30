@@ -40,14 +40,14 @@ const SIGNAL_DOT: Record<string, string> = {
   GREEN: "bg-emerald-500",
   YELLOW: "bg-amber-500",
   RED: "bg-signal-red",
-  BLACK: "bg-gray-900",
+  BLACK: "bg-ink",
 };
 
 const SIGNAL_CHIP: Record<string, string> = {
   GREEN: "bg-emerald-50 text-emerald-700",
   YELLOW: "bg-amber-50 text-amber-700",
   RED: "bg-red-50 text-signal-red",
-  BLACK: "bg-gray-900 text-white",
+  BLACK: "bg-ink text-white",
 };
 
 function fmtTime(value?: string | null) {
@@ -196,7 +196,7 @@ export default function PortalCommHub({
   return (
     <div className="-m-5 flex h-[calc(100vh-65px)] flex-col bg-brand-surface sm:-m-6 lg:-m-8">
       {/* Header */}
-      <header className="flex flex-wrap items-center gap-3 border-b border-brand-border bg-white px-6 py-3">
+      <header className="flex flex-wrap items-center gap-3 border-b border-brand-border bg-card px-6 py-3">
         <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-red-50 text-signal-red">
           <MessagesSquare size={17} />
         </span>
@@ -209,7 +209,7 @@ export default function PortalCommHub({
           </p>
         </div>
         <div className="relative ml-auto w-full min-w-[200px] max-w-sm flex-1">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-brand-muted" />
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -232,7 +232,7 @@ export default function PortalCommHub({
       {/* Workspace */}
       <div className="flex flex-1 gap-4 overflow-hidden p-4">
         {/* LEFT — PO list */}
-        <aside className="flex w-[340px] min-w-[280px] shrink-0 flex-col overflow-hidden rounded-xl border border-brand-border bg-white shadow-sm">
+        <aside className="flex w-[340px] min-w-[280px] shrink-0 flex-col overflow-hidden rounded-xl border border-brand-border bg-card shadow-sm">
           <div className="flex items-center justify-between px-4 py-2.5">
             <span className="text-xs font-semibold uppercase tracking-wide text-brand-muted">Purchase Orders</span>
             <span className="text-[11px] text-brand-muted">{filtered.length}</span>
@@ -257,11 +257,11 @@ export default function PortalCommHub({
         </aside>
 
         {/* CENTER — conversation */}
-        <main className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-brand-border bg-white shadow-sm">
+        <main className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-brand-border bg-card shadow-sm">
           {activePo ? (
             <>
               <div className="flex items-center gap-2 border-b border-brand-border px-5 py-3">
-                <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${SIGNAL_DOT[(activePo.signal || "").toUpperCase()] ?? "bg-gray-300"}`} />
+                <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${SIGNAL_DOT[(activePo.signal || "").toUpperCase()] ?? "bg-subtle"}`} />
                 <h2 className="truncate font-semibold text-brand-dark">
                   PO #{activePo.supplier_po_no}
                   <span className="ml-2 font-normal text-brand-muted">{activePo.counterparty}</span>
@@ -297,7 +297,7 @@ export default function PortalCommHub({
                       }
                     }}
                     placeholder="Type your message…  (Enter to send, Shift+Enter for a new line)"
-                    className="h-24 w-full resize-none rounded-lg border border-brand-border bg-gray-50 p-3 pr-16 text-sm outline-none focus:border-signal-red/40 focus:bg-white"
+                    className="h-24 w-full resize-none rounded-lg border border-brand-border bg-subtle p-3 pr-16 text-sm outline-none focus:border-signal-red/40 focus:bg-card"
                   />
                   <button
                     className="absolute bottom-3 right-3 rounded-md bg-signal-red p-2 text-white shadow-sm hover:opacity-90 disabled:opacity-50"
@@ -321,7 +321,7 @@ export default function PortalCommHub({
         </main>
 
         {/* RIGHT — context panel */}
-        <aside className="hidden w-[300px] shrink-0 flex-col overflow-hidden rounded-xl border border-brand-border bg-white shadow-sm lg:flex">
+        <aside className="hidden w-[300px] shrink-0 flex-col overflow-hidden rounded-xl border border-brand-border bg-card shadow-sm lg:flex">
           <div className="border-b border-brand-border px-4 py-3">
             <div className="text-sm font-semibold text-brand-dark">Context</div>
             <div className="truncate text-[11px] text-brand-muted">
@@ -345,7 +345,7 @@ export default function PortalCommHub({
                       {materials.map((m, i) => (
                         <div key={i} className="rounded-lg border border-brand-border p-2 text-xs">
                           <div className="flex items-center gap-1.5">
-                            <span className={`h-2 w-2 shrink-0 rounded-full ${SIGNAL_DOT[(m.signal || "").toUpperCase()] ?? "bg-gray-300"}`} />
+                            <span className={`h-2 w-2 shrink-0 rounded-full ${SIGNAL_DOT[(m.signal || "").toUpperCase()] ?? "bg-subtle"}`} />
                             <span className="truncate font-medium text-brand-dark" title={m.material_name}>{m.material_name}</span>
                           </div>
                           {m.commitment_date && (
@@ -371,16 +371,16 @@ export default function PortalCommHub({
                           const sig = (t.signal || "").toUpperCase();
                           const done = (t.status || "").toUpperCase() === "DONE";
                           return (
-                            <div key={t.id} className={`rounded-lg border border-brand-border bg-white p-2.5 text-xs ${done ? "opacity-60" : ""}`}>
+                            <div key={t.id} className={`rounded-lg border border-brand-border bg-card p-2.5 text-xs ${done ? "opacity-60" : ""}`}>
                               <div className="flex items-start gap-2">
-                                <span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${SIGNAL_DOT[sig] ?? "bg-gray-300"}`} />
+                                <span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${SIGNAL_DOT[sig] ?? "bg-subtle"}`} />
                                 <div className="min-w-0">
                                   <p className={`font-semibold leading-snug ${done ? "text-brand-muted line-through" : "text-brand-dark"}`}>{t.title}</p>
                                   {t.material_name && <p className="mt-0.5 truncate text-[10px] text-brand-muted">{t.material_name}</p>}
                                 </div>
                               </div>
                               <div className="mt-1.5 flex items-center justify-between">
-                                <span className={`rounded px-1.5 py-0.5 text-[9px] font-bold ${SIGNAL_CHIP[sig] ?? "bg-gray-100 text-gray-600"}`}>
+                                <span className={`rounded px-1.5 py-0.5 text-[9px] font-bold ${SIGNAL_CHIP[sig] ?? "bg-subtle text-brand-muted"}`}>
                                   {t.priority}
                                 </span>
                                 <span className="text-[10px] text-brand-muted">{t.status}</span>
@@ -417,7 +417,7 @@ function PoRow({
   return (
     <button
       onClick={onClick}
-      className={`w-full border-b border-brand-border px-4 py-3 text-left transition hover:bg-gray-50 ${
+      className={`w-full border-b border-brand-border px-4 py-3 text-left transition hover:bg-subtle ${
         active
           ? "bg-red-50/50 ring-1 ring-inset ring-red-100"
           : unread
@@ -427,7 +427,7 @@ function PoRow({
     >
       <div className="flex items-center gap-2">
         {unread && <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-500" title="Unread replies" />}
-        <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${SIGNAL_DOT[sig] ?? "bg-gray-300"}`} />
+        <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${SIGNAL_DOT[sig] ?? "bg-subtle"}`} />
         <span className={`flex-1 truncate text-sm text-brand-dark ${unread ? "font-bold" : "font-medium"}`}>
           #{p.supplier_po_no}
         </span>
@@ -454,14 +454,14 @@ function MessageBubble({ m }: { m: PortalMessage }) {
     <div className={`flex flex-col ${isMine ? "items-end" : "items-start"}`}>
       <div
         className={`max-w-[82%] rounded-2xl border p-4 shadow-sm ${
-          isMine ? "border-amber-100 bg-amber-50" : "border-brand-border bg-white"
+          isMine ? "border-amber-100 bg-amber-50" : "border-brand-border bg-card"
         }`}
       >
         {m.subject && (
-          <div className="mb-1 truncate text-xs font-semibold text-gray-700">{m.subject}</div>
+          <div className="mb-1 truncate text-xs font-semibold text-brand-dark">{m.subject}</div>
         )}
-        <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-gray-800">{m.body}</p>
-        <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] text-gray-400">
+        <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-brand-dark">{m.body}</p>
+        <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] text-brand-muted">
           <span>{fmtTime(m.at)}</span>
           <span>·</span>
           <span>{m.author}</span>

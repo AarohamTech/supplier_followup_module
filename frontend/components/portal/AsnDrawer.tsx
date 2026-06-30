@@ -104,17 +104,17 @@ export default function AsnDrawer({
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" onClick={onClose}>
       <div
-        className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl"
+        className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl bg-card shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between border-b border-brand-border bg-white px-5 py-3">
+        <div className="flex items-center justify-between border-b border-brand-border bg-card px-5 py-3">
           <div>
             <div className="font-semibold text-brand-dark">{asn.asn_no}</div>
             <div className="text-xs text-brand-muted">PO {asn.supplier_po_no}</div>
           </div>
           <div className="flex items-center gap-2">
             <span className={"badge " + meta.badge}>{asn.status_label || meta.label}</span>
-            <button className="rounded p-1 hover:bg-gray-100" onClick={onClose} aria-label="Close ASN details"><X size={18} /></button>
+            <button className="rounded p-1 hover:bg-subtle" onClick={onClose} aria-label="Close ASN details"><X size={18} /></button>
           </div>
         </div>
 
@@ -134,7 +134,7 @@ export default function AsnDrawer({
               <span className="font-medium text-brand-dark">{meta.label}</span>
               <span className="text-brand-muted">{asn.progress_percent}%</span>
             </div>
-            <div className="h-2 w-full overflow-hidden rounded-full bg-gray-100">
+            <div className="h-2 w-full overflow-hidden rounded-full bg-subtle">
               <div className={"h-full rounded-full " + meta.bar} style={{ width: `${asn.progress_percent}%` }} />
             </div>
           </div>

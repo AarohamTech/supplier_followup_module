@@ -14,7 +14,7 @@ const ROLE_BADGE: Record<Role, string> = {
   admin: "bg-red-50 text-signal-red",
   manager: "bg-amber-50 text-amber-700",
   user: "bg-blue-50 text-blue-700",
-  viewer: "bg-gray-100 text-gray-600",
+  viewer: "bg-subtle text-brand-muted",
 };
 
 export default function UsersAdminPage() {
@@ -128,7 +128,7 @@ export default function UsersAdminPage() {
         title="User Management"
         description="Create users, assign roles and manage account access."
         icon={ShieldCheck}
-        actions={toast && <span className="rounded-md bg-brand-dark px-3 py-1.5 text-xs text-white">{toast}</span>}
+        actions={toast && <span className="rounded-md bg-ink px-3 py-1.5 text-xs text-white">{toast}</span>}
       />
 
       {error && (
@@ -138,7 +138,7 @@ export default function UsersAdminPage() {
       {/* Create user */}
       <form
         onSubmit={onCreate}
-        className="grid grid-cols-1 gap-3 rounded-xl border border-brand-border bg-white p-4 md:grid-cols-5"
+        className="grid grid-cols-1 gap-3 rounded-xl border border-brand-border bg-card p-4 md:grid-cols-5"
       >
         <input
           type="email" required placeholder="Email" value={email}
@@ -176,7 +176,7 @@ export default function UsersAdminPage() {
       </form>
 
       {/* Users table */}
-      <div className="overflow-hidden rounded-xl border border-brand-border bg-white">
+      <div className="overflow-hidden rounded-xl border border-brand-border bg-card">
         <table className="w-full text-sm">
           <thead className="bg-brand-surface text-left text-xs uppercase tracking-wider text-brand-muted">
             <tr>
@@ -196,7 +196,7 @@ export default function UsersAdminPage() {
               users.map((u) => {
                 const isSelf = u.id === me?.id;
                 return (
-                  <tr key={u.id} className="hover:bg-gray-50">
+                  <tr key={u.id} className="hover:bg-subtle">
                     <td className="px-4 py-2.5">
                       <div className="font-medium text-brand-dark">{u.full_name || "—"}</div>
                       <div className="text-xs text-brand-muted">{u.email}{isSelf && " (you)"}</div>
@@ -216,7 +216,7 @@ export default function UsersAdminPage() {
                       <button
                         onClick={() => onToggleActive(u)}
                         className={`rounded-full px-2.5 py-1 text-xs font-medium ${
-                          u.is_active ? "bg-emerald-50 text-emerald-700" : "bg-gray-100 text-gray-500"
+                          u.is_active ? "bg-emerald-50 text-emerald-700" : "bg-subtle text-brand-muted"
                         }`}
                       >
                         {u.is_active ? "Active" : "Inactive"}
@@ -230,7 +230,7 @@ export default function UsersAdminPage() {
                         <button
                           onClick={() => onResetPassword(u)}
                           title="Reset password"
-                          className="rounded-md p-1.5 text-brand-muted hover:bg-gray-100 hover:text-brand-dark"
+                          className="rounded-md p-1.5 text-brand-muted hover:bg-subtle hover:text-brand-dark"
                         >
                           <RotateCcw className="h-4 w-4" />
                         </button>

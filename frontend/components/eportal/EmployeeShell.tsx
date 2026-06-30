@@ -7,6 +7,7 @@ import { Logo } from "@/components/brand/Logo";
 import { useAuth } from "@/lib/auth";
 import EmployeeSidebar from "@/components/eportal/EmployeeSidebar";
 import NotificationBell from "@/components/NotificationBell";
+import ThemeToggle from "@/components/layout/ThemeToggle";
 
 /**
  * Chrome for internal employee portal accounts: a branded topbar + the employee
@@ -29,13 +30,13 @@ export default function EmployeeShell({
   const initial = name.charAt(0).toUpperCase();
 
   return (
-    <div className="flex min-h-screen flex-col bg-[#F4F5F7]">
-      <header className="sticky top-0 z-30 border-b border-brand-border bg-white">
+    <div className="flex min-h-screen flex-col bg-brand-surface">
+      <header className="sticky top-0 z-30 border-b border-brand-border bg-card">
         <div className="mx-auto flex h-16 max-w-[1600px] items-center gap-2 px-4 sm:gap-4 sm:px-6 lg:px-8">
           <button
             type="button"
             onClick={onMenuClick}
-            className="grid h-9 w-9 place-items-center rounded-md text-brand-muted hover:bg-gray-100 hover:text-brand-dark md:hidden"
+            className="grid h-9 w-9 place-items-center rounded-md text-brand-muted hover:bg-subtle hover:text-brand-dark md:hidden"
             aria-label="Open navigation"
           >
             <Menu size={18} />
@@ -53,6 +54,7 @@ export default function EmployeeShell({
           </div>
           <div className="flex-1" />
           <div className="flex items-center gap-1 sm:gap-2.5">
+            <ThemeToggle />
             <NotificationBell />
             <div className="hidden h-6 w-px bg-brand-border sm:block" />
             <div className="hidden text-right sm:block">
@@ -65,7 +67,7 @@ export default function EmployeeShell({
             <button
               onClick={logout}
               title="Sign out"
-              className="grid h-9 w-9 place-items-center rounded-md text-brand-muted hover:bg-gray-100 hover:text-signal-red"
+              className="grid h-9 w-9 place-items-center rounded-md text-brand-muted hover:bg-subtle hover:text-signal-red"
             >
               <LogOut size={18} />
             </button>

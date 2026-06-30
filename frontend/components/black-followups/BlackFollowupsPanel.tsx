@@ -129,11 +129,11 @@ export function BlackFollowupsPanel({
       render: (r) => (
         <div>
           <div className="flex items-center gap-2">
-            <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-gray-900" />
+            <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-ink" />
             <span className="font-semibold text-signal-red">{r.supplier_po_no}</span>
           </div>
           {r.escalation_levels?.length > 0 && (
-            <span className="mt-0.5 inline-block rounded bg-gray-900 px-1.5 py-0.5 text-[10px] font-medium text-white">
+            <span className="mt-0.5 inline-block rounded bg-ink px-1.5 py-0.5 text-[10px] font-medium text-white">
               {r.escalation_levels.join(", ")}
             </span>
           )}
@@ -208,7 +208,7 @@ export function BlackFollowupsPanel({
             e.stopPropagation();
             setSelectedPo(r.supplier_po_no);
           }}
-          className="inline-flex items-center gap-1.5 rounded-md border border-brand-border px-2.5 py-1 text-xs font-medium text-brand-dark hover:bg-white"
+          className="inline-flex items-center gap-1.5 rounded-md border border-brand-border px-2.5 py-1 text-xs font-medium text-brand-dark hover:bg-card"
         >
           <Eye className="h-3.5 w-3.5" /> View
         </button>
@@ -221,7 +221,7 @@ export function BlackFollowupsPanel({
       {/* Header */}
       <div className="page-header">
         <div className="flex items-center gap-2">
-          <span className="icon-tile bg-gray-900 text-white">
+          <span className="icon-tile bg-ink text-white">
             <ShieldAlert size={16} />
           </span>
           <div>
@@ -233,7 +233,7 @@ export function BlackFollowupsPanel({
           </div>
         </div>
         <div className="page-actions">
-          <div className="inline-flex rounded-md border border-brand-border bg-white p-0.5">
+          <div className="inline-flex rounded-md border border-brand-border bg-card p-0.5">
             {(["active", "history"] as const).map((v) => (
               <button
                 key={v}
@@ -268,7 +268,7 @@ export function BlackFollowupsPanel({
         <>
           {/* Summary strip */}
           <div className="grid grid-cols-3 gap-3">
-            <StatCard label="Critical POs" value={items.length} tone="bg-gray-900 text-white" />
+            <StatCard label="Critical POs" value={items.length} tone="bg-ink text-white" />
             <StatCard label="AI still chasing" value={chasing} tone="bg-red-50 text-signal-red" />
             <StatCard label="Commitment received" value={received < 0 ? 0 : received} tone="bg-emerald-50 text-emerald-700" />
           </div>
@@ -307,13 +307,13 @@ function AttemptBadge({ outcome }: { outcome: string }) {
     SKIPPED: "bg-amber-50 text-amber-700",
     FAILED: "bg-red-50 text-signal-red",
   };
-  return <span className={"badge " + (map[outcome] || "bg-gray-100 text-gray-600")}>{outcome}</span>;
+  return <span className={"badge " + (map[outcome] || "bg-subtle text-brand-muted")}>{outcome}</span>;
 }
 
 function SendBadge({ status }: { status: string | null }) {
   if (!status) return <span className="text-xs text-brand-muted">—</span>;
   const up = status.toUpperCase();
-  const cls = up === "SENT" ? "bg-emerald-50 text-emerald-700" : up === "FAILED" ? "bg-red-50 text-signal-red" : "bg-gray-100 text-gray-600";
+  const cls = up === "SENT" ? "bg-emerald-50 text-emerald-700" : up === "FAILED" ? "bg-red-50 text-signal-red" : "bg-subtle text-brand-muted";
   return <span className={"badge " + cls}>{up}</span>;
 }
 
@@ -335,7 +335,7 @@ function FollowupHistoryTable({
   return (
     <div className="table-shell">
       <table className="min-w-full text-sm">
-        <thead className="bg-gray-50">
+        <thead className="bg-subtle">
           <tr>
             {["When", "PO", "Supplier", "Source", "Outcome", "Harmony Intelligent", "Send", "Sent to", "Detail"].map((h) => (
               <th key={h} className="px-3 py-3 text-left table-header whitespace-nowrap">{h}</th>
@@ -351,7 +351,7 @@ function FollowupHistoryTable({
             <tr
               key={a.id}
               onClick={() => onOpen(a)}
-              className="cursor-pointer border-t border-brand-border align-top hover:bg-gray-50"
+              className="cursor-pointer border-t border-brand-border align-top hover:bg-subtle"
             >
               <td className="px-3 py-3 whitespace-nowrap text-xs">{fmtDate(a.created_at)}{a.created_at ? " " + new Date(a.created_at).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" }) : ""}</td>
               <td className="px-3 py-3 font-medium text-brand-dark">{a.supplier_po_no || "—"}</td>
@@ -392,10 +392,10 @@ function DRow({ label, children }: { label: string; children: React.ReactNode })
 function AttemptDetailModal({ attempt: a, onClose }: { attempt: FollowupAttempt; onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" onClick={onClose}>
-      <div className="w-full max-w-lg overflow-hidden rounded-lg bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
+      <div className="w-full max-w-lg overflow-hidden rounded-lg bg-card shadow-xl" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between border-b border-brand-border px-5 py-3">
           <div className="font-semibold text-brand-dark">Follow-up attempt · {a.supplier_po_no || "—"}</div>
-          <button className="rounded p-1 hover:bg-gray-100" onClick={onClose} aria-label="Close"><X size={18} /></button>
+          <button className="rounded p-1 hover:bg-subtle" onClick={onClose} aria-label="Close"><X size={18} /></button>
         </div>
         <div className="max-h-[70vh] divide-y divide-brand-border overflow-y-auto px-5 py-2">
           <DRow label="When">{fmt(a.created_at)}</DRow>
@@ -544,7 +544,7 @@ function DetailDrawer({
       />
       {/* Panel — large, near full-screen modal */}
       <div
-        className={`relative flex h-full w-full max-w-5xl flex-col overflow-hidden bg-white shadow-2xl transition-[transform,opacity] duration-200 ease-out sm:h-[92vh] sm:rounded-2xl ${
+        className={`relative flex h-full w-full max-w-5xl flex-col overflow-hidden bg-card shadow-2xl transition-[transform,opacity] duration-200 ease-out sm:h-[92vh] sm:rounded-2xl ${
           shown ? "scale-100 opacity-100" : "scale-95 opacity-0"
         }`}
       >
@@ -552,7 +552,7 @@ function DetailDrawer({
         <div className="flex items-start justify-between gap-3 border-b border-brand-border bg-brand-surface px-5 py-3.5">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="h-2.5 w-2.5 rounded-full bg-gray-900" />
+              <span className="h-2.5 w-2.5 rounded-full bg-ink" />
               <span className="font-semibold text-signal-red">{item.supplier_po_no}</span>
               <span className="truncate text-sm text-brand-dark">{item.supplier_name || "Unknown supplier"}</span>
               {item.commitment_captured ? (
@@ -578,13 +578,13 @@ function DetailDrawer({
                 <Mail className="h-3.5 w-3.5" /> {item.incoming_count} replies
               </span>
               {item.escalation_levels?.length > 0 && (
-                <span className="rounded bg-gray-900 px-1.5 py-0.5 font-medium text-white">
+                <span className="rounded bg-ink px-1.5 py-0.5 font-medium text-white">
                   {item.escalation_levels.join(", ")}
                 </span>
               )}
             </div>
           </div>
-          <button onClick={close} className="rounded-md p-1.5 text-brand-muted hover:bg-white" title="Close">
+          <button onClick={close} className="rounded-md p-1.5 text-brand-muted hover:bg-card" title="Close">
             <X className="h-5 w-5" />
           </button>
         </div>
@@ -629,7 +629,7 @@ function DetailDrawer({
         </div>
 
         {/* Sticky footer — AI draft preview + command composer */}
-        <div className="shrink-0 border-t border-brand-border bg-white">
+        <div className="shrink-0 border-t border-brand-border bg-card">
           {busy === "draft" && !preview && (
             <div className="flex items-center justify-center gap-3 border-b border-violet-100 bg-violet-50/40 px-5 py-4">
               <span className="text-signal-red">
@@ -642,7 +642,7 @@ function DetailDrawer({
           )}
           {preview && (
             <div className="animate-slide-down max-h-[46vh] overflow-y-auto border-b border-violet-100 bg-violet-50/40 px-5 py-3">
-              <div className="mx-auto max-w-3xl rounded-lg border border-violet-200 bg-white p-3">
+              <div className="mx-auto max-w-3xl rounded-lg border border-violet-200 bg-card p-3">
                 <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
                   <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-violet-700">
                     <Bot className="h-3.5 w-3.5" /> HI draft{preview.source === "ai" ? "" : " (template)"} · sent as HTML
@@ -652,14 +652,14 @@ function DetailDrawer({
                       <button
                         type="button"
                         onClick={() => setView("html")}
-                        className={view === "html" ? "bg-violet-600 px-2 py-0.5 text-white" : "bg-white px-2 py-0.5 text-violet-700"}
+                        className={view === "html" ? "bg-violet-600 px-2 py-0.5 text-white" : "bg-card px-2 py-0.5 text-violet-700"}
                       >
                         Formatted
                       </button>
                       <button
                         type="button"
                         onClick={() => setView("text")}
-                        className={view === "text" ? "bg-violet-600 px-2 py-0.5 text-white" : "bg-white px-2 py-0.5 text-violet-700"}
+                        className={view === "text" ? "bg-violet-600 px-2 py-0.5 text-white" : "bg-card px-2 py-0.5 text-violet-700"}
                       >
                         Text
                       </button>
@@ -687,7 +687,7 @@ function DetailDrawer({
                     title="Email preview"
                     sandbox=""
                     srcDoc={preview.body_html}
-                    className="h-72 w-full rounded-md border border-violet-200 bg-white"
+                    className="h-72 w-full rounded-md border border-violet-200 bg-card"
                   />
                 ) : (
                   <p className="whitespace-pre-wrap text-xs leading-relaxed text-brand-dark">{preview.body}</p>
@@ -760,7 +760,7 @@ function ThreadBubble({ t }: { t: BlackFollowupThreadItem }) {
     <div className={`flex ${outgoing ? "justify-end" : "justify-start"}`}>
       <div
         className={`max-w-[88%] rounded-xl border p-3 text-xs ${
-          outgoing ? "border-violet-200 bg-violet-50/70" : "border-brand-border bg-white"
+          outgoing ? "border-violet-200 bg-violet-50/70" : "border-brand-border bg-card"
         }`}
       >
         <div className="mb-1 flex items-center gap-2">
@@ -773,7 +773,7 @@ function ThreadBubble({ t }: { t: BlackFollowupThreadItem }) {
               <CornerDownRight className="h-3.5 w-3.5" /> Supplier reply
             </span>
           )}
-          {t.status && <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] text-brand-muted">{t.status}</span>}
+          {t.status && <span className="rounded bg-subtle px-1.5 py-0.5 text-[10px] text-brand-muted">{t.status}</span>}
           {t.parsed_status && (
             <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">
               {t.parsed_status}

@@ -114,7 +114,7 @@ export default function NotificationBell() {
       </button>
 
       {open && (
-        <div className="animate-fade-in absolute right-0 z-50 mt-2 w-[min(22rem,calc(100vw-2rem))] origin-top-right overflow-hidden rounded-lg border border-brand-border bg-white shadow-xl">
+        <div className="animate-fade-in absolute right-0 z-50 mt-2 w-[min(22rem,calc(100vw-2rem))] origin-top-right overflow-hidden rounded-lg border border-brand-border bg-card shadow-xl">
           <div className="flex items-center justify-between border-b border-brand-border px-4 py-2.5">
             <span className="text-sm font-semibold text-brand-dark">Notifications</span>
             {items.some((x) => !x.is_read) && (
@@ -133,7 +133,7 @@ export default function NotificationBell() {
                 key={n.id}
                 onClick={() => onItem(n)}
                 className={cn(
-                  "flex w-full flex-col gap-0.5 border-b border-brand-border px-4 py-3 text-left hover:bg-gray-50",
+                  "flex w-full flex-col gap-0.5 border-b border-brand-border px-4 py-3 text-left hover:bg-subtle",
                   !n.is_read && "bg-red-50/40",
                 )}
               >
