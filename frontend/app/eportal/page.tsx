@@ -2,74 +2,114 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { AlertTriangle, Boxes, Clock, FileSpreadsheet, Layers, ShieldAlert } from "lucide-react";
+import { FileSpreadsheet, ListChecks, ListFilter, MessagesSquare } from "lucide-react";
 
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import type { EmployeePo, EmployeeSummary } from "@/lib/types";
-import { StatCard } from "@/components/portal/PortalCards";
+import { useStore } from "@/lib/store";
+import type { EmployeePo, PortalTaskDashboard } from "@/lib/types";
 import EmployeePoTable from "@/components/eportal/EmployeePoTable";
+import KpiStrip from "@/components/dashboard/KpiStrip";
+import StatusDonut from "@/components/dashboard/StatusDonut";
+import OverdueDonut from "@/components/dashboard/OverdueDonut";
+import AIInsights from "@/components/dashboard/AIInsights";
+import TasksSummaryCard from "@/components/dashboard/TasksSummaryCard";
 
+const QUICK_LINKS = [
+  { href: "/eportal/pos", label: "My Purchase Orders", icon: FileSpreadsheet },
+  { href: "/eportal/followups", label: "Black Follow-ups", icon: ListFilter },
+  { href: "/eportal/communication", label: "Communication", icon: MessagesSquare },
+  { href: "/eportal/tasks", label: "My Tasks", icon: ListChecks },
+];
+
+/**
+ * Employee dashboard — same depth as the admin control tower (KPI strip, signal
+ * donut, workload bar, AI insights), but scoped to the employee's owned POs via
+ * the shared store (scope='employee'), plus a tasks overview and the owned-PO list.
+ */
 export default function EmployeeDashboard() {
   const { user } = useAuth();
-  const [summary, setSummary] = useState<EmployeeSummary | null>(null);
+  const setScope = useStore((s) => s.setScope);
+  const refresh = useStore((s) => s.refresh);
   const [pos, setPos] = useState<EmployeePo[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [tasks, setTasks] = useState<PortalTaskDashboard | null>(null);
 
   useEffect(() => {
+    setScope("employee");
+    void refresh();
     let cancelled = false;
     (async () => {
       try {
-        const [s, p] = await Promise.all([api.eportalSummary(), api.eportalPos()]);
+        const [p, t] = await Promise.all([api.eportalPos(), api.eportalTasksDashboard()]);
         if (!cancelled) {
-          setSummary(s);
           setPos(p.items);
+          setTasks(t);
         }
-      } catch (e) {
-        if (!cancelled) setError((e as Error).message);
-      } finally {
-        if (!cancelled) setLoading(false);
+      } catch {
+        /* non-fatal — KPI/chart cards still render from the store */
       }
     })();
     return () => {
       cancelled = true;
+      // Reset so the staff /po-followups page behaves normally if revisited.
+      setScope("staff");
     };
-  }, []);
+  }, [setScope, refresh]);
 
-  const name = summary?.full_name || user?.full_name || user?.username || "Employee";
+  const name = user?.full_name || user?.username || "Employee";
 
   return (
     <div className="page-stack">
       <div className="page-header">
         <div>
           <h1 className="page-title">Welcome, {name}</h1>
-          <p className="page-subtitle">Purchase orders assigned to you, live from the CRM.</p>
+          <p className="page-subtitle">Your assigned purchase orders at a glance, live from the CRM.</p>
         </div>
         <Link href="/eportal/pos" className="btn-primary">
           <FileSpreadsheet size={14} /> My Purchase Orders
         </Link>
       </div>
 
-      {error && <div className="rounded-md bg-red-50 px-3 py-2 text-xs text-signal-red">{error}</div>}
+      <KpiStrip />
 
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-6">
-        <StatCard label="Total POs" value={loading ? "—" : summary?.total_pos ?? 0} icon={Layers} tint="bg-blue-50 text-blue-600" />
-        <StatCard label="Materials" value={loading ? "—" : summary?.total_materials ?? 0} icon={Boxes} tint="bg-indigo-50 text-indigo-600" />
-        <StatCard label="Red" value={loading ? "—" : summary?.red ?? 0} icon={AlertTriangle} tint="bg-red-50 text-signal-red" />
-        <StatCard label="Black" value={loading ? "—" : summary?.black ?? 0} icon={ShieldAlert} tint="bg-subtle text-brand-dark" strong />
-        <StatCard label="Overdue POs" value={loading ? "—" : summary?.overdue_pos ?? 0} icon={Clock} tint="bg-amber-50 text-amber-600" />
-        <StatCard label="Escalated" value={loading ? "—" : summary?.escalated_pos ?? 0} icon={ShieldAlert} tint="bg-orange-50 text-orange-600" />
+      <div className="grid gap-4 lg:grid-cols-3">
+        <StatusDonut />
+        <OverdueDonut />
+        <TasksSummaryCard data={tasks} href="/eportal/tasks" />
       </div>
 
-      <div>
-        <div className="mb-2 flex items-center justify-between">
-          <div className="text-[11px] font-semibold uppercase tracking-wider text-brand-muted">Your Purchase Orders</div>
-          <Link href="/eportal/pos" className="text-xs font-medium text-signal-red hover:underline">
-            View all →
-          </Link>
+      <div className="grid gap-4 lg:grid-cols-3">
+        <div className="lg:col-span-2">
+          <div className="mb-2 flex items-center justify-between">
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-brand-muted">
+              Your Purchase Orders
+            </div>
+            <Link href="/eportal/pos" className="text-xs font-medium text-signal-red hover:underline">
+              View all →
+            </Link>
+          </div>
+          <EmployeePoTable pos={pos.slice(0, 10)} />
         </div>
-        {!loading && <EmployeePoTable pos={pos.slice(0, 10)} />}
+        <div className="space-y-4">
+          <AIInsights />
+          <div className="card p-4">
+            <div className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-brand-muted">
+              Quick actions
+            </div>
+            <div className="space-y-1">
+              {QUICK_LINKS.map(({ href, label, icon: Icon }) => (
+                <Link
+                  key={href}
+                  href={href}
+                  className="flex items-center gap-2.5 rounded-md px-2 py-2 text-sm text-brand-dark hover:bg-subtle"
+                >
+                  <Icon size={15} className="text-brand-muted" />
+                  {label}
+                </Link>
+              ))}
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
