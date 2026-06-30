@@ -10,7 +10,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
-from sqlalchemy import func as _sa_func, select
+from sqlalchemy import func as _sa_func, or_, select
 from sqlalchemy.orm import Session
 
 from ..models.communication_message import CommunicationMessage
@@ -331,6 +331,35 @@ def tool_draft_email(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
             "subject": subject, "needs_confirmation": True}
 
 
+def _reply_in_reply_to(ctx: ToolContext) -> str | None:
+    """Message-ID this reply should thread under (In-Reply-To), or None.
+
+    Customer thread → the originating customer mail's id; supplier thread → the
+    latest inbound supplier mail for the PO. None means "nothing to reply to" so
+    the mail goes out as a new conversation."""
+    if ctx.customer_mail_id is not None:
+        cmail = ctx.db.get(CustomerMail, ctx.customer_mail_id)
+        return cmail.message_uid if cmail else None
+    conds = []
+    if ctx.procurement_record_id is not None:
+        conds.append(CommunicationMessage.procurement_record_id == ctx.procurement_record_id)
+    if ctx.supplier_po_no:
+        conds.append(CommunicationMessage.supplier_po_no == ctx.supplier_po_no)
+    if not conds:
+        return None
+    row = ctx.db.scalar(
+        select(CommunicationMessage)
+        .where(
+            CommunicationMessage.direction == "INCOMING",
+            CommunicationMessage.message_uid.isnot(None),
+            or_(*conds),
+        )
+        .order_by(CommunicationMessage.created_at.desc())
+        .limit(1)
+    )
+    return row.message_uid if row else None
+
+
 def tool_draft_reply(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
     """Compose a reply DRAFT into this thread (confirm-gated, no send).
 
@@ -361,6 +390,9 @@ def tool_draft_reply(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
     if not body:
         body = instruction or "Thank you for the update — we will revert shortly."
 
+    # A reply threads under the message it answers; a one-time send (tool_draft_email) does not.
+    in_reply_to = _reply_in_reply_to(ctx)
+
     if is_customer:
         subject = f"Re: {incoming_subject}" if incoming_subject else "Re: your message"
         msg = msg_service.create_message(
@@ -369,7 +401,7 @@ def tool_draft_reply(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
             subject=subject, body=body,
             receiver_email=ctx.customer_email,
             to_emails=[ctx.customer_email] if ctx.customer_email else [],
-            mail_type="HI_AGENT_REPLY", commit=True,
+            mail_type="HI_AGENT_REPLY", in_reply_to=in_reply_to, commit=True,
         )
         recipient_label = ctx.customer_name or "Customer"
         recipient_kind = "customer"
@@ -379,7 +411,7 @@ def tool_draft_reply(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
             supplier_id=ctx.supplier_id, procurement_record_id=ctx.procurement_record_id,
             supplier_po_no=ctx.supplier_po_no,
             subject=f"Re: PO {ctx.supplier_po_no}", body=body,
-            mail_type="HI_AGENT_REPLY", commit=True,
+            mail_type="HI_AGENT_REPLY", in_reply_to=in_reply_to, commit=True,
         )
         recipient_label = "Supplier"
         recipient_kind = "supplier"

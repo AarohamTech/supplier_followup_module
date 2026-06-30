@@ -42,6 +42,47 @@ class MailSendWorkerTests(unittest.TestCase):
         client.starttls.assert_called_once_with()
         client.login.assert_called_once_with("mailer", "secret")
 
+    def _threading_msg(self, **overrides) -> SimpleNamespace:
+        base = dict(
+            to_emails=["supplier@vendor.com"],
+            receiver_email=None,
+            cc_emails=[],
+            bcc_emails=[],
+            subject="Re: Critical material",
+            body="Please ship soon",
+            body_html=None,
+            in_reply_to=None,
+        )
+        base.update(overrides)
+        return SimpleNamespace(**base)
+
+    def test_build_email_sets_message_id_and_threading_headers(self) -> None:
+        msg = self._threading_msg(in_reply_to="<orig123@mail.gmail.com>")
+        with patch.multiple(mail_send_worker.settings, SMTP_FROM="noreply@procuredirect.com"):
+            em = mail_send_worker._build_email(msg)
+        # A Message-ID is always stamped so recipients can thread future replies.
+        self.assertTrue(em["Message-ID"])
+        self.assertIn("@", em["Message-ID"])
+        # Replies carry In-Reply-To + References pointing at the original.
+        self.assertEqual(em["In-Reply-To"], "<orig123@mail.gmail.com>")
+        self.assertEqual(em["References"], "<orig123@mail.gmail.com>")
+
+    def test_build_email_without_in_reply_to_has_message_id_only(self) -> None:
+        msg = self._threading_msg(subject="Hello", in_reply_to=None)
+        with patch.multiple(mail_send_worker.settings, SMTP_FROM="noreply@procuredirect.com"):
+            em = mail_send_worker._build_email(msg)
+        self.assertTrue(em["Message-ID"])
+        self.assertIsNone(em["In-Reply-To"])
+        self.assertIsNone(em["References"])
+
+    def test_build_email_ignores_non_messageid_in_reply_to(self) -> None:
+        # A bare IMAP UID (no "@") is not a real Message-ID — don't emit a bad header.
+        msg = self._threading_msg(in_reply_to="12345")
+        with patch.multiple(mail_send_worker.settings, SMTP_FROM="noreply@procuredirect.com"):
+            em = mail_send_worker._build_email(msg)
+        self.assertTrue(em["Message-ID"])
+        self.assertIsNone(em["In-Reply-To"])
+
     @patch("app.workers.mail_send_worker.msg_service.mark_status")
     def test_sync_delivery_updates_history_and_procurement(self, mark_status: MagicMock) -> None:
         msg = SimpleNamespace(

@@ -140,6 +140,27 @@ def _resolve_scoped_po(
     return po_no
 
 
+def _owned_supplier_name(
+    db: Session,
+    emp_code: Optional[str],
+    *,
+    supplier_id: Optional[int],
+    supplier_name: Optional[str],
+) -> Optional[str]:
+    """Resolve a supplier name and return it iff the employee owns ≥1 PO with them.
+
+    Used to scope non-PO "Other Mails" (which have no PO of their own). Returns
+    None when the supplier can't be resolved or isn't owned, so callers can choose
+    [] (list) or 404 (thread/mutate)."""
+    name = supplier_name
+    if name is None and supplier_id is not None:
+        master = db.get(SupplierMaster, supplier_id)
+        name = master.supplier_name if master else None
+    if not name:
+        return None
+    return name if name.strip().upper() in _owned_supplier_names(db, emp_code) else None
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # 1. Dashboard — counts over in-scope POs only
 # ─────────────────────────────────────────────────────────────────────────────
@@ -368,6 +389,19 @@ def _build_scoped_supplier_entry(
         if email_row:
             mapping_status = "OK"
 
+    # Non-PO "Other Mails" for this supplier. Scope is by owned-supplier (the
+    # employee owns ≥1 PO with them); non-PO mails have no PO to scope by.
+    non_po_count = int(
+        db.execute(
+            select(func.count(CommunicationMessage.id)).where(
+                CommunicationMessage.direction == "INCOMING",
+                CommunicationMessage.supplier_po_no.is_(None),
+                func.upper(CommunicationMessage.supplier_name) == upper,
+            )
+        ).scalar_one()
+        or 0
+    )
+
     po_signals = [hub._norm_signal(p.signal) for p in pos]
     mail_signals = [hub._signal_from_mail_type(m.mail_type) for m in mails]
     highest = (
@@ -388,6 +422,7 @@ def _build_scoped_supplier_entry(
         "draft_mail_count": draft_count,
         "task_count": open_task_count,
         "unread_inbound": int(unread_inbound or 0),
+        "non_po_count": non_po_count,
         "highest_signal": highest,
         "health_score": hub._HEALTH.get(highest, 65),
         "mapping_status": mapping_status,
@@ -437,6 +472,23 @@ def list_pos(
     return [p for p in all_pos if p.get("supplier_po_no") in owned_pos]
 
 
+@router.get("/other-mails")
+def list_other_mails(
+    supplier_name: Optional[str] = None,
+    supplier_id: Optional[int] = None,
+    user: User = Depends(get_current_employee),
+    db: Session = Depends(get_db),
+) -> list[dict[str, Any]]:
+    """Non-PO "Other Mails" for one of the employee's suppliers (same shape as
+    admin). Empty list for a supplier the employee doesn't own (no existence leak)."""
+    name = _owned_supplier_name(
+        db, user.emp_code, supplier_id=supplier_id, supplier_name=supplier_name
+    )
+    if name is None:
+        return []
+    return hub.list_other_mails(supplier_id=supplier_id, supplier_name=name, db=db)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # 4. PO thread — 404 if PO not in scope
 # ─────────────────────────────────────────────────────────────────────────────
@@ -445,10 +497,21 @@ def get_thread(
     supplier_po_no: Optional[str] = None,
     procurement_record_id: Optional[int] = None,
     supplier_id: Optional[int] = None,
+    supplier_name: Optional[str] = None,
+    non_po_subject: Optional[str] = None,
     user: User = Depends(get_current_employee),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    """Same shape as admin /thread; 404 if the PO is not in the employee's scope."""
+    """Same shape as admin /thread; 404 if the PO (or non-PO supplier) is out of scope."""
+    if non_po_subject is not None:
+        name = _owned_supplier_name(
+            db, user.emp_code, supplier_id=supplier_id, supplier_name=supplier_name
+        )
+        if name is None:
+            raise HTTPException(404, "Mail not found for your account")
+        return hub.get_thread(
+            supplier_id=supplier_id, supplier_name=name, non_po_subject=non_po_subject, db=db
+        )
     po_no = _resolve_scoped_po(
         db,
         user.emp_code,
@@ -467,10 +530,22 @@ def get_thread(
 def mark_thread_read(
     supplier_po_no: Optional[str] = None,
     procurement_record_id: Optional[int] = None,
+    supplier_id: Optional[int] = None,
+    supplier_name: Optional[str] = None,
+    non_po_subject: Optional[str] = None,
     user: User = Depends(get_current_employee),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    """Same shape as admin mark-read; 404 if the PO is not in scope."""
+    """Same shape as admin mark-read; 404 if the PO (or non-PO supplier) is out of scope."""
+    if non_po_subject is not None:
+        name = _owned_supplier_name(
+            db, user.emp_code, supplier_id=supplier_id, supplier_name=supplier_name
+        )
+        if name is None:
+            raise HTTPException(404, "Mail not found for your account")
+        return hub.mark_thread_read(
+            supplier_id=supplier_id, supplier_name=name, non_po_subject=non_po_subject, db=db
+        )
     po_no = _resolve_scoped_po(
         db,
         user.emp_code,
@@ -612,13 +687,26 @@ def reply_now(
     user: User = Depends(get_current_employee),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    """Same shape as admin /reply; 404 if the PO is not in scope."""
-    _resolve_scoped_po(
-        db,
-        user.emp_code,
-        supplier_po_no=payload.supplier_po_no,
-        procurement_record_id=payload.procurement_record_id,
+    """Same shape as admin /reply; 404 if the PO (or non-PO supplier) is out of scope."""
+    is_non_po = bool(
+        payload.non_po_subject
+        and not payload.supplier_po_no
+        and payload.procurement_record_id is None
     )
+    if is_non_po:
+        name = _owned_supplier_name(
+            db, user.emp_code,
+            supplier_id=payload.supplier_id, supplier_name=payload.supplier_name,
+        )
+        if name is None:
+            raise HTTPException(404, "Mail not found for your account")
+    else:
+        _resolve_scoped_po(
+            db,
+            user.emp_code,
+            supplier_po_no=payload.supplier_po_no,
+            procurement_record_id=payload.procurement_record_id,
+        )
     return hub.reply_now(payload=payload, db=db)
 
 

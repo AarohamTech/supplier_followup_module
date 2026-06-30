@@ -399,6 +399,20 @@ def _build_supplier_entry(
         if email_row:
             mapping_status = "OK"
 
+    # Incoming supplier mails with no PO ("Other Mails") — drives the toggle badge.
+    non_po_count: int = db.execute(
+        select(func.count(CommunicationMessage.id)).where(
+            CommunicationMessage.direction == "INCOMING",
+            CommunicationMessage.supplier_po_no.is_(None),
+            or_(
+                func.upper(CommunicationMessage.supplier_name) == upper,
+                (CommunicationMessage.supplier_id == supplier_id)
+                if supplier_id
+                else False,
+            ),
+        )
+    ).scalar_one() or 0
+
     po_signals = [_norm_signal(p.signal) for p in pos]
     mail_signals = [_signal_from_mail_type(m.mail_type) for m in mails]
     highest = _worst_signal(po_signals + mail_signals) if (po_signals or mail_signals) else "GREEN"
@@ -415,6 +429,7 @@ def _build_supplier_entry(
         "draft_mail_count": draft_count,
         "task_count": open_task_count,
         "unread_inbound": int(unread_inbound or 0),
+        "non_po_count": int(non_po_count or 0),
         "highest_signal": highest,
         "health_score": _HEALTH.get(highest, 65),
         "mapping_status": mapping_status,
@@ -567,9 +582,18 @@ def get_thread(
     supplier_id: Optional[int] = None,
     procurement_record_id: Optional[int] = None,
     supplier_po_no: Optional[str] = None,
+    supplier_name: Optional[str] = None,
+    non_po_subject: Optional[str] = None,
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    """Build conversation thread from existing mail_history for a given PO."""
+    """Build conversation thread from existing mail_history for a given PO.
+
+    When `non_po_subject` is given (and no PO), returns the supplier's non-PO
+    "Other Mails" conversation for that subject instead.
+    """
+    if non_po_subject is not None:
+        return _non_po_thread(db, supplier_id, supplier_name, non_po_subject)
+
     stmt = select(MailHistory)
     selected_rec: Optional[ProcurementRecord] = None
     po_scoped_record_ids: list[int] = []
@@ -768,9 +792,14 @@ def get_thread(
 def mark_thread_read(
     supplier_po_no: Optional[str] = None,
     procurement_record_id: Optional[int] = None,
+    supplier_id: Optional[int] = None,
+    supplier_name: Optional[str] = None,
+    non_po_subject: Optional[str] = None,
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """Mark all inbound supplier mails in a thread as read (clears the unread badge)."""
+    if non_po_subject is not None:
+        return _mark_non_po_read(db, supplier_id, supplier_name, non_po_subject)
     if not supplier_po_no and not procurement_record_id:
         raise HTTPException(400, "Provide supplier_po_no or procurement_record_id")
     now = datetime.utcnow()
@@ -835,6 +864,213 @@ def _load_comm_messages(
     return list(
         db.scalars(stmt.order_by(CommunicationMessage.created_at.asc())).all()
     )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 4b. "Other Mails" — incoming supplier mails with no PO, grouped by subject
+# ─────────────────────────────────────────────────────────────────────────────
+def _non_po_supplier_clause(supplier_id: Optional[int], supplier_name: Optional[str]):
+    """SQL clause matching a supplier by id and/or (uppercased) name; None if neither."""
+    clauses = []
+    if supplier_name:
+        clauses.append(
+            func.upper(CommunicationMessage.supplier_name) == supplier_name.strip().upper()
+        )
+    if supplier_id is not None:
+        clauses.append(CommunicationMessage.supplier_id == supplier_id)
+    if not clauses:
+        return None
+    return or_(*clauses)
+
+
+def _non_po_messages(
+    db: Session, supplier_id: Optional[int], supplier_name: Optional[str]
+) -> list[CommunicationMessage]:
+    """All PO-less messages for a supplier (both incoming + our outgoing replies)."""
+    clause = _non_po_supplier_clause(supplier_id, supplier_name)
+    if clause is None:
+        return []
+    return list(
+        db.scalars(
+            select(CommunicationMessage)
+            .where(CommunicationMessage.supplier_po_no.is_(None), clause)
+            .order_by(CommunicationMessage.created_at.asc())
+        ).all()
+    )
+
+
+def _non_po_message_dict(cm: CommunicationMessage) -> dict[str, Any]:
+    """Thread message shape for a non-PO mail (same keys as the PO thread)."""
+    reply_rows = _reply_message_table_rows(cm.body) if cm.direction == "INCOMING" else []
+    return {
+        "id": f"cm-{cm.id}",
+        "procurement_record_id": None,
+        "supplier_id": cm.supplier_id,
+        "supplier_name": cm.supplier_name,
+        "supplier_po_no": None,
+        "material_name": None,
+        "to_emails": cm.to_emails,
+        "cc_emails": cm.cc_emails,
+        "bcc_emails": cm.bcc_emails,
+        "escalation_emails": [],
+        "subject": cm.subject,
+        "body": cm.body,
+        "mail_type": cm.mail_type,
+        "sent_status": cm.status,
+        "created_at": cm.created_at.isoformat(),
+        "sent_at": cm.sent_at.isoformat() if cm.sent_at else None,
+        "received_at": cm.received_at.isoformat() if cm.received_at else None,
+        "sender_email": cm.sender_email,
+        "receiver_email": cm.receiver_email,
+        "remarks": None,
+        "signal": "GREEN",
+        "source": "communication_messages",
+        "direction": cm.direction,
+        "parsed": {
+            "status": cm.parsed_status,
+            "qty": float(cm.parsed_qty) if cm.parsed_qty is not None else None,
+            "date": cm.parsed_date.isoformat() if cm.parsed_date else None,
+        },
+        "error_message": cm.error_message,
+        "table_format": "SUPPLIER_REPLY" if reply_rows else None,
+        "table_rows": reply_rows,
+    }
+
+
+@router.get("/other-mails")
+def list_other_mails(
+    supplier_id: Optional[int] = None,
+    supplier_name: Optional[str] = None,
+    db: Session = Depends(get_db),
+) -> list[dict[str, Any]]:
+    """Non-PO supplier mails grouped into subject-threads for the "Other Mails" list.
+
+    Only groups that contain at least one INCOMING mail surface (so a pure
+    outbound message never appears on its own).
+    """
+    rows = _non_po_messages(db, supplier_id, supplier_name)
+    groups: dict[str, list[CommunicationMessage]] = {}
+    for m in rows:
+        groups.setdefault(msg_service.normalize_subject(m.subject), []).append(m)
+
+    result: list[dict[str, Any]] = []
+    for key, msgs in groups.items():
+        incoming = [m for m in msgs if m.direction == "INCOMING"]
+        if not incoming:
+            continue
+        latest = max(msgs, key=lambda m: m.created_at)
+        latest_in = max(incoming, key=lambda m: m.created_at)
+        result.append(
+            {
+                "thread_key": key,
+                "subject": latest_in.subject or "(no subject)",
+                "supplier_id": supplier_id or latest_in.supplier_id,
+                "supplier_name": supplier_name or latest_in.supplier_name,
+                "sender_email": latest_in.sender_email,
+                "message_count": len(msgs),
+                "unread_inbound": sum(1 for m in incoming if m.read_at is None),
+                "last_activity_at": latest.created_at.isoformat() if latest.created_at else None,
+            }
+        )
+    # Unread threads first, then most recent activity first.
+    result.sort(key=lambda r: r["last_activity_at"] or "", reverse=True)
+    result.sort(key=lambda r: 0 if r["unread_inbound"] else 1)
+    return result
+
+
+def _non_po_thread(
+    db: Session,
+    supplier_id: Optional[int],
+    supplier_name: Optional[str],
+    non_po_subject: str,
+) -> dict[str, Any]:
+    key = msg_service.normalize_subject(non_po_subject)
+    msgs = [m for m in _non_po_messages(db, supplier_id, supplier_name)
+            if msg_service.normalize_subject(m.subject) == key]
+    first_in = next((m for m in msgs if m.direction == "INCOMING"), msgs[0] if msgs else None)
+    s_id = supplier_id or (first_in.supplier_id if first_in else None)
+    return {
+        "thread_id": f"OTHER-{s_id or 0}-{key}",
+        "supplier_id": s_id,
+        "supplier_name": supplier_name or (first_in.supplier_name if first_in else None),
+        "procurement_record_id": None,
+        "supplier_po_no": None,
+        "non_po_subject": key,
+        "signal": "GREEN",
+        "risk_level": "LOW",
+        "messages": [_non_po_message_dict(m) for m in msgs],
+    }
+
+
+def _mark_non_po_read(
+    db: Session,
+    supplier_id: Optional[int],
+    supplier_name: Optional[str],
+    non_po_subject: str,
+) -> dict[str, Any]:
+    clause = _non_po_supplier_clause(supplier_id, supplier_name)
+    if clause is None:
+        raise HTTPException(400, "Provide supplier_id or supplier_name")
+    key = msg_service.normalize_subject(non_po_subject)
+    rows = [
+        m
+        for m in db.scalars(
+            select(CommunicationMessage).where(
+                CommunicationMessage.direction == "INCOMING",
+                CommunicationMessage.read_at.is_(None),
+                CommunicationMessage.supplier_po_no.is_(None),
+                clause,
+            )
+        ).all()
+        if msg_service.normalize_subject(m.subject) == key
+    ]
+    now = datetime.utcnow()
+    for r in rows:
+        r.read_at = now
+    db.commit()
+    return {"marked": len(rows), "at": now.isoformat()}
+
+
+def _latest_incoming_message_uid(
+    db: Session,
+    *,
+    supplier_po_no: Optional[str] = None,
+    procurement_record_id: Optional[int] = None,
+    supplier_id: Optional[int] = None,
+    supplier_name: Optional[str] = None,
+    non_po_subject: Optional[str] = None,
+) -> Optional[str]:
+    """The Message-ID of the most recent inbound mail in a thread, for reply
+    threading (In-Reply-To). None when there's nothing to reply to (→ new email)."""
+    base = select(CommunicationMessage).where(
+        CommunicationMessage.direction == "INCOMING",
+        CommunicationMessage.message_uid.isnot(None),
+    )
+    if non_po_subject is not None and not supplier_po_no and procurement_record_id is None:
+        clause = _non_po_supplier_clause(supplier_id, supplier_name)
+        if clause is None:
+            return None
+        key = msg_service.normalize_subject(non_po_subject)
+        rows = db.scalars(
+            base.where(CommunicationMessage.supplier_po_no.is_(None), clause)
+            .order_by(CommunicationMessage.created_at.desc())
+        ).all()
+        for m in rows:
+            if msg_service.normalize_subject(m.subject) == key:
+                return m.message_uid
+        return None
+
+    conds = []
+    if supplier_po_no:
+        conds.append(CommunicationMessage.supplier_po_no == supplier_po_no)
+    if procurement_record_id is not None:
+        conds.append(CommunicationMessage.procurement_record_id == procurement_record_id)
+    if not conds:
+        return None
+    row = db.scalar(
+        base.where(or_(*conds)).order_by(CommunicationMessage.created_at.desc()).limit(1)
+    )
+    return row.message_uid if row else None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1229,6 +1465,8 @@ class HubReplyIn(BaseModel):
     supplier_id: int | None = None
     supplier_name: str | None = None
     subject: str | None = None
+    # Set when replying on a non-PO "Other Mails" thread (the conversation key).
+    non_po_subject: str | None = None
     body: str
     # True → also email the supplier (and show in their portal); False → portal-only.
     send_email: bool = True
@@ -1267,8 +1505,25 @@ def reply_now(payload: HubReplyIn, db: Session = Depends(get_db)) -> dict[str, A
             to_emails = [e for e in (mapping.to_emails or []) if e]
             cc_emails = [e for e in (mapping.cc_emails or []) if e]
 
-    subject = (payload.subject or "").strip() or (
-        f"Re: PO {supplier_po_no}" if supplier_po_no else "Message from Procurement"
+    if payload.subject and payload.subject.strip():
+        subject = payload.subject.strip()
+    elif supplier_po_no:
+        subject = f"Re: PO {supplier_po_no}"
+    elif payload.non_po_subject:
+        subject = msg_service.reply_subject(payload.non_po_subject)
+    else:
+        subject = "Message from Procurement"
+
+    # Thread the reply under the conversation it answers (In-Reply-To). A reply on
+    # a PO thread points at the latest supplier mail for that PO; a reply on an
+    # "Other Mails" thread points at the latest mail in that subject group.
+    in_reply_to = _latest_incoming_message_uid(
+        db,
+        supplier_po_no=supplier_po_no,
+        procurement_record_id=rec.id if rec else None,
+        supplier_id=supplier_id,
+        supplier_name=supplier_name,
+        non_po_subject=payload.non_po_subject,
     )
 
     want_email = bool(payload.send_email and to_emails)
@@ -1285,6 +1540,7 @@ def reply_now(payload: HubReplyIn, db: Session = Depends(get_db)) -> dict[str, A
             to_emails=to_emails,
             cc_emails=cc_emails,
             mail_type="HUB_REPLY",
+            in_reply_to=in_reply_to,
             commit=True,
         )
         from ..workers import mail_send_worker
@@ -1308,6 +1564,7 @@ def reply_now(payload: HubReplyIn, db: Session = Depends(get_db)) -> dict[str, A
             to_emails=to_emails,
             cc_emails=cc_emails,
             mail_type="HUB_PORTAL_MESSAGE",
+            in_reply_to=in_reply_to,
             sent_at=datetime.utcnow(),
             commit=True,
         )

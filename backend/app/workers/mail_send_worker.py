@@ -12,6 +12,7 @@ import smtplib
 import re
 from datetime import datetime
 from email.message import EmailMessage
+from email.utils import make_msgid, parseaddr
 from html import unescape
 from typing import Any
 
@@ -76,6 +77,18 @@ def _open_client() -> smtplib.SMTP:
     return client
 
 
+def _from_domain() -> str:
+    """Domain to stamp generated Message-IDs with, derived from SMTP_FROM."""
+    _, addr = parseaddr(settings.SMTP_FROM or "")
+    domain = addr.split("@", 1)[1].strip() if "@" in addr else ""
+    return domain or "localhost"
+
+
+def _is_message_id(value: str | None) -> bool:
+    """A real RFC 5322 Message-ID contains an "@"; bare IMAP UIDs do not."""
+    return bool(value) and "@" in value
+
+
 def _build_email(msg: CommunicationMessage) -> EmailMessage:
     em = EmailMessage()
     em["From"] = settings.SMTP_FROM
@@ -85,6 +98,15 @@ def _build_email(msg: CommunicationMessage) -> EmailMessage:
     if msg.bcc_emails:
         em["Bcc"] = ", ".join(msg.bcc_emails)
     em["Subject"] = msg.subject or "(no subject)"
+
+    # Always stamp a Message-ID so recipients (and our own future ingests) can
+    # thread on it. When this is a reply, point In-Reply-To / References at the
+    # original message so Gmail/Outlook nest it under the existing conversation.
+    em["Message-ID"] = make_msgid(domain=_from_domain())
+    in_reply_to = getattr(msg, "in_reply_to", None)
+    if _is_message_id(in_reply_to):
+        em["In-Reply-To"] = in_reply_to
+        em["References"] = in_reply_to
 
     body_html = getattr(msg, "body_html", None)
     # Always set a plain-text part for fallback; attach HTML as the rich alternative

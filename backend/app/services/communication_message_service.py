@@ -32,6 +32,32 @@ def _validate(direction: str, status: str) -> None:
         raise ValueError(f"status must be one of {MESSAGE_STATUSES}")
 
 
+_REPLY_PREFIX_RE = re.compile(r"^\s*(re|fwd|fw)\s*:\s*", re.IGNORECASE)
+
+
+def normalize_subject(subject: str | None) -> str:
+    """Canonical key for grouping a mail conversation by subject.
+
+    Strips any number of leading Re:/Fwd:/Fw: prefixes, collapses whitespace and
+    lowercases so "Re: Quotation request" and "quotation request" group together.
+    """
+    s = (subject or "").strip()
+    while True:
+        stripped = _REPLY_PREFIX_RE.sub("", s, count=1).strip()
+        if stripped == s:
+            break
+        s = stripped
+    return re.sub(r"\s+", " ", s).lower()
+
+
+def reply_subject(subject: str | None) -> str:
+    """Subject line for a reply: original prefixed with "Re: " (once), case kept."""
+    s = (subject or "").strip()
+    if not s:
+        return "Re:"
+    return s if s.lower().startswith("re:") else f"Re: {s}"
+
+
 def find_supplier_by_email(db: Session, email: str | None) -> tuple[int | None, str | None]:
     """Lookup supplier by an email present in to/cc/bcc/escalation arrays."""
     if not email:
