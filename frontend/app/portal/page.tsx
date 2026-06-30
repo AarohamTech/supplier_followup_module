@@ -6,14 +6,17 @@ import { CheckCircle2, FileSpreadsheet, Layers, ShieldAlert, Clock, Truck } from
 
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import type { PortalPo, PortalSummary } from "@/lib/types";
+import type { PortalPo, PortalSummary, PortalTaskDashboard } from "@/lib/types";
 import { AsnCards, StatCard } from "@/components/portal/PortalCards";
 import CriticalPos from "@/components/portal/CriticalPos";
+import SignalDonut from "@/components/dashboard/SignalDonut";
+import TasksSummaryCard from "@/components/dashboard/TasksSummaryCard";
 
 export default function PortalDashboard() {
   const { user } = useAuth();
   const [summary, setSummary] = useState<PortalSummary | null>(null);
   const [pos, setPos] = useState<PortalPo[]>([]);
+  const [tasks, setTasks] = useState<PortalTaskDashboard | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -21,10 +24,15 @@ export default function PortalDashboard() {
     let cancelled = false;
     (async () => {
       try {
-        const [s, p] = await Promise.all([api.portalSummary(), api.portalPos()]);
+        const [s, p, t] = await Promise.all([
+          api.portalSummary(),
+          api.portalPos(),
+          api.portalTasksDashboard().catch(() => null),
+        ]);
         if (!cancelled) {
           setSummary(s);
           setPos(p.items);
+          setTasks(t);
         }
       } catch (e) {
         if (!cancelled) setError((e as Error).message);
@@ -38,6 +46,16 @@ export default function PortalDashboard() {
   }, []);
 
   const name = summary?.supplier_name || user?.supplier_name || "Supplier";
+
+  // Signal mix derived from the PO list (suppliers have no DashboardKpis endpoint).
+  const sig = { green: 0, yellow: 0, red: 0, black: 0 };
+  for (const p of pos) {
+    const s = (p.overall_signal || "").toUpperCase();
+    if (s === "GREEN") sig.green++;
+    else if (s === "YELLOW") sig.yellow++;
+    else if (s === "RED") sig.red++;
+    else if (s === "BLACK") sig.black++;
+  }
 
   return (
     <div className="page-stack">
@@ -92,6 +110,20 @@ export default function PortalDashboard() {
           />
         </div>
       </div>
+
+      {/* Signal mix + tasks overview */}
+      {!loading && (
+        <div className="grid gap-4 lg:grid-cols-2">
+          <SignalDonut
+            title="PO Signal Mix"
+            green={sig.green}
+            yellow={sig.yellow}
+            red={sig.red}
+            black={sig.black}
+          />
+          <TasksSummaryCard data={tasks} href="/portal/tasks" />
+        </div>
+      )}
 
       {/* ASN summary */}
       <div>

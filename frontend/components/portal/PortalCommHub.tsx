@@ -454,7 +454,9 @@ function MessageBubble({ m }: { m: PortalMessage }) {
     <div className={`flex flex-col ${isMine ? "items-end" : "items-start"}`}>
       <div
         className={`max-w-[82%] rounded-2xl border p-4 shadow-sm ${
-          isMine ? "border-amber-100 bg-amber-50" : "border-brand-border bg-card"
+          isMine
+            ? "border-amber-100 bg-amber-50 dark:border-amber-500/20 dark:bg-amber-500/10"
+            : "border-brand-border bg-card"
         }`}
       >
         {m.subject && (
