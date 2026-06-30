@@ -1898,7 +1898,9 @@ function MailBubble({ mail, onAssign }: { mail: CommHubMessage; onAssign: () => 
     <div className={`flex flex-col ${isIncoming ? "items-start" : "items-end"}`}>
       <div
         className={`group relative max-w-[82%] rounded-2xl border p-4 shadow-sm ${
-          isIncoming ? "border-brand-border bg-card" : "border-amber-100 bg-amber-50"
+          isIncoming
+            ? "border-brand-border bg-card"
+            : "border-amber-100 bg-amber-50 dark:border-amber-500/20 dark:bg-amber-500/10"
         }`}
       >
         <div className="mb-1 flex items-center justify-between gap-3">
