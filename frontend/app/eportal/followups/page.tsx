@@ -1,43 +1,22 @@
 "use client";
 
-import { useEffect } from "react";
-import { FileSpreadsheet } from "lucide-react";
-
-import { useStore } from "@/lib/store";
-import FiltersBar from "@/components/procurement/FiltersBar";
-import QuickFilters from "@/components/procurement/QuickFilters";
-import PoTable from "@/components/procurement/PoTable";
-import PageHeader from "@/components/layout/PageHeader";
+import { api } from "@/lib/api";
+import { BlackFollowupsPanel, type BlackFollowupsAdapter } from "@/components/black-followups/BlackFollowupsPanel";
 
 /**
- * Employee PO Follow-ups — the SAME page the staff get at /po-followups
- * (PageHeader + FiltersBar + QuickFilters + PoTable, all reading the shared
- * zustand store), but scoped to the employee's own POs by flipping the store
- * scope to 'employee' on mount (and back to 'staff' on unmount).
+ * Employee "Black Follow-ups" — the EXACT admin Black Follow-ups panel
+ * (Active/History, detail drawer with the AI conversation thread + draft→send
+ * composer), but every call hits the employee-scoped /api/eportal/ai/insights/*
+ * endpoints (restricted to the employee's owned POs). Employees may send on a PO
+ * they own, so canSend is true.
  */
+const employeeAdapter: BlackFollowupsAdapter = {
+  list: (limit = 100) => api.eportalGetBlackFollowups(limit),
+  history: (params) => api.eportalGetFollowupHistory(params),
+  command: (po, instruction, send = false) => api.eportalBlackFollowupCommand(po, instruction, send),
+  canSend: true,
+};
+
 export default function EmployeeFollowupsPage() {
-  const setScope = useStore((s) => s.setScope);
-  const refresh = useStore((s) => s.refresh);
-
-  useEffect(() => {
-    setScope("employee");
-    void refresh();
-    return () => {
-      // Reset so the staff /po-followups page behaves normally if revisited.
-      setScope("staff");
-    };
-  }, [setScope, refresh]);
-
-  return (
-    <div className="page-stack">
-      <PageHeader
-        title="PO Follow-ups"
-        description="Your assigned POs by signal — filter to your Black (critical) follow-ups."
-        icon={FileSpreadsheet}
-      />
-      <FiltersBar />
-      <QuickFilters />
-      <PoTable />
-    </div>
-  );
+  return <BlackFollowupsPanel adapter={employeeAdapter} />;
 }

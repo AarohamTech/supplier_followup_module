@@ -38,7 +38,9 @@ from ..schemas.portal import PortalMessage, PortalMessageCreate
 from ..schemas.procurement import DashboardKpis, ProcurementListOut
 from ..services import communication_message_service as msg_service
 from ..services import notification_service as notif
+from ..services import po_followup_mail_service
 from ..services import task_assignment_service as assign
+from . import ai_insights  # reuse the admin Black-Follow-ups aggregation + command schema
 from . import communication as comm  # reuse the staff task logic (one source of truth)
 
 router = APIRouter(prefix="/api/eportal", tags=["employee-portal"])
@@ -320,6 +322,81 @@ def list_procurement(
         .limit(size)
     ).all()
     return ProcurementListOut(total=total, page=page, size=size, items=rows)
+
+
+# ── Black Follow-ups (admin /api/ai/insights mirrors, scoped to owned POs) ──────
+# The employee Black panel reuses the admin aggregation + command service; here we
+# only enforce the scope boundary (owner_emp_code == user.emp_code). Unlike the
+# admin command (manager+ to send), an employee may send on a PO they OWN.
+def _owned_po_set(db: Session, emp_code: str | None) -> set[str]:
+    if not emp_code:
+        return set()
+    rows = db.scalars(
+        select(ProcurementRecord.supplier_po_no).where(
+            ProcurementRecord.owner_emp_code == emp_code,
+            ProcurementRecord.supplier_po_no.isnot(None),
+        ).distinct()
+    ).all()
+    return {p for p in rows if p}
+
+
+@router.get("/ai/insights/black-followups")
+def employee_black_followups(
+    user: User = Depends(get_current_employee),
+    db: Session = Depends(get_db),
+    limit: int = 100,
+) -> dict:
+    """Same shape as admin /black-followups, but only the employee's BLACK POs."""
+    owned = _owned_po_set(db, user.emp_code)
+    full = ai_insights.black_followups(db=db, limit=300)
+    items = [i for i in full["items"] if i.get("supplier_po_no") in owned][: max(1, min(limit, 300))]
+    return {
+        "count": len(items),
+        "chasing": sum(1 for i in items if not i["commitment_captured"]),
+        "items": items,
+    }
+
+
+@router.get("/ai/insights/followup-history")
+def employee_followup_history(
+    user: User = Depends(get_current_employee),
+    db: Session = Depends(get_db),
+    signal: Optional[str] = None,
+    outcome: Optional[str] = None,
+    supplier_po_no: Optional[str] = None,
+    limit: int = 100,
+) -> dict:
+    """Same shape as admin /followup-history, scoped to the employee's POs."""
+    owned = _owned_po_set(db, user.emp_code)
+    full = ai_insights.followup_history(
+        db=db, signal=signal, outcome=outcome, supplier_po_no=supplier_po_no, limit=300
+    )
+    items = [i for i in full["items"] if i.get("supplier_po_no") in owned][: max(1, min(limit, 300))]
+    return {"count": len(items), "items": items}
+
+
+@router.post("/ai/insights/black-followups/command")
+def employee_black_followup_command(
+    payload: ai_insights.FollowupCommand,
+    user: User = Depends(get_current_employee),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Draft/preview or send an AI follow-up — only on a PO the employee owns.
+
+    Ownership IS the authorization here (no manager gate): an employee may send a
+    follow-up on their own PO, consistent with the employee Communication Hub reply.
+    """
+    if payload.supplier_po_no not in _owned_po_set(db, user.emp_code):
+        raise HTTPException(404, "PO not found for your account")
+    result = po_followup_mail_service.command_followup(
+        db,
+        supplier_po_no=payload.supplier_po_no,
+        instruction=payload.instruction,
+        send=payload.send,
+    )
+    if not result.get("found"):
+        raise HTTPException(404, result.get("error") or "PO not found")
+    return result
 
 
 # ── PO communication thread (shared with staff hub + supplier portal) ──────────

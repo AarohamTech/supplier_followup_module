@@ -755,6 +755,25 @@ export const api = {
       body: JSON.stringify({ supplier_po_no, instruction, send }),
     }),
 
+  // Employee-scoped Black Follow-ups — mirror of the three admin endpoints above,
+  // restricted to the employee's owned POs (byte-identical response shapes). The
+  // employee may send on their own PO (ownership is the authorization).
+  eportalGetBlackFollowups: (limit = 100) =>
+    http<BlackFollowupResponse>(`/api/eportal/ai/insights/black-followups?limit=${limit}`),
+  eportalGetFollowupHistory: (params: { signal?: string; outcome?: string; supplier_po_no?: string; limit?: number } = {}) => {
+    const q = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== "") q.append(k, String(v));
+    });
+    const qs = q.toString();
+    return http<FollowupHistoryResponse>(`/api/eportal/ai/insights/followup-history${qs ? `?${qs}` : ""}`);
+  },
+  eportalBlackFollowupCommand: (supplier_po_no: string, instruction: string, send = false) =>
+    http<BlackFollowupCommandResult>("/api/eportal/ai/insights/black-followups/command", {
+      method: "POST",
+      body: JSON.stringify({ supplier_po_no, instruction, send }),
+    }),
+
   // ─── Supplier login management (admin) ────────────────────────────────
   listSupplierLogins: (supplierId?: number) =>
     http<SupplierLogin[]>(
