@@ -11,6 +11,7 @@ const adminHub: CommHubAdapter = {
   suppliers: () => api.hubSuppliers(),
   posByName: (supplierName) => api.hubPosByName(supplierName),
   posById: (supplierId) => api.hubPosById(supplierId),
+  otherMails: (params) => api.hubOtherMails(params),
   thread: (params) => api.hubThread(params),
   markThreadRead: (params) => api.hubMarkThreadRead(params),
   tasks: (params) => api.hubTasks(params),

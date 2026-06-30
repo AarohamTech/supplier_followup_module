@@ -14,6 +14,7 @@ import type {
   CommHubThread,
   CommunicationTask,
   CommunicationTaskCreate,
+  OtherMailThread,
   PoFollowupMaterial,
   SupplierMaterialCommitment,
   TaskAssignee,
@@ -54,6 +55,7 @@ export interface CommHubAdapter {
   suppliers: () => Promise<CommHubSupplier[]>;
   posByName: (supplierName: string) => Promise<CommHubPO[]>;
   posById: (supplierId: number) => Promise<CommHubPO[]>;
+  otherMails: typeof api.hubOtherMails;
   thread: typeof api.hubThread;
   markThreadRead: typeof api.hubMarkThreadRead;
   tasks: typeof api.hubTasks;
@@ -315,6 +317,10 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
   const [selectedSupplierName, setSelectedSupplierName] = useState<string | null>(null);
   const [selectedSupplierId, setSelectedSupplierId] = useState<number | null>(null);
   const [selectedProcurementId, setSelectedProcurementId] = useState<number | null>(null);
+  // Non-PO "Other Mails": the toggle, the loaded list, and the selected thread key.
+  const [showOtherMails, setShowOtherMails] = useState(false);
+  const [otherMails, setOtherMails] = useState<OtherMailThread[]>([]);
+  const [selectedOtherKey, setSelectedOtherKey] = useState<string | null>(null);
 
   // ── UI state ──
   const [loading, setLoading] = useState(false);
@@ -380,6 +386,13 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
   // ── Derived ──
   const activeSupplier = supplierList.find((s) => s.supplier_name === selectedSupplierName) ?? null;
   const activePo = poList.find((p) => p.procurement_record_id === selectedProcurementId) ?? null;
+  // Non-PO "Other Mails" conversation in focus (no PO selected).
+  const inOther = selectedOtherKey !== null;
+  const activeOther = otherMails.find((t) => t.thread_key === selectedOtherKey) ?? null;
+  const otherSubject =
+    activeOther?.subject ?? thread?.messages?.[0]?.subject ?? thread?.non_po_subject ?? "Other mail";
+  const otherSupplierName =
+    activeOther?.supplier_name ?? thread?.supplier_name ?? selectedSupplierName ?? "";
   const threadMessages: CommHubMessage[] = thread?.messages ?? [];
   const draftCount = threadMessages.filter((m) => m.sent_status === "DRAFT").length;
   const sentCount = threadMessages.filter((m) => m.sent_status !== "DRAFT").length;
@@ -493,6 +506,57 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
     [hub],
   );
 
+  const loadOtherMails = useCallback(
+    async (supplierName: string | null, supplierId: number | null) => {
+      if (!supplierName && supplierId == null) {
+        setOtherMails([]);
+        return;
+      }
+      try {
+        setOtherMails(
+          await hub.otherMails({ supplier_id: supplierId, supplier_name: supplierName }),
+        );
+      } catch {
+        setOtherMails([]);
+      }
+    },
+    [hub],
+  );
+
+  // ── Select a non-PO "Other Mails" thread ──
+  const handleSelectOther = useCallback(
+    async (t: OtherMailThread) => {
+      if (t.thread_key === selectedOtherKey) return;
+      setSelectedProcurementId(null);
+      setSelectedOtherKey(t.thread_key);
+      setThread(null);
+      setTaskGroups(null);
+      setCommitments([]);
+      setDetailsOpen(false);
+      setHeaderMatsOpen(false);
+      const params = {
+        supplier_id: t.supplier_id ?? selectedSupplierId,
+        supplier_name: t.supplier_name ?? selectedSupplierName,
+        non_po_subject: t.thread_key,
+      };
+      try {
+        setThread(await hub.thread(params));
+        // Clear the unread badge for this non-PO thread, then refresh the list
+        // + supplier rail so the counters update.
+        try {
+          await hub.markThreadRead(params);
+          await loadOtherMails(selectedSupplierName, selectedSupplierId);
+          setSupplierList(await hub.suppliers());
+        } catch {
+          /* non-fatal */
+        }
+      } catch {
+        /* non-fatal */
+      }
+    },
+    [selectedOtherKey, selectedSupplierId, selectedSupplierName, hub, loadOtherMails],
+  );
+
   // ── Select supplier ──
   const handleSelectSupplier = useCallback(
     async (supplierName: string, supplierId: number | null) => {
@@ -500,6 +564,8 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
       setSelectedSupplierName(supplierName);
       setSelectedSupplierId(supplierId);
       setSelectedProcurementId(null);
+      setSelectedOtherKey(null);
+      setOtherMails([]);
       setPoList([]);
       setThread(null);
       setTaskGroups(null);
@@ -526,6 +592,7 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
     async (procurementRecordId: number, supplierName?: string, supplierPoNo?: string) => {
       if (procurementRecordId === selectedProcurementId) return;
       setSelectedProcurementId(procurementRecordId);
+      setSelectedOtherKey(null);
       setThread(null);
       setCommitments([]);
       try {
@@ -616,6 +683,13 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
   useEffect(() => {
     if (source === "suppliers") void loadAll();
   }, [loadAll, source]);
+
+  // Lazy-load the active supplier's non-PO "Other Mails" when the toggle is on.
+  useEffect(() => {
+    if (source === "suppliers" && showOtherMails && selectedSupplierName) {
+      void loadOtherMails(selectedSupplierName, selectedSupplierId);
+    }
+  }, [source, showOtherMails, selectedSupplierName, selectedSupplierId, loadOtherMails]);
 
   useEffect(() => {
     const handleMailHistoryUpdated = () => {
@@ -774,7 +848,46 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
 
   const handleSendReply = async () => {
     const text = composer.trim();
-    if (!text || !activePo || replying) return;
+    if (!text || replying) return;
+    if (!activePo && !inOther) return;
+
+    // Non-PO "Other Mails" reply — threads under the supplier's no-PO conversation.
+    if (inOther) {
+      if (/^\/hi\b/i.test(text)) {
+        pushToast("err", "The HI agent isn't available on non-PO mails yet.");
+        return;
+      }
+      if (!selectedOtherKey) return;
+      const params = {
+        supplier_id: thread?.supplier_id ?? selectedSupplierId,
+        supplier_name: thread?.supplier_name ?? selectedSupplierName,
+        non_po_subject: selectedOtherKey,
+      };
+      setReplying(true);
+      try {
+        const res = await hub.reply({ ...params, body: text, send_email: sendAsEmail });
+        setComposer("");
+        if (res.no_email_on_file) {
+          pushToast("ok", "Saved (no email on file — add one in Email Master)");
+        } else if (res.channel === "email") {
+          pushToast("ok", res.sent ? "Sent by email" : "Queued for email");
+        } else {
+          pushToast("ok", "Saved");
+        }
+        try {
+          setThread(await hub.thread(params));
+        } catch {
+          /* non-fatal */
+        }
+      } catch (e: unknown) {
+        pushToast("err", e instanceof Error ? e.message : "Send failed");
+      } finally {
+        setReplying(false);
+      }
+      return;
+    }
+
+    if (!activePo) return;
     // /hi → route to the HI agent instead of posting a supplier message.
     if (/^\/hi\b/i.test(text)) {
       const message = text.replace(/^\/hi\b/i, "").trim() || "help";
@@ -966,7 +1079,7 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
             )}
           </div>
 
-          <div className="flex items-center justify-between px-4 py-2.5">
+          <div className="flex items-center justify-between gap-2 px-4 py-2.5">
             <div className="min-w-0">
               <div className="text-xs font-semibold uppercase tracking-wide text-brand-muted">Purchase Orders</div>
               <div className="truncate text-[11px] text-brand-muted">
@@ -974,83 +1087,153 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
               </div>
             </div>
             {activeSupplier && (
-              <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-semibold text-brand-muted">
-                {poList.length}
-              </span>
+              <div className="flex shrink-0 items-center gap-1.5">
+                <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-semibold text-brand-muted">
+                  {poList.length}
+                </span>
+                {/* Toggle: reveal incoming supplier mails that have no PO number. */}
+                <button
+                  onClick={() => setShowOtherMails((v) => !v)}
+                  title="Show mails with no PO number"
+                  className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[10px] font-semibold transition ${
+                    showOtherMails
+                      ? "border-signal-red/30 bg-red-50 text-signal-red"
+                      : "border-brand-border text-brand-muted hover:bg-gray-50"
+                  }`}
+                >
+                  Other
+                  {(activeSupplier.non_po_count ?? 0) > 0 && (
+                    <span className="rounded-full bg-signal-red px-1.5 text-[9px] font-bold leading-4 text-white">
+                      {activeSupplier.non_po_count}
+                    </span>
+                  )}
+                  <ChevronRight size={11} className={`transition-transform ${showOtherMails ? "rotate-90" : ""}`} />
+                </button>
+              </div>
             )}
           </div>
 
           <div className="flex-1 overflow-y-auto border-t border-brand-border">
             {!activeSupplier ? (
               <EmptyState icon={<Inbox size={18} />}>Pick a supplier to see its POs.</EmptyState>
-            ) : poList.length === 0 && !loading ? (
-              <EmptyState icon={<Inbox size={18} />}>No POs for this supplier.</EmptyState>
             ) : (
-              poList.map((p) => (
-                <PoRow
-                  key={p.procurement_record_id}
-                  p={p}
-                  active={p.procurement_record_id === selectedProcurementId}
-                  onClick={() => void handleSelectPo(p.procurement_record_id, p.supplier_name, p.supplier_po_no)}
-                />
-              ))
+              <>
+                {poList.length === 0 && !loading ? (
+                  <EmptyState icon={<Inbox size={18} />}>No POs for this supplier.</EmptyState>
+                ) : (
+                  poList.map((p) => (
+                    <PoRow
+                      key={p.procurement_record_id}
+                      p={p}
+                      active={p.procurement_record_id === selectedProcurementId && !inOther}
+                      onClick={() => void handleSelectPo(p.procurement_record_id, p.supplier_name, p.supplier_po_no)}
+                    />
+                  ))
+                )}
+
+                {showOtherMails && (
+                  <div className="border-t border-brand-border">
+                    <div className="flex items-center justify-between px-4 py-2">
+                      <span className="text-[11px] font-semibold uppercase tracking-wide text-brand-muted">
+                        Other Mails <span className="font-normal normal-case">(no PO)</span>
+                      </span>
+                      <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-semibold text-brand-muted">
+                        {otherMails.length}
+                      </span>
+                    </div>
+                    {otherMails.length === 0 ? (
+                      <div className="px-4 pb-3 text-[11px] text-brand-muted">
+                        No mails without a PO for this supplier.
+                      </div>
+                    ) : (
+                      otherMails.map((t) => (
+                        <OtherMailRow
+                          key={t.thread_key}
+                          t={t}
+                          active={t.thread_key === selectedOtherKey}
+                          onClick={() => void handleSelectOther(t)}
+                        />
+                      ))
+                    )}
+                  </div>
+                )}
+              </>
             )}
           </div>
         </aside>
 
         {/* CENTER — conversation */}
         <main className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-brand-border bg-white shadow-sm">
-          {activePo && activeSupplier ? (
+          {(activePo && activeSupplier) || (inOther && thread) ? (
             <>
               {/* Clean single-line thread header */}
-              <div className="flex items-center gap-2 border-b border-brand-border px-5 py-3">
-                <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${SIGNAL_DOT[threadSignal] ?? "bg-gray-300"}`} />
-                <h2 className="truncate font-semibold text-brand-dark">
-                  PO #{activePo.supplier_po_no}
-                  <span className="ml-2 font-normal text-brand-muted">{activeSupplier.supplier_name}</span>
-                </h2>
-                <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold uppercase ${SIGNAL_CHIP[threadSignal] ?? ""}`}>
-                  {SIGNAL_LABEL[threadSignal] ?? threadSignal}
-                </span>
-                <span className="ml-2 hidden text-xs text-brand-muted md:inline">
-                  {threadMessages.length} message{threadMessages.length === 1 ? "" : "s"}
-                </span>
+              {activePo && activeSupplier ? (
+                <div className="flex items-center gap-2 border-b border-brand-border px-5 py-3">
+                  <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${SIGNAL_DOT[threadSignal] ?? "bg-gray-300"}`} />
+                  <h2 className="truncate font-semibold text-brand-dark">
+                    PO #{activePo.supplier_po_no}
+                    <span className="ml-2 font-normal text-brand-muted">{activeSupplier.supplier_name}</span>
+                  </h2>
+                  <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold uppercase ${SIGNAL_CHIP[threadSignal] ?? ""}`}>
+                    {SIGNAL_LABEL[threadSignal] ?? threadSignal}
+                  </span>
+                  <span className="ml-2 hidden text-xs text-brand-muted md:inline">
+                    {threadMessages.length} message{threadMessages.length === 1 ? "" : "s"}
+                  </span>
 
-                <div className="ml-auto flex items-center gap-1">
-                  <button
-                    onClick={() => setHeaderMatsOpen((v) => !v)}
-                    className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium ${
-                      headerMatsOpen
-                        ? "border-brand-dark/20 bg-gray-100 text-brand-dark"
-                        : "border-brand-border text-brand-dark hover:bg-gray-50"
-                    }`}
-                    title="Materials & committed dates"
-                  >
-                    <Package size={13} /> Materials
-                    <ChevronDown size={12} className={`transition-transform ${headerMatsOpen ? "rotate-180" : ""}`} />
-                  </button>
-                  <button
-                    onClick={() => setDetailsOpen((v) => !v)}
-                    className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium ${
-                      detailsOpen
-                        ? "border-signal-red/30 bg-red-50 text-signal-red"
-                        : "border-brand-border text-brand-dark hover:bg-gray-50"
-                    }`}
-                  >
-                    <Sparkles size={13} /> Details
-                  </button>
-                  <button
-                    onClick={seedAssign}
-                    className="p-1.5 text-gray-400 hover:text-brand-dark"
-                    title="More"
-                  >
-                    <MoreHorizontal size={18} />
-                  </button>
+                  <div className="ml-auto flex items-center gap-1">
+                    <button
+                      onClick={() => setHeaderMatsOpen((v) => !v)}
+                      className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium ${
+                        headerMatsOpen
+                          ? "border-brand-dark/20 bg-gray-100 text-brand-dark"
+                          : "border-brand-border text-brand-dark hover:bg-gray-50"
+                      }`}
+                      title="Materials & committed dates"
+                    >
+                      <Package size={13} /> Materials
+                      <ChevronDown size={12} className={`transition-transform ${headerMatsOpen ? "rotate-180" : ""}`} />
+                    </button>
+                    <button
+                      onClick={() => setDetailsOpen((v) => !v)}
+                      className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium ${
+                        detailsOpen
+                          ? "border-signal-red/30 bg-red-50 text-signal-red"
+                          : "border-brand-border text-brand-dark hover:bg-gray-50"
+                      }`}
+                    >
+                      <Sparkles size={13} /> Details
+                    </button>
+                    <button
+                      onClick={seedAssign}
+                      className="p-1.5 text-gray-400 hover:text-brand-dark"
+                      title="More"
+                    >
+                      <MoreHorizontal size={18} />
+                    </button>
+                  </div>
                 </div>
-              </div>
+              ) : (
+                /* Non-PO "Other Mails" header — no PO chrome (materials / details / tasks). */
+                <div className="flex items-center gap-2 border-b border-brand-border px-5 py-3">
+                  <Mail size={16} className="shrink-0 text-brand-muted" />
+                  <h2 className="truncate font-semibold text-brand-dark">
+                    {otherSubject}
+                    {otherSupplierName && (
+                      <span className="ml-2 font-normal text-brand-muted">{otherSupplierName}</span>
+                    )}
+                  </h2>
+                  <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-brand-muted">
+                    No PO
+                  </span>
+                  <span className="ml-2 hidden text-xs text-brand-muted md:inline">
+                    {threadMessages.length} message{threadMessages.length === 1 ? "" : "s"}
+                  </span>
+                </div>
+              )}
 
               {/* Materials & committed dates — quick dropdown from the header */}
-              {headerMatsOpen && (
+              {headerMatsOpen && activePo && (
                 <div className="border-b border-brand-border bg-gray-50/70 px-5 py-3">
                   <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-brand-muted">
                     Materials &amp; committed dates
@@ -1097,20 +1280,25 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
               {/* Thread — generous breathing room */}
               <div className="flex-1 space-y-6 overflow-y-auto px-6 py-6 lg:px-10">
                 {threadMessages.length === 0 ? (
-                  <EmptyState icon={<MessagesSquare size={22} />}>No emails for this PO yet.</EmptyState>
+                  <EmptyState icon={<MessagesSquare size={22} />}>
+                    {inOther ? "No messages in this thread yet." : "No emails for this PO yet."}
+                  </EmptyState>
                 ) : (
                   threadMessages.map((m) => (
                     <MailBubble
                       key={String(m.id)}
                       mail={m}
-                      onAssign={() =>
-                        openAssign({
-                          title: `Follow-up: ${m.subject}`,
-                          supplier_name: activeSupplier.supplier_name,
-                          supplier_po_no: activePo.supplier_po_no,
-                          procurement_record_id: activePo.procurement_record_id,
-                          linked_mail_id: numericMailId(m.id),
-                        })
+                      onAssign={
+                        activePo && activeSupplier
+                          ? () =>
+                              openAssign({
+                                title: `Follow-up: ${m.subject}`,
+                                supplier_name: activeSupplier.supplier_name,
+                                supplier_po_no: activePo.supplier_po_no,
+                                procurement_record_id: activePo.procurement_record_id,
+                                linked_mail_id: numericMailId(m.id),
+                              })
+                          : () => {}
                       }
                     />
                   ))
@@ -1242,13 +1430,16 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
                     className="h-24 w-full resize-none rounded-lg border border-brand-border bg-gray-50 p-3 pr-28 text-sm outline-none focus:border-signal-red/40 focus:bg-white"
                   />
                   <div className="absolute bottom-3 right-3 flex items-center gap-1.5">
-                    <button
-                      onClick={() => void handleAiReply()}
-                      className="inline-flex items-center gap-1 rounded-md border border-signal-red/30 bg-red-50 px-2.5 py-1.5 text-xs font-semibold text-signal-red hover:bg-red-100"
-                      title="Generate a Harmony Intelligent reply"
-                    >
-                      <Sparkles size={13} /> HI
-                    </button>
+                    {/* HI reply + /hi agent are PO-thread features; hidden on non-PO mails. */}
+                    {!inOther && (
+                      <button
+                        onClick={() => void handleAiReply()}
+                        className="inline-flex items-center gap-1 rounded-md border border-signal-red/30 bg-red-50 px-2.5 py-1.5 text-xs font-semibold text-signal-red hover:bg-red-100"
+                        title="Generate a Harmony Intelligent reply"
+                      >
+                        <Sparkles size={13} /> HI
+                      </button>
+                    )}
                     <button
                       className="rounded-md bg-signal-red p-2 text-white shadow-sm hover:opacity-90 disabled:opacity-50"
                       disabled={!composer.trim() || replying || agentBusy}
@@ -1283,7 +1474,7 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
             <div className="grid flex-1 place-items-center text-brand-muted">
               <div className="text-center">
                 <MessagesSquare size={34} className="mx-auto mb-2 opacity-40" />
-                <p className="text-sm">Select a purchase order to view the conversation.</p>
+                <p className="text-sm">Select a purchase order or an Other Mail to view the conversation.</p>
               </div>
             </div>
           )}
@@ -1578,6 +1769,40 @@ function PoRow({ p, active, onClick }: { p: CommHubPO; active: boolean; onClick:
         <span>· {p.mail_count} mail{p.mail_count === 1 ? "" : "s"}</span>
         {p.task_count > 0 && <span>· {p.task_count} task{p.task_count === 1 ? "" : "s"}</span>}
         <span className="ml-auto text-gray-400">{relTime(p.last_activity_at)}</span>
+      </div>
+    </button>
+  );
+}
+
+function OtherMailRow({ t, active, onClick }: { t: OtherMailThread; active: boolean; onClick: () => void }) {
+  const unread = (t.unread_inbound ?? 0) > 0;
+  return (
+    <button
+      onClick={onClick}
+      className={`w-full border-b border-brand-border px-4 py-2.5 text-left transition hover:bg-gray-50 ${
+        active
+          ? "bg-amber-50/60 ring-1 ring-inset ring-amber-100"
+          : unread
+          ? "border-l-4 border-l-emerald-500 bg-emerald-50/40"
+          : ""
+      }`}
+    >
+      <div className="flex items-center gap-2">
+        <Mail size={13} className="shrink-0 text-gray-400" />
+        <span className={`truncate text-[13px] text-brand-dark ${unread ? "font-bold" : "font-medium"}`}>
+          {t.subject || "(no subject)"}
+        </span>
+        {unread && (
+          <span className="ml-auto rounded-full bg-emerald-500 px-1.5 py-0.5 text-[10px] font-bold text-white">
+            {(t.unread_inbound ?? 0) > 99 ? "99+" : t.unread_inbound}
+          </span>
+        )}
+      </div>
+      <div className="mt-1 flex items-center gap-2 pl-5 text-[11px] text-brand-muted">
+        <span>
+          {t.message_count} mail{t.message_count === 1 ? "" : "s"}
+        </span>
+        <span className="ml-auto text-gray-400">{relTime(t.last_activity_at)}</span>
       </div>
     </button>
   );

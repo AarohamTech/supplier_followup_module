@@ -32,6 +32,7 @@ import type {
   CommHubThread,
   CommHubTasksGrouped,
   CommHubTaskFilters,
+  OtherMailThread,
   PoFollowupGroup,
   PoFollowupListResponse,
   SupplierMaterialCommitment,
@@ -288,7 +289,15 @@ export const api = {
       `/api/communication-hub/purchase-orders?supplier_name=${encodeURIComponent(supplierName)}`,
     ),
 
-  hubThread: (params: { supplier_id?: number | null; procurement_record_id?: number | null; supplier_po_no?: string | null }) => {
+  hubOtherMails: (params: { supplier_id?: number | null; supplier_name?: string | null }) => {
+    const q = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== "") q.append(k, String(v));
+    });
+    return http<OtherMailThread[]>(`/api/communication-hub/other-mails?${q.toString()}`);
+  },
+
+  hubThread: (params: { supplier_id?: number | null; procurement_record_id?: number | null; supplier_po_no?: string | null; supplier_name?: string | null; non_po_subject?: string | null }) => {
     const q = new URLSearchParams();
     Object.entries(params).forEach(([k, v]) => {
       if (v !== undefined && v !== null) q.append(k, String(v));
@@ -296,7 +305,7 @@ export const api = {
     return http<CommHubThread>(`/api/communication-hub/thread?${q.toString()}`);
   },
 
-  hubMarkThreadRead: (params: { supplier_po_no?: string | null; procurement_record_id?: number | null }) => {
+  hubMarkThreadRead: (params: { supplier_po_no?: string | null; procurement_record_id?: number | null; supplier_id?: number | null; supplier_name?: string | null; non_po_subject?: string | null }) => {
     const q = new URLSearchParams();
     Object.entries(params).forEach(([k, v]) => {
       if (v !== undefined && v !== null && v !== "") q.append(k, String(v));
@@ -340,6 +349,7 @@ export const api = {
     supplier_id?: number | null;
     supplier_name?: string | null;
     subject?: string;
+    non_po_subject?: string | null;
     body: string;
     send_email: boolean;
   }) =>
@@ -925,7 +935,15 @@ export const api = {
     return http<CommHubPO[]>(`/api/eportal/hub/pos${qs ? `?${qs}` : ""}`);
   },
 
-  eportalHubThread: (params: { supplier_id?: number | null; procurement_record_id?: number | null; supplier_po_no?: string | null }) => {
+  eportalHubOtherMails: (params: { supplier_id?: number | null; supplier_name?: string | null }) => {
+    const q = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== "") q.append(k, String(v));
+    });
+    return http<OtherMailThread[]>(`/api/eportal/hub/other-mails?${q.toString()}`);
+  },
+
+  eportalHubThread: (params: { supplier_id?: number | null; procurement_record_id?: number | null; supplier_po_no?: string | null; supplier_name?: string | null; non_po_subject?: string | null }) => {
     const q = new URLSearchParams();
     Object.entries(params).forEach(([k, v]) => {
       if (v !== undefined && v !== null) q.append(k, String(v));
@@ -933,7 +951,7 @@ export const api = {
     return http<CommHubThread>(`/api/eportal/hub/thread?${q.toString()}`);
   },
 
-  eportalHubMarkThreadRead: (params: { supplier_po_no?: string | null; procurement_record_id?: number | null }) => {
+  eportalHubMarkThreadRead: (params: { supplier_po_no?: string | null; procurement_record_id?: number | null; supplier_id?: number | null; supplier_name?: string | null; non_po_subject?: string | null }) => {
     const q = new URLSearchParams();
     Object.entries(params).forEach(([k, v]) => {
       if (v !== undefined && v !== null && v !== "") q.append(k, String(v));
@@ -977,6 +995,7 @@ export const api = {
     supplier_id?: number | null;
     supplier_name?: string | null;
     subject?: string;
+    non_po_subject?: string | null;
     body: string;
     send_email: boolean;
   }) =>

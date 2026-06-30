@@ -12,6 +12,7 @@ const employeeHub: CommHubAdapter = {
   suppliers: () => api.eportalHubSuppliers(),
   posByName: (supplierName) => api.eportalHubPos({ supplier_name: supplierName }),
   posById: (supplierId) => api.eportalHubPos({ supplier_id: supplierId }),
+  otherMails: (params) => api.eportalHubOtherMails(params),
   thread: (params) => api.eportalHubThread(params),
   markThreadRead: (params) => api.eportalHubMarkThreadRead(params),
   tasks: (params) => api.eportalHubTasks(params),

@@ -478,9 +478,22 @@ export interface CommHubSupplier {
   draft_mail_count: number;
   task_count: number;
   unread_inbound?: number;
+  non_po_count?: number;
   highest_signal: string;
   health_score: number;
   mapping_status: string;
+}
+
+// A non-PO ("Other Mails") conversation, grouped by normalized subject.
+export interface OtherMailThread {
+  thread_key: string;
+  subject: string;
+  supplier_id: number | null;
+  supplier_name: string | null;
+  sender_email: string | null;
+  message_count: number;
+  unread_inbound: number;
+  last_activity_at: string | null;
 }
 
 export interface CommHubPO {
@@ -554,6 +567,7 @@ export interface CommHubThread {
   supplier_name: string | null;
   procurement_record_id: number | null;
   supplier_po_no: string | null;
+  non_po_subject?: string | null;
   signal: string;
   risk_level: string;
   messages: CommHubMessage[];
