@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-import { Logo } from "@/components/brand/Logo";
+import { Logo, ZanvarMark } from "@/components/brand/Logo";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 
@@ -44,8 +44,11 @@ export default function PortalChangePassword() {
     <div className="min-h-screen flex items-center justify-center bg-brand-surface px-4">
       <div className="w-full max-w-sm rounded-lg border border-brand-border bg-card p-8 shadow-card">
         <div className="mb-6 text-center">
-          <div className="mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-2xl bg-red-50 text-signal-red">
-            <Logo size={40} />
+          <div className="mx-auto mb-3 flex items-center justify-center gap-3">
+            <ZanvarMark size={48} />
+            <span className="flex h-16 w-16 items-center justify-center rounded-2xl bg-red-50 text-signal-red">
+              <Logo size={40} />
+            </span>
           </div>
           <h1 className="text-lg font-bold text-signal-red">Set a new password</h1>
           <p className="mt-1 text-xs text-brand-muted">

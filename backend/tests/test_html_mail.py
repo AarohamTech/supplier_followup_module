@@ -80,7 +80,9 @@ class HtmlMimeSendTests(unittest.TestCase):
         self.assertEqual(len(html_parts), 1)
         self.assertIn("<table", html_parts[0].get_content())
 
-    def test_build_email_plain_only_when_no_html(self) -> None:
+    def test_build_email_wraps_plain_body_in_branded_html(self) -> None:
+        # Every outgoing mail must leave as HTML: a plain-text body with no authored
+        # body_html is wrapped in the branded shell, keeping the text as fallback.
         msg = SimpleNamespace(
             to_emails=["s@x.com"],
             cc_emails=[],
@@ -89,6 +91,35 @@ class HtmlMimeSendTests(unittest.TestCase):
             subject="Plain",
             body="Just text",
             body_html=None,
+        )
+        with patch.object(mail_send_worker.settings, "SMTP_FROM", "from@x.com"):
+            em = mail_send_worker._build_email(msg)
+        self.assertTrue(em.is_multipart())
+        html_parts = [p for p in em.walk() if p.get_content_type() == "text/html"]
+        self.assertEqual(len(html_parts), 1)
+        html = html_parts[0].get_content()
+        self.assertIn("Just text", html)          # the body is embedded…
+        self.assertIn("Harmony", html)            # …inside the branded shell
+        text_parts = [p for p in em.walk() if p.get_content_type() == "text/plain"]
+        self.assertIn("Just text", text_parts[0].get_content())
+
+    def test_build_email_escapes_plain_body_html(self) -> None:
+        # Arbitrary text must be HTML-escaped when wrapped so it can't inject markup.
+        msg = SimpleNamespace(
+            to_emails=["s@x.com"], cc_emails=[], bcc_emails=[], receiver_email="s@x.com",
+            subject="Plain", body="a < b & <script>x</script>", body_html=None,
+        )
+        with patch.object(mail_send_worker.settings, "SMTP_FROM", "from@x.com"):
+            em = mail_send_worker._build_email(msg)
+        html = [p for p in em.walk() if p.get_content_type() == "text/html"][0].get_content()
+        self.assertIn("&lt;script&gt;", html)
+        self.assertNotIn("<script>", html)
+
+    def test_build_email_plain_only_when_no_body_at_all(self) -> None:
+        # Nothing to wrap (no body, no html) → stays a simple plain-text message.
+        msg = SimpleNamespace(
+            to_emails=["s@x.com"], cc_emails=[], bcc_emails=[], receiver_email="s@x.com",
+            subject="Empty", body="", body_html=None,
         )
         with patch.object(mail_send_worker.settings, "SMTP_FROM", "from@x.com"):
             em = mail_send_worker._build_email(msg)

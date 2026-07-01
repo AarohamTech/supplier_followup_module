@@ -3,9 +3,11 @@
 import api from "@/lib/api";
 import CommunicationHub, { type CommHubAdapter } from "@/components/communication/CommunicationHub";
 
-// Admin Communication Hub — talks to the staff /api/communication-hub/* endpoints
-// and exposes the Suppliers/Customers toggle. The shared <CommunicationHub />
-// renders the entire experience; this page only wires the data source.
+// Admin Communication Hub — talks to the staff /api/communication-hub/* endpoints.
+// The Suppliers/Customers toggle is intentionally disabled (showCustomers=false):
+// the hub is suppliers-only; customer mail lives on the standalone Customer Mails
+// page. The shared <CommunicationHub /> renders the entire experience; this page
+// only wires the data source.
 const adminHub: CommHubAdapter = {
   dashboard: () => api.hubDashboard(),
   suppliers: () => api.hubSuppliers(),
@@ -31,5 +33,5 @@ const adminHub: CommHubAdapter = {
 };
 
 export default function Page() {
-  return <CommunicationHub hub={adminHub} showCustomers={true} />;
+  return <CommunicationHub hub={adminHub} showCustomers={false} />;
 }

@@ -4,6 +4,7 @@ import { Fragment, useState } from "react";
 import { ChevronDown, ChevronRight, Loader2 } from "lucide-react";
 
 import { api } from "@/lib/api";
+import { overdueDays } from "@/lib/format";
 import type { EmployeePo, EmployeePoMaterial } from "@/lib/types";
 
 const SIGNAL_CLASS: Record<string, string> = {
@@ -114,6 +115,7 @@ export default function EmployeePoTable({ pos }: { pos: EmployeePo[] }) {
                               <th className="px-2 py-1">Qty</th>
                               <th className="px-2 py-1">Signal</th>
                               <th className="px-2 py-1">Ship Date</th>
+                              <th className="px-2 py-1">Overdue</th>
                               <th className="px-2 py-1">Commitment</th>
                             </tr>
                           </thead>
@@ -125,6 +127,13 @@ export default function EmployeePoTable({ pos }: { pos: EmployeePo[] }) {
                                 <td className="px-2 py-1">{m.qty ?? "—"}</td>
                                 <td className="px-2 py-1"><SignalChip signal={m.signal} /></td>
                                 <td className="px-2 py-1">{fmtDate(m.shipment_date)}</td>
+                                <td className="px-2 py-1">
+                                  {overdueDays(m.shipment_date) > 0 ? (
+                                    <span className="font-semibold text-signal-red">{overdueDays(m.shipment_date)}d</span>
+                                  ) : (
+                                    <span className="text-brand-muted">—</span>
+                                  )}
+                                </td>
                                 <td className="px-2 py-1">{fmtDate(m.commitment_date)}</td>
                               </tr>
                             ))}

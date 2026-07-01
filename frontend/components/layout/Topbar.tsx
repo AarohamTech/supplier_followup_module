@@ -3,7 +3,7 @@
 import { LogOut, Menu } from "lucide-react";
 import Link from "next/link";
 
-import { Logo } from "@/components/brand/Logo";
+import { Logo, ZanvarMark } from "@/components/brand/Logo";
 import { useAuth } from "@/lib/auth";
 import NotificationBell from "@/components/NotificationBell";
 import ThemeToggle from "@/components/layout/ThemeToggle";
@@ -32,11 +32,12 @@ export default function Topbar({ onMenuClick }: { onMenuClick?: () => void }) {
           <Menu size={18} />
         </button>
         <Link href="/" className="flex min-w-0 items-center gap-2 sm:gap-3" aria-label="Home">
+          <ZanvarMark size={32} />
           <span className="shrink-0 text-signal-red">
             <Logo size={30} />
           </span>
           <div className="flex min-w-0 flex-col">
-            <span className="truncate text-sm font-semibold leading-tight text-brand-dark sm:text-[15px]">Supplier Follow-up</span>
+            <span className="truncate text-sm font-semibold leading-tight text-brand-dark sm:text-[15px]">H-Connect</span>
             <span className="hidden text-xs text-brand-muted leading-tight sm:block">
               Industrial procurement control tower
             </span>

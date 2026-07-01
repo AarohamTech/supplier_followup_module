@@ -24,6 +24,7 @@ from ..database import SessionLocal
 from ..models.communication_message import CommunicationMessage
 from ..models.mail_history import MailHistory
 from ..models.procurement import ProcurementRecord
+from ..services import brand_email
 from ..services import communication_message_service as msg_service
 
 log = logging.getLogger(__name__)
@@ -109,6 +110,12 @@ def _build_email(msg: CommunicationMessage) -> EmailMessage:
         em["References"] = in_reply_to
 
     body_html = getattr(msg, "body_html", None)
+    # Every outgoing mail leaves the platform as HTML. Templated follow-ups already
+    # carry an authored `body_html`; messages composed as plain text (hub replies,
+    # acknowledgements, escalations) do not, so wrap their text in the branded shell
+    # here. This is the single send choke point, so it covers all sources.
+    if not body_html and (msg.body or "").strip():
+        body_html = brand_email.text_email_html(msg.body)
     # Always set a plain-text part for fallback; attach HTML as the rich alternative
     # so email clients render the formatted tables instead of raw markdown.
     em.set_content(msg.body or _html_to_text(body_html) or "")
