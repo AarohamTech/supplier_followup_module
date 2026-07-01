@@ -45,7 +45,7 @@ export default function PortalChangePassword() {
       <div className="w-full max-w-sm rounded-lg border border-brand-border bg-card p-8 shadow-card">
         <div className="mb-6 text-center">
           <div className="mx-auto mb-3 flex items-center justify-center gap-3">
-            <ZanvarMark size={44} withSeparator />
+            <ZanvarMark size={48} />
             <span className="flex h-16 w-16 items-center justify-center rounded-2xl bg-red-50 text-signal-red">
               <Logo size={40} />
             </span>

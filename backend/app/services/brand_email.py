@@ -56,20 +56,16 @@ def _zanvar_src() -> str:
 
 
 def header_html(subtitle: str) -> str:
-    """Brand-red header bar with the 'Zanvar Group × Harmony' co-brand lockup."""
+    """Brand-red header bar: Zanvar Group logo + Harmony mark + 'H-Connect' wordmark."""
     logo = _logo_src()
     zanvar = _zanvar_src()
     # Zanvar's mark sits on a white chip so its dark wordmark stays legible on the
-    # brand-red bar; the "×" mirrors the in-app lockup. Omitted when no hosted asset.
+    # brand-red bar. Omitted entirely when no hosted asset is configured.
     zanvar_cell = (
-        (
-            '<td style="vertical-align:middle;padding-right:10px;">'
-            f'<img src="{zanvar}" height="30" alt="Zanvar Group" '
-            'style="display:block;height:30px;width:auto;background:#ffffff;'
-            'border-radius:5px;padding:3px;"/></td>'
-            '<td style="vertical-align:middle;padding-right:10px;color:#ffe3e6;'
-            'font-size:16px;font-weight:700;">&#215;</td>'
-        )
+        '<td style="vertical-align:middle;padding-right:12px;">'
+        f'<img src="{zanvar}" height="34" alt="Zanvar Group" '
+        'style="display:block;height:34px;width:auto;background:#ffffff;'
+        'border-radius:5px;padding:3px;"/></td>'
         if zanvar
         else ""
     )
@@ -84,7 +80,7 @@ def header_html(subtitle: str) -> str:
         '</td>'
         '<td style="vertical-align:middle;">'
         '<div style="color:#ffffff;font-size:15px;font-weight:700;letter-spacing:.2px;">'
-        'Harmony</div>'
+        'H-Connect</div>'
         f'<div style="color:#ffe3e6;font-size:11px;">{subtitle}</div>'
         '</td>'
         '</tr></table>'

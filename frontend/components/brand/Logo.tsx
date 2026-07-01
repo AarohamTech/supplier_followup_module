@@ -108,10 +108,10 @@ export function LogoLockup({
 }) {
   return (
     <div className={`flex items-center gap-2.5 ${className}`}>
-      <ZanvarMark size={size} withSeparator />
+      <ZanvarMark size={size} />
       <Logo size={size} animated={animated} className="text-signal-red" />
       <div className="leading-tight">
-        <div className="font-bold tracking-tight text-brand-dark">Harmony</div>
+        <div className="font-bold tracking-tight text-brand-dark">H-Connect</div>
         {subtitle ? <div className="text-[11px] text-brand-muted">{subtitle}</div> : null}
       </div>
     </div>

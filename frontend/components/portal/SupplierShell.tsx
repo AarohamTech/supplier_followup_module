@@ -42,7 +42,7 @@ export default function SupplierShell({
             <Menu size={18} />
           </button>
           <div className="flex min-w-0 items-center gap-2 sm:gap-3">
-            <ZanvarMark size={30} withSeparator />
+            <ZanvarMark size={32} />
             <span className="shrink-0 text-signal-red">
               <Logo size={30} />
             </span>
