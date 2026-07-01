@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+
 // Harmony brand mark (geometric monogram from the Harmony logo kit), recoloured
 // to the portal theme. Stroke is `currentColor`, so colour it with text-* classes.
 
@@ -58,7 +60,41 @@ export function LogoLoader({
   );
 }
 
-// Mark + "Harmony × Hariom" wordmark lockup — for the top bar and login screen.
+// Zanvar Group (client) logo — hosted raster at /zanvar-logo.png, sized to match
+// the Harmony mark. Hides itself (and its trailing "×") if the asset is missing so
+// brand headers never show a broken image. Pair with <Logo/> for "Zanvar × Harmony".
+export function ZanvarMark({
+  size = 30,
+  withSeparator = false,
+  className = "",
+}: {
+  size?: number;
+  withSeparator?: boolean;
+  className?: string;
+}) {
+  const [ok, setOk] = useState(true);
+  if (!ok) return null;
+  return (
+    <span className={`flex shrink-0 items-center gap-2 sm:gap-3 ${className}`}>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src="/zanvar-logo.png"
+        alt="Zanvar Group"
+        style={{ height: size, width: "auto" }}
+        className="shrink-0 object-contain"
+        onError={() => setOk(false)}
+      />
+      {withSeparator ? (
+        <span aria-hidden className="text-lg font-semibold text-brand-muted">
+          ×
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
+// Co-brand lockup: Zanvar Group (client) × Harmony (ours) — mark + "Harmony"
+// wordmark. Degrades to the Harmony mark alone when the Zanvar asset is absent.
 export function LogoLockup({
   animated = false,
   size = 34,
@@ -72,11 +108,10 @@ export function LogoLockup({
 }) {
   return (
     <div className={`flex items-center gap-2.5 ${className}`}>
+      <ZanvarMark size={size} withSeparator />
       <Logo size={size} animated={animated} className="text-signal-red" />
       <div className="leading-tight">
-        <div className="font-bold tracking-tight text-brand-dark">
-          Harmony <span className="font-semibold text-brand-muted">×</span> Hariom
-        </div>
+        <div className="font-bold tracking-tight text-brand-dark">Harmony</div>
         {subtitle ? <div className="text-[11px] text-brand-muted">{subtitle}</div> : null}
       </div>
     </div>

@@ -3,7 +3,7 @@
 import { usePathname } from "next/navigation";
 import { LogOut, Menu } from "lucide-react";
 
-import { Logo } from "@/components/brand/Logo";
+import { Logo, ZanvarMark } from "@/components/brand/Logo";
 import { useAuth } from "@/lib/auth";
 import SupplierSidebar from "@/components/portal/SupplierSidebar";
 import NotificationBell from "@/components/NotificationBell";
@@ -42,6 +42,7 @@ export default function SupplierShell({
             <Menu size={18} />
           </button>
           <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+            <ZanvarMark size={30} withSeparator />
             <span className="shrink-0 text-signal-red">
               <Logo size={30} />
             </span>

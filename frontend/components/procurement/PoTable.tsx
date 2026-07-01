@@ -1,7 +1,7 @@
 "use client";
 import { useMemo, useState, Fragment } from "react";
 import { useStore } from "@/lib/store";
-import { fmtDate, fmtNum, signalClass } from "@/lib/format";
+import { fmtDate, fmtNum, signalClass, overdueDays } from "@/lib/format";
 import { ChevronDown, ChevronRight, Mail, Sparkles, Loader2 } from "lucide-react";
 import type { ProcurementRecord } from "@/lib/types";
 
@@ -20,6 +20,7 @@ const materialHeaders = [
   "CRM No.",
   "Material Name",
   "Shipment Date",
+  "Overdue",
   "Signal",
   "PO Status",
   "Qty",
@@ -239,6 +240,15 @@ export default function PoTable() {
                                       {r.material_name}
                                     </td>
                                     <td className="px-2 py-1.5 whitespace-nowrap">{fmtDate(r.shipment_date)}</td>
+                                    <td className="px-2 py-1.5 whitespace-nowrap">
+                                      {overdueDays(r.shipment_date) > 0 ? (
+                                        <span className="font-semibold text-signal-red">
+                                          {overdueDays(r.shipment_date)}d
+                                        </span>
+                                      ) : (
+                                        <span className="text-brand-muted">—</span>
+                                      )}
+                                    </td>
                                     <td className="px-2 py-1.5">
                                       <span
                                         className={

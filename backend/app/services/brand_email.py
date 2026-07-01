@@ -8,6 +8,7 @@ to the wordmark text beside it).
 from __future__ import annotations
 
 import base64
+import html as _html
 
 from ..core.config import settings
 
@@ -46,20 +47,44 @@ def _logo_src() -> str:
     return _logo_data_uri("#ffffff")
 
 
+def _zanvar_src() -> str:
+    """Hosted Zanvar Group logo for emails. Only available when a public base URL is
+    configured (there is no inline SVG fallback for a client raster logo); returns ""
+    otherwise so the header simply omits the co-brand instead of a broken image."""
+    base = (settings.APP_BASE_URL or "").strip().rstrip("/")
+    return f"{base}/zanvar-logo.png" if base else ""
+
+
 def header_html(subtitle: str) -> str:
-    """Brand-red header bar with the Harmony mark + 'Harmony × Hariom' wordmark."""
+    """Brand-red header bar with the 'Zanvar Group × Harmony' co-brand lockup."""
     logo = _logo_src()
+    zanvar = _zanvar_src()
+    # Zanvar's mark sits on a white chip so its dark wordmark stays legible on the
+    # brand-red bar; the "×" mirrors the in-app lockup. Omitted when no hosted asset.
+    zanvar_cell = (
+        (
+            '<td style="vertical-align:middle;padding-right:10px;">'
+            f'<img src="{zanvar}" height="30" alt="Zanvar Group" '
+            'style="display:block;height:30px;width:auto;background:#ffffff;'
+            'border-radius:5px;padding:3px;"/></td>'
+            '<td style="vertical-align:middle;padding-right:10px;color:#ffe3e6;'
+            'font-size:16px;font-weight:700;">&#215;</td>'
+        )
+        if zanvar
+        else ""
+    )
     return (
         f'<div style="background:{BRAND_RED};padding:14px 20px;">'
         '<table role="presentation" cellpadding="0" cellspacing="0" '
         'style="border-collapse:collapse;">'
         '<tr>'
+        f'{zanvar_cell}'
         '<td style="vertical-align:middle;padding-right:12px;">'
         f'<img src="{logo}" width="30" height="30" alt="Harmony" style="display:block;"/>'
         '</td>'
         '<td style="vertical-align:middle;">'
         '<div style="color:#ffffff;font-size:15px;font-weight:700;letter-spacing:.2px;">'
-        'Harmony &#215; Hariom</div>'
+        'Harmony</div>'
         f'<div style="color:#ffe3e6;font-size:11px;">{subtitle}</div>'
         '</td>'
         '</tr></table>'
@@ -84,3 +109,22 @@ def footer_html(note: str) -> str:
         f'<div style="background:#fff5f6;border-top:1px solid {BRAND_BORDER};'
         f'padding:10px 20px;font-size:11px;color:{BRAND_MUTED};">{note}</div>'
     )
+
+
+def text_email_html(text: str, *, subtitle: str = "Supplier Follow-up") -> str:
+    """Wrap a plain-text body in the branded HTML shell.
+
+    Every outgoing mail should leave the platform as HTML. Messages that were
+    composed as plain text (hub replies, acknowledgements, escalations) have no
+    authored ``body_html``; this renders them inside the same brand-red header /
+    white card treatment as the templated follow-ups. Content is HTML-escaped and
+    line breaks are preserved, so arbitrary user text is safe to embed.
+    """
+    safe = _html.escape(text or "").replace("\r\n", "\n").replace("\n", "<br/>")
+    inner = (
+        header_html(subtitle)
+        + f'<div style="padding:20px 22px;color:{BRAND_INK};font-size:14px;'
+        f'line-height:1.65;">{safe}</div>'
+        + footer_html("Sent via Harmony &#215; Hariom &#183; Supplier Follow-up")
+    )
+    return shell(inner)

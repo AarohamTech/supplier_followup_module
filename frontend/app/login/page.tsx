@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
-import { Logo } from "@/components/brand/Logo";
+import { Logo, ZanvarMark } from "@/components/brand/Logo";
 import { useAuth } from "@/lib/auth";
 
 export default function LoginPage() {
@@ -32,11 +32,14 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-brand-surface px-4">
       <div className="w-full max-w-sm rounded-lg border border-brand-border bg-card p-8 shadow-card">
         <div className="mb-6 text-center">
-          <div className="mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-2xl bg-red-50 text-signal-red">
-            <Logo size={40} />
+          <div className="mx-auto mb-3 flex items-center justify-center gap-3">
+            <ZanvarMark size={44} withSeparator />
+            <span className="flex h-16 w-16 items-center justify-center rounded-2xl bg-red-50 text-signal-red">
+              <Logo size={40} />
+            </span>
           </div>
           <div className="text-sm font-bold tracking-tight text-brand-dark">
-            Harmony <span className="font-semibold text-brand-muted">×</span> Hariom
+            Zanvar Group <span className="font-semibold text-brand-muted">×</span> Harmony
           </div>
           <h1 className="text-lg font-bold text-signal-red">Supplier Follow-up Agent</h1>
           <p className="mt-1 text-xs text-brand-muted">Sign in to your account</p>

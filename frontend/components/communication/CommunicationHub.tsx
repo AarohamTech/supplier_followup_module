@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import api from "@/lib/api";
 import { useStore } from "@/lib/store";
+import { overdueDays } from "@/lib/format";
 import TaskCreateForm from "@/components/tasks/TaskCreateForm";
 import CustomerWorkspace from "@/components/customer-mails/CustomerWorkspace";
 import type {
@@ -1246,6 +1247,7 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
                         <thead className="bg-subtle">
                           <tr className="text-[10px] uppercase tracking-wide text-brand-muted">
                             <th className="px-3 py-1.5 font-semibold">Material</th>
+                            <th className="px-3 py-1.5 font-semibold">Overdue</th>
                             <th className="px-3 py-1.5 font-semibold">Committed date</th>
                           </tr>
                         </thead>
@@ -1255,10 +1257,18 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
                               commitments.find(
                                 (c) => c.material_name?.toUpperCase() === m.material_name?.toUpperCase(),
                               ) ?? m.commitment ?? null;
+                            const od = overdueDays(m.due_date);
                             return (
                               <tr key={m.procurement_record_id} className="border-t border-brand-border">
                                 <td className="px-3 py-1.5 text-brand-dark" title={m.material_name}>
                                   {m.material_name}
+                                </td>
+                                <td className="px-3 py-1.5 whitespace-nowrap">
+                                  {od > 0 ? (
+                                    <span className="font-semibold text-signal-red">{od}d</span>
+                                  ) : (
+                                    <span className="text-brand-muted">—</span>
+                                  )}
                                 </td>
                                 <td className="px-3 py-1.5 text-brand-dark">
                                   {commit?.commitment_date ? (
