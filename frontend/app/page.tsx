@@ -15,6 +15,8 @@ import NoReplySince from "@/components/dashboard/NoReplySince";
 import AIInsights from "@/components/dashboard/AIInsights";
 import OverdueDonut from "@/components/dashboard/OverdueDonut";
 import StatusDonut from "@/components/dashboard/StatusDonut";
+import SupplierChart from "@/components/dashboard/SupplierChart";
+import EmployeeFilter from "@/components/dashboard/EmployeeFilter";
 import MailEngineStatusCard from "@/components/dashboard/MailEngineStatusCard";
 import PageHeader from "@/components/layout/PageHeader";
 import LazyMount from "@/components/LazyMount";
@@ -47,12 +49,15 @@ export default function DashboardPage() {
             <AlertsCard />
           </div>
 
-          <section className="card overflow-hidden">
+          <section id="po-workspace" className="card overflow-hidden scroll-mt-20">
             <div className="border-b border-brand-border px-4 py-3">
               <h2 className="text-sm font-semibold text-brand-dark">Purchase order workspace</h2>
-              <p className="mt-0.5 text-xs text-brand-muted">Narrow the live queue by supplier, signal or order reference.</p>
+              <p className="mt-0.5 text-xs text-brand-muted">Narrow the live queue by employee, supplier, signal or order reference.</p>
             </div>
-            <div className="p-4">
+            <div className="space-y-3 p-4">
+              <div className="max-w-xs">
+                <EmployeeFilter />
+              </div>
               <FiltersBar />
             </div>
             <div className="border-t border-brand-border bg-subtle/70 p-3">
@@ -77,10 +82,11 @@ export default function DashboardPage() {
             <h2 className="text-sm font-semibold text-brand-dark">Operational intelligence</h2>
             <p className="mt-0.5 text-xs text-brand-muted">Risk signals and workload patterns derived from the current queue.</p>
           </div>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
             <AIInsights />
             <OverdueDonut />
-            <StatusDonut />
+            <StatusDonut drillable />
+            <SupplierChart drillable />
           </div>
         </section>
       </LazyMount>

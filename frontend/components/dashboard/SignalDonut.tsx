@@ -11,12 +11,16 @@ export default function SignalDonut({
   red,
   black,
   title = "Signal Distribution",
+  onSliceClick,
 }: {
   green: number;
   yellow: number;
   red: number;
   black: number;
   title?: string;
+  // Optional drill-down: called with the uppercase signal ("GREEN"|"YELLOW"|
+  // "RED"|"BLACK") when a slice or legend row is clicked.
+  onSliceClick?: (signal: string) => void;
 }) {
   const isDark = useTheme((s) => s.isDark);
   const data = [
@@ -27,6 +31,7 @@ export default function SignalDonut({
     { name: "Black", value: black, color: isDark ? "#E6EAF0" : "#111827" },
   ];
   const total = data.reduce((a, b) => a + b.value, 0);
+  const clickable = Boolean(onSliceClick);
   return (
     <div className="card p-4">
       <div className="font-semibold text-sm mb-3">{title}</div>
@@ -35,15 +40,28 @@ export default function SignalDonut({
           <ResponsiveContainer>
             <PieChart>
               <Tooltip />
-              <Pie data={data} dataKey="value" innerRadius={45} outerRadius={65} stroke="none">
-                {data.map((d, i) => <Cell key={i} fill={d.color} />)}
+              <Pie
+                data={data}
+                dataKey="value"
+                innerRadius={45}
+                outerRadius={65}
+                stroke="none"
+                onClick={clickable ? (d: { name?: string }) => d?.name && onSliceClick!(d.name.toUpperCase()) : undefined}
+              >
+                {data.map((d, i) => (
+                  <Cell key={i} fill={d.color} cursor={clickable ? "pointer" : "default"} />
+                ))}
               </Pie>
             </PieChart>
           </ResponsiveContainer>
         </div>
         <ul className="flex-1 space-y-1 text-xs">
           {data.map((d) => (
-            <li key={d.name} className="flex items-center justify-between">
+            <li
+              key={d.name}
+              className={`flex items-center justify-between ${clickable ? "cursor-pointer hover:text-brand-dark" : ""}`}
+              onClick={clickable ? () => onSliceClick!(d.name.toUpperCase()) : undefined}
+            >
               <span className="flex items-center gap-2">
                 <span className="h-2 w-2 rounded-full" style={{ background: d.color }} />
                 {d.name}

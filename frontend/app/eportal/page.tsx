@@ -14,6 +14,7 @@ import StatusDonut from "@/components/dashboard/StatusDonut";
 import OverdueDonut from "@/components/dashboard/OverdueDonut";
 import AIInsights from "@/components/dashboard/AIInsights";
 import TasksSummaryCard from "@/components/dashboard/TasksSummaryCard";
+import SupplierChart from "@/components/dashboard/SupplierChart";
 
 const QUICK_LINKS = [
   { href: "/eportal/pos", label: "My Purchase Orders", icon: FileSpreadsheet },
@@ -31,6 +32,7 @@ export default function EmployeeDashboard() {
   const { user } = useAuth();
   const setScope = useStore((s) => s.setScope);
   const refresh = useStore((s) => s.refresh);
+  const breakdown = useStore((s) => s.breakdown);
   const [pos, setPos] = useState<EmployeePo[]>([]);
   const [tasks, setTasks] = useState<PortalTaskDashboard | null>(null);
 
@@ -72,8 +74,9 @@ export default function EmployeeDashboard() {
 
       <KpiStrip />
 
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-4">
         <StatusDonut />
+        <SupplierChart />
         <OverdueDonut />
         <TasksSummaryCard data={tasks} href="/eportal/tasks" />
       </div>
@@ -83,6 +86,11 @@ export default function EmployeeDashboard() {
           <div className="mb-2 flex items-center justify-between">
             <div className="text-[11px] font-semibold uppercase tracking-wider text-brand-muted">
               Your Purchase Orders
+              {breakdown ? (
+                <span className="ml-2 rounded-full bg-red-50 px-1.5 py-0.5 text-[10px] font-semibold text-signal-red">
+                  {breakdown.pending_count} pending
+                </span>
+              ) : null}
             </div>
             <Link href="/eportal/pos" className="text-xs font-medium text-signal-red hover:underline">
               View all →

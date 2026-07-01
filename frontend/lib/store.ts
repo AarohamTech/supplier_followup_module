@@ -3,7 +3,7 @@ import { create } from "zustand";
 import api from "@/lib/api";
 import type {
   ProcurementRecord, ProcurementListResponse, DashboardKpis,
-  SupplierMaster, SupplierEmail, ProcurementFilters,
+  SupplierMaster, SupplierEmail, ProcurementFilters, ProcurementBreakdown,
 } from "@/lib/types";
 
 // 'staff' → the global PO Follow-ups page (all POs, /api/procurement).
@@ -13,6 +13,7 @@ type Scope = "staff" | "employee";
 
 interface State {
   kpis?: DashboardKpis;
+  breakdown?: ProcurementBreakdown;
   list?: ProcurementListResponse;
   supplierMasters: SupplierMaster[];
   suppliers: SupplierEmail[];
@@ -56,13 +57,18 @@ export const useStore = create<State>((set, get) => ({
 
   refresh: async () => {
     set({ loading: true, error: undefined });
+    const f = get().filters;
     const employee = get().scope === "employee";
     try {
-      const [kpis, list] = await Promise.all([
-        employee ? api.eportalDashboard() : api.dashboard(),
-        employee ? api.eportalProcurement(get().filters) : api.listProcurement(get().filters),
+      // KPIs + list + dashboard breakdown (pies) in one round-trip set. On staff
+      // scope the KPI strip re-scopes to the selected employee; on employee scope
+      // every endpoint is already hard-scoped to the logged-in employee server-side.
+      const [kpis, list, breakdown] = await Promise.all([
+        employee ? api.eportalDashboard() : api.dashboard({ owner_emp_code: f.owner_emp_code }),
+        employee ? api.eportalProcurement(f) : api.listProcurement(f),
+        employee ? api.eportalBreakdown(f) : api.procurementBreakdown(f),
       ]);
-      set({ kpis, list, loading: false });
+      set({ kpis, list, breakdown, loading: false });
     } catch (e: any) {
       set({ error: e.message ?? "Failed to load data", loading: false });
     }
