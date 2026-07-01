@@ -15,6 +15,7 @@ import type {
   OutlookComposeRequest,
   OutlookComposeResult,
   ProcurementFilters,
+  ProcurementBreakdown,
   ProcurementSyncSummary,
   CommunicationTask,
   CommunicationTaskCreate,
@@ -121,7 +122,12 @@ async function http<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  dashboard: () => http<DashboardKpis>("/api/procurement/dashboard"),
+  dashboard: (filters: { owner_emp_code?: string } = {}) => {
+    const q = new URLSearchParams();
+    if (filters.owner_emp_code) q.append("owner_emp_code", filters.owner_emp_code);
+    const qs = q.toString();
+    return http<DashboardKpis>(`/api/procurement/dashboard${qs ? `?${qs}` : ""}`);
+  },
 
   listProcurement: (filters: ProcurementFilters = {}) => {
     const q = new URLSearchParams();
@@ -130,6 +136,16 @@ export const api = {
     });
     const qs = q.toString();
     return http<ProcurementListResponse>(`/api/procurement${qs ? `?${qs}` : ""}`);
+  },
+
+  procurementBreakdown: (filters: ProcurementFilters = {}) => {
+    const q = new URLSearchParams();
+    Object.entries(filters).forEach(([k, v]) => {
+      if (k === "page" || k === "size") return; // pagination is irrelevant to aggregates
+      if (v !== undefined && v !== null && v !== "") q.append(k, String(v));
+    });
+    const qs = q.toString();
+    return http<ProcurementBreakdown>(`/api/procurement/breakdown${qs ? `?${qs}` : ""}`);
   },
 
   getProcurement: (id: number) => http<ProcurementRecord>(`/api/procurement/${id}`),
@@ -882,6 +898,15 @@ export const api = {
     });
     const qs = q.toString();
     return http<ProcurementListResponse>(`/api/eportal/procurement${qs ? `?${qs}` : ""}`);
+  },
+  eportalBreakdown: (filters: ProcurementFilters = {}) => {
+    const q = new URLSearchParams();
+    Object.entries(filters).forEach(([k, v]) => {
+      if (k === "page" || k === "size") return;
+      if (v !== undefined && v !== null && v !== "") q.append(k, String(v));
+    });
+    const qs = q.toString();
+    return http<ProcurementBreakdown>(`/api/eportal/procurement/breakdown${qs ? `?${qs}` : ""}`);
   },
 
   eportalPos: () => http<EmployeePoListResponse>("/api/eportal/pos"),

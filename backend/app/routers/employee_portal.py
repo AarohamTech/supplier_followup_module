@@ -35,8 +35,9 @@ from ..schemas.employee_portal import (
     EmployeeSummary,
 )
 from ..schemas.portal import PortalMessage, PortalMessageCreate
-from ..schemas.procurement import DashboardKpis, ProcurementListOut
+from ..schemas.procurement import DashboardKpis, ProcurementListOut, ProcurementBreakdown
 from ..services import communication_message_service as msg_service
+from ..services import procurement_breakdown_service as breakdown_service
 from ..services import notification_service as notif
 from ..services import po_followup_mail_service
 from ..services import task_assignment_service as assign
@@ -260,6 +261,32 @@ def procurement_dashboard(
         due_today_count=row[6] or 0,
         ai_required_count=row[7] or 0,
     )
+
+
+@router.get("/procurement/breakdown", response_model=ProcurementBreakdown)
+def procurement_breakdown(
+    user: User = Depends(get_current_employee),
+    db: Session = Depends(get_db),
+    signal: Optional[str] = None,
+    supplier_name: Optional[str] = None,
+    po_no: Optional[str] = None,
+    supplier_po_no: Optional[str] = None,
+    crm_no: Optional[str] = None,
+    po_status: Optional[str] = None,
+    shipment_date_from: Optional[date] = None,
+    shipment_date_to: Optional[date] = None,
+    search: Optional[str] = None,
+) -> ProcurementBreakdown:
+    """Same aggregations as the staff /breakdown, hard-scoped to the employee's own
+    POs (owner_emp_code) — powers the buyer dashboard's supplier pie + pending count."""
+    conds = [ProcurementRecord.owner_emp_code == user.emp_code]
+    conds += breakdown_service.build_conditions(
+        signal=signal, supplier_name=supplier_name, po_no=po_no,
+        supplier_po_no=supplier_po_no, crm_no=crm_no, po_status=po_status,
+        shipment_date_from=shipment_date_from, shipment_date_to=shipment_date_to,
+        search=search,
+    )
+    return ProcurementBreakdown(**breakdown_service.compute_breakdown(db, conds))
 
 
 @router.get("/procurement", response_model=ProcurementListOut)

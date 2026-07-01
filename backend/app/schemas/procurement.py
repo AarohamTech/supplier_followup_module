@@ -145,6 +145,24 @@ class DashboardKpis(BaseModel):
     ai_required_count: int
 
 
+class SupplierSlice(BaseModel):
+    name: str
+    count: int
+
+
+class ProcurementBreakdown(BaseModel):
+    """Dashboard aggregations under the active filters: signal counts, the
+    open/not-delivered ("pending") count, and the supplier distribution
+    (top suppliers + an aggregated "Others" slice)."""
+    total: int
+    green_count: int
+    yellow_count: int
+    red_count: int
+    black_count: int
+    pending_count: int
+    by_supplier: list[SupplierSlice]
+
+
 class CrmIngestLogOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

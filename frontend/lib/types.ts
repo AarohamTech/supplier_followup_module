@@ -60,6 +60,21 @@ export interface DashboardKpis {
   ai_required_count: number;
 }
 
+export interface SupplierSlice {
+  name: string;
+  count: number;
+}
+
+export interface ProcurementBreakdown {
+  total: number;
+  green_count: number;
+  yellow_count: number;
+  red_count: number;
+  black_count: number;
+  pending_count: number;
+  by_supplier: SupplierSlice[];
+}
+
 export interface CreatedLogin {
   email: string;
   temp_password: string;
@@ -288,6 +303,7 @@ export interface ProcurementFilters {
   supplier_po_no?: string;
   crm_no?: string;
   po_status?: string;
+  owner_emp_code?: string;
   search?: string;
   page?: number;
   size?: number;

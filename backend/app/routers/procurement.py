@@ -12,6 +12,7 @@ from ..models.procurement import ProcurementRecord
 from ..schemas.procurement import (
     ProcurementCreate, ProcurementUpdate, ProcurementOut,
     ProcurementListOut, ProcurementSyncSummary, DashboardKpis, CrmIngestLogOut,
+    ProcurementBreakdown,
 )
 from ..services.procurement_sync_service import (
     ACCEPTED_EXCEL_COLUMNS,
@@ -20,29 +21,39 @@ from ..services.procurement_sync_service import (
 )
 from ..services.followup_engine import apply_followup_logic
 from ..services import crm_ingest_service
+from ..services import procurement_breakdown_service as breakdown_service
 
 router = APIRouter(prefix="/api/procurement", tags=["procurement"])
 
 
 @router.get("/dashboard", response_model=DashboardKpis)
-def dashboard(db: Session = Depends(get_db)):
+def dashboard(db: Session = Depends(get_db), owner_emp_code: Optional[str] = None):
     R = ProcurementRecord
     today = date.today()
     start = datetime.combine(today, datetime.min.time())
     end = datetime.combine(today, datetime.max.time())
 
+    # Optional employee scope: every KPI is counted only within the selected
+    # employee's owned POs (mirrors the /breakdown + list owner_emp_code filter),
+    # so the whole dashboard re-scopes from one control.
+    owner = (R.owner_emp_code == owner_emp_code) if owner_emp_code else None
+
+    def cnt(*conds):
+        all_conds = list(conds) + ([owner] if owner is not None else [])
+        return func.count().filter(*all_conds) if all_conds else func.count()
+
     # Single round-trip: conditional COUNT(*) FILTER(...) instead of 8 queries —
     # the DB is cross-region, so collapsing round-trips is the main win.
     row = db.execute(
         select(
-            func.count(),
-            func.count().filter(R.signal == "GREEN"),
-            func.count().filter(R.signal == "YELLOW"),
-            func.count().filter(R.signal == "RED"),
-            func.count().filter(R.signal == "BLACK"),
-            func.count().filter(R.shipment_date < start),
-            func.count().filter(R.shipment_date >= start, R.shipment_date < end),
-            func.count().filter(R.ai_required.is_(True)),
+            cnt(),
+            cnt(R.signal == "GREEN"),
+            cnt(R.signal == "YELLOW"),
+            cnt(R.signal == "RED"),
+            cnt(R.signal == "BLACK"),
+            cnt(R.shipment_date < start),
+            cnt(R.shipment_date >= start, R.shipment_date < end),
+            cnt(R.ai_required.is_(True)),
         )
     ).one()
 
@@ -58,6 +69,31 @@ def dashboard(db: Session = Depends(get_db)):
     )
 
 
+@router.get("/breakdown", response_model=ProcurementBreakdown)
+def breakdown(
+    db: Session = Depends(get_db),
+    signal: Optional[str] = None,
+    supplier_name: Optional[str] = None,
+    po_no: Optional[str] = None,
+    supplier_po_no: Optional[str] = None,
+    crm_no: Optional[str] = None,
+    po_status: Optional[str] = None,
+    owner_emp_code: Optional[str] = None,
+    shipment_date_from: Optional[date] = None,
+    shipment_date_to: Optional[date] = None,
+    search: Optional[str] = None,
+):
+    """Signal + supplier + pending aggregations for the dashboard pies, under the
+    same filters as the list (so the pies match the visible table)."""
+    conds = breakdown_service.build_conditions(
+        signal=signal, supplier_name=supplier_name, po_no=po_no,
+        supplier_po_no=supplier_po_no, crm_no=crm_no, po_status=po_status,
+        owner_emp_code=owner_emp_code, shipment_date_from=shipment_date_from,
+        shipment_date_to=shipment_date_to, search=search,
+    )
+    return ProcurementBreakdown(**breakdown_service.compute_breakdown(db, conds))
+
+
 @router.get("", response_model=ProcurementListOut)
 def list_records(
     db: Session = Depends(get_db),
@@ -67,6 +103,7 @@ def list_records(
     supplier_po_no: Optional[str] = None,
     crm_no: Optional[str] = None,
     po_status: Optional[str] = None,
+    owner_emp_code: Optional[str] = None,
     shipment_date_from: Optional[date] = None,
     shipment_date_to: Optional[date] = None,
     search: Optional[str] = None,
@@ -81,6 +118,7 @@ def list_records(
     if supplier_po_filter: stmt = stmt.where(R.supplier_po_no.ilike(f"%{supplier_po_filter}%"))
     if crm_no: stmt = stmt.where(R.crm_no.ilike(f"%{crm_no}%"))
     if po_status: stmt = stmt.where(R.po_status == po_status)
+    if owner_emp_code: stmt = stmt.where(R.owner_emp_code == owner_emp_code)
     if shipment_date_from:
         stmt = stmt.where(R.shipment_date >= datetime.combine(shipment_date_from, datetime.min.time()))
     if shipment_date_to:
