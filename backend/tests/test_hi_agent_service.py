@@ -62,7 +62,7 @@ class OrchestratorTests(unittest.TestCase):
         with _temp_db() as db:
             _seed(db)
 
-            def fake_chat_with_tools(messages, *, tools, executor, system, max_rounds=None):
+            def fake_chat_with_tools(messages, *, tools, executor, system, max_rounds=None, **kwargs):
                 executor("summarize_thread", {})
                 return {"reply": "Here is your summary.", "tools_used": [{"name": "summarize_thread"}]}
 

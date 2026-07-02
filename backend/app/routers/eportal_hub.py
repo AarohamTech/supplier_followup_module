@@ -28,6 +28,7 @@ from sqlalchemy.orm import Session
 from ..core.deps import get_current_employee
 from ..database import get_db
 from ..models.communication_message import CommunicationMessage
+from ..models.hi_agent_chat_message import HiAgentChatMessage
 from ..models.communication_task import CommunicationTask
 from ..models.mail_history import MailHistory
 from ..models.procurement import ProcurementRecord
@@ -802,6 +803,21 @@ def list_commitments(
 # ─────────────────────────────────────────────────────────────────────────────
 # 13. HI agent (/hi) — scoped to an in-scope PO context
 # ─────────────────────────────────────────────────────────────────────────────
+@router.get("/agent/history")
+def get_agent_history(
+    procurement_record_id: int = Query(...),
+    user: User = Depends(get_current_employee),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Return HI history only when this employee owns the PO thread."""
+    _resolve_scoped_po(
+        db, user.emp_code,
+        supplier_po_no=None,
+        procurement_record_id=procurement_record_id,
+    )
+    return hub.get_agent_history(procurement_record_id=procurement_record_id, db=db)
+
+
 @router.post("/agent")
 def run_agent(
     payload: hub.HubAgentIn,
@@ -834,6 +850,23 @@ def confirm_agent_action(
         # Only a draft on an in-scope PO can be confirmed/sent by an employee.
         _scoped_message_or_404(db, user.emp_code, payload.id)
     return hub.confirm_agent_action(payload=payload, db=db)
+
+
+@router.post("/agent/history/dismiss")
+def dismiss_agent_action(
+    payload: hub.HubAgentDismissIn,
+    user: User = Depends(get_current_employee),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    row = db.get(HiAgentChatMessage, payload.chat_message_id)
+    if row is None:
+        raise HTTPException(404, "Chat message not found")
+    _resolve_scoped_po(
+        db, user.emp_code,
+        supplier_po_no=None,
+        procurement_record_id=row.procurement_record_id,
+    )
+    return hub.dismiss_agent_action(payload=payload, db=db)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

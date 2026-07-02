@@ -46,6 +46,7 @@ def run(
     customer_mail_id: int | None = None,
     customer_email: str | None = None,
     customer_name: str | None = None,
+    history: list[dict[str, str]] | None = None,
 ) -> dict[str, Any]:
     ctx = tools.ToolContext(
         db=db, user=user, supplier_id=supplier_id,
@@ -62,17 +63,19 @@ def run(
     if fast is not None:
         return {"reply": fast, "pending_actions": ctx.pending_actions, "tools_used": []}
 
-    if not ai_service.is_enabled():
+    if not ai_service.any_enabled():
         reply = _fallback(ctx, text)
         return {"reply": reply, "pending_actions": ctx.pending_actions, "tools_used": []}
 
     try:
         result = ai_service.chat_with_tools(
-            [{"role": "user", "content": text}],
+            [*(history or []), {"role": "user", "content": text}],
             tools=tools.TOOLS,
             executor=tools.make_executor(ctx),
             system=HI_SYSTEM_PROMPT,
             max_rounds=2,  # cap agent round-trips to the remote model for latency
+            prefer_openai=True,  # gpt-5-nano first for HI chat / draft formation
+            cache_key="hi-agent",
         )
         return {
             "reply": result.get("reply") or "",

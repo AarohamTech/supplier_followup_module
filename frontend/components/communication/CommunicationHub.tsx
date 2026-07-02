@@ -15,6 +15,7 @@ import type {
   CommHubThread,
   CommunicationTask,
   CommunicationTaskCreate,
+  HiChatMessage,
   OtherMailThread,
   PoFollowupMaterial,
   SupplierMaterialCommitment,
@@ -66,7 +67,9 @@ export interface CommHubAdapter {
   reply: typeof api.hubReply;
   escalate: typeof api.hubEscalate;
   agent: typeof api.hubAgent;
+  agentHistory: typeof api.hubAgentHistory;
   agentConfirm: typeof api.hubAgentConfirm;
+  agentDismissAction: typeof api.hubAgentDismissAction;
   sendMail: typeof api.hubSendMail;
   assignees: () => Promise<TaskAssignee[]>;
   mentionTargets: () => Promise<TaskAssignee[]>;
@@ -84,17 +87,6 @@ export interface CommunicationHubProps {
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
 // ─────────────────────────────────────────────────────────────────────────────
-
-type HiAgentAction = {
-  type: "draft" | "subscription";
-  message_id?: number;
-  subscription_id?: number;
-  recipient?: string;
-  subject?: string;
-  kind?: string;
-  schedule?: string | null;
-};
-type HiChatMessage = { role: "user" | "assistant"; text: string; actions?: HiAgentAction[] };
 
 const TEMPLATES: { label: string; body: string }[] = [
   {
@@ -344,10 +336,10 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
   const [composer, setComposer] = useState("");
   const [sendAsEmail, setSendAsEmail] = useState(true);
   const [replying, setReplying] = useState(false);
-  const [agentBusy, setAgentBusy] = useState(false);
+  const [agentBusyThreadId, setAgentBusyThreadId] = useState<number | null>(null);
   // /hi conversation lives in a dedicated right-side chat panel.
   const [hiOpen, setHiOpen] = useState(false);
-  const [hiMessages, setHiMessages] = useState<HiChatMessage[]>([]);
+  const [hiThreads, setHiThreads] = useState<Record<number, HiChatMessage[]>>({});
   const [hiInput, setHiInput] = useState("");
   const hiEndRef = useRef<HTMLDivElement | null>(null);
   const [mentionList, setMentionList] = useState<TaskAssignee[]>([]);
@@ -399,6 +391,9 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
   // ── Derived ──
   const activeSupplier = supplierList.find((s) => s.supplier_name === selectedSupplierName) ?? null;
   const activePo = poList.find((p) => p.procurement_record_id === selectedProcurementId) ?? null;
+  const activeHiThreadId = activePo?.procurement_record_id ?? null;
+  const hiMessages = activeHiThreadId == null ? [] : (hiThreads[activeHiThreadId] ?? []);
+  const agentBusy = activeHiThreadId != null && agentBusyThreadId === activeHiThreadId;
   // Non-PO "Other Mails" conversation in focus (no PO selected).
   const inOther = selectedOtherKey !== null;
   const activeOther = otherMails.find((t) => t.thread_key === selectedOtherKey) ?? null;
@@ -492,6 +487,20 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
       setThread(await hub.thread({ procurement_record_id: procurementRecordId }));
     } catch {}
   }, [hub]);
+
+  const loadHiHistory = useCallback(async (procurementRecordId: number) => {
+    try {
+      const history = await hub.agentHistory(procurementRecordId);
+      setHiThreads((prev) => ({ ...prev, [procurementRecordId]: history.messages }));
+    } catch {
+      // The PO conversation remains usable even if assistant history is unavailable.
+    }
+  }, [hub]);
+
+  useEffect(() => {
+    setHiInput("");
+    if (activeHiThreadId != null) void loadHiHistory(activeHiThreadId);
+  }, [activeHiThreadId, loadHiHistory]);
 
   const loadCommitments = useCallback(
     async (supplierName: string, supplierPoNo: string) => {
@@ -838,28 +847,39 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
   };
 
   const handleAgent = async (message: string) => {
-    if (!activePo || agentBusy) return;
+    if (!activePo || agentBusyThreadId !== null) return;
+    const po = activePo;
+    const threadId = po.procurement_record_id;
     setHiOpen(true);
-    setHiMessages((prev) => [...prev, { role: "user", text: message }]);
-    setAgentBusy(true);
+    setHiThreads((prev) => ({
+      ...prev,
+      [threadId]: [...(prev[threadId] ?? []), { role: "user", text: message }],
+    }));
+    setAgentBusyThreadId(threadId);
     try {
       const res = await hub.agent({
         message,
-        supplier_id: activePo.supplier_id,
-        procurement_record_id: activePo.procurement_record_id,
-        supplier_po_no: activePo.supplier_po_no,
+        supplier_id: po.supplier_id,
+        procurement_record_id: threadId,
+        supplier_po_no: po.supplier_po_no,
       });
-      setHiMessages((prev) => [
+      setHiThreads((prev) => ({
         ...prev,
-        { role: "assistant", text: res.reply || "(no response)", actions: res.pending_actions ?? [] },
-      ]);
+        [threadId]: res.messages ?? [
+          ...(prev[threadId] ?? []),
+          { role: "assistant", text: res.reply || "(no response)", actions: res.pending_actions ?? [] },
+        ],
+      }));
     } catch (e: unknown) {
-      setHiMessages((prev) => [
+      setHiThreads((prev) => ({
         ...prev,
-        { role: "assistant", text: e instanceof Error ? e.message : "HI agent could not respond." },
-      ]);
+        [threadId]: [
+          ...(prev[threadId] ?? []),
+          { role: "assistant", text: e instanceof Error ? e.message : "HI agent could not respond." },
+        ],
+      }));
     } finally {
-      setAgentBusy(false);
+      setAgentBusyThreadId((current) => current === threadId ? null : current);
     }
   };
 
@@ -873,21 +893,48 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
 
   const confirmAgentAction = async (msgIndex: number, actionIndex: number) => {
     const action = hiMessages[msgIndex]?.actions?.[actionIndex];
-    if (!action) return;
+    if (!action || activeHiThreadId == null) return;
+    const threadId = activeHiThreadId;
     try {
       await hub.agentConfirm({
         action_type: action.type,
         id: (action.message_id ?? action.subscription_id) as number,
       });
       pushToast("ok", action.type === "draft" ? "Sent" : "Confirmed");
-      setHiMessages((prev) =>
-        prev.map((m, i) =>
+      setHiThreads((prev) => ({
+        ...prev,
+        [threadId]: (prev[threadId] ?? []).map((m, i) =>
           i === msgIndex ? { ...m, actions: (m.actions ?? []).filter((_, j) => j !== actionIndex) } : m,
         ),
-      );
+      }));
       if (activePo) await loadThread(activePo.procurement_record_id);
     } catch (e: unknown) {
       pushToast("err", e instanceof Error ? e.message : "Confirm failed");
+    }
+  };
+
+  const dismissAgentAction = async (msgIndex: number, actionIndex: number) => {
+    const message = hiMessages[msgIndex];
+    const action = message?.actions?.[actionIndex];
+    if (!message || !action || activeHiThreadId == null) return;
+    const actionId = action.message_id ?? action.subscription_id;
+    try {
+      if (message.id != null && actionId != null) {
+        await hub.agentDismissAction({
+          chat_message_id: message.id,
+          action_type: action.type,
+          id: actionId,
+        });
+      }
+      const threadId = activeHiThreadId;
+      setHiThreads((prev) => ({
+        ...prev,
+        [threadId]: (prev[threadId] ?? []).map((m, i) =>
+          i === msgIndex ? { ...m, actions: (m.actions ?? []).filter((_, j) => j !== actionIndex) } : m,
+        ),
+      }));
+    } catch (e: unknown) {
+      pushToast("err", e instanceof Error ? e.message : "Could not dismiss action");
     }
   };
 
@@ -941,6 +988,7 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
     // /hi → route to the HI agent instead of posting a supplier message.
     if (/^\/hi\b/i.test(text)) {
       const message = text.replace(/^\/hi\b/i, "").trim() || "help";
+      setComposer("");
       await handleAgent(message);
       return;
     }
@@ -1546,13 +1594,7 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
                           </button>
                           <button
                             className="rounded-md border border-brand-border px-2.5 py-1 text-[11px] text-brand-muted hover:bg-subtle"
-                            onClick={() =>
-                              setHiMessages((prev) =>
-                                prev.map((m, j) =>
-                                  j === mi ? { ...m, actions: (m.actions ?? []).filter((_, k) => k !== ai) } : m,
-                                ),
-                              )
-                            }
+                            onClick={() => void dismissAgentAction(mi, ai)}
                           >
                             Dismiss
                           </button>
@@ -1636,6 +1678,13 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
               <div>
                 <SectionTitle>Quick actions</SectionTitle>
                 <div className="grid grid-cols-2 gap-2">
+                  <QuickAction
+                    icon={<MessagesSquare size={14} />}
+                    label="HI Chat"
+                    onClick={() => setHiOpen(true)}
+                    disabled={noPo}
+                    accent
+                  />
                   <QuickAction icon={<Sparkles size={14} />} label="HI Reply" onClick={() => void handleAiReply()} disabled={noPo} accent />
                   <QuickAction icon={<Send size={14} />} label="Send Draft" onClick={() => void handleSendMailNow()} disabled={noPo} />
                   <QuickAction icon={<AlertTriangle size={14} />} label="Escalate" onClick={() => void handleEscalate()} disabled={noPo} danger />
@@ -1749,6 +1798,9 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
           </aside>
         ) : (
           <aside className="flex w-12 shrink-0 flex-col items-center gap-2 rounded-xl border border-brand-border bg-card py-3 shadow-sm">
+            <RailIcon title="HI chat" onClick={() => setHiOpen(true)} disabled={noPo}>
+              <MessagesSquare size={18} />
+            </RailIcon>
             <RailIcon title="Details & actions" onClick={() => setDetailsOpen(true)}>
               <Sparkles size={18} />
             </RailIcon>

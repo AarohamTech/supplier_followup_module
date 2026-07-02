@@ -31,6 +31,7 @@ from app.models.communication_message import CommunicationMessage  # noqa: E402
 from app.models.communication_task import CommunicationTask  # noqa: E402
 from app.models.customer_mail import CustomerMail  # noqa: E402
 from app.models.followup_attempt import FollowupAttempt  # noqa: E402
+from app.models.hi_agent_chat_message import HiAgentChatMessage  # noqa: E402
 from app.models.mail_history import MailHistory  # noqa: E402
 from app.models.mail_parse_rule import MailParseRule  # noqa: E402
 from app.models.notification import Notification  # noqa: E402
@@ -45,6 +46,7 @@ from app.models.user import User  # noqa: E402
 # Children → parents so FK constraints are satisfied. supplier_master is handled
 # separately (last), after supplier-login users + supplier_emails.
 ORDERED = [
+    ("hi_agent_chat_messages", HiAgentChatMessage),
     ("task_activity_logs", TaskActivityLog),
     ("task_comments", TaskComment),
     ("status_change_log", StatusChangeLog),

@@ -36,6 +36,8 @@ import type {
   CommHubThread,
   CommHubTasksGrouped,
   CommHubTaskFilters,
+  HiAgentHistory,
+  HiAgentResponse,
   OtherMailThread,
   PoFollowupGroup,
   PoFollowupListResponse,
@@ -390,19 +392,22 @@ export const api = {
     supplier_po_no?: string | null;
     customer_mail_id?: number | null;
   }) =>
-    http<{
-      reply: string;
-      pending_actions: Array<{
-        type: "draft" | "subscription";
-        message_id?: number;
-        subscription_id?: number;
-        recipient?: string;
-        subject?: string;
-        kind?: string;
-        schedule?: string | null;
-      }>;
-      tools_used: Array<{ name: string }>;
-    }>("/api/communication-hub/agent", {
+    http<HiAgentResponse>("/api/communication-hub/agent", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  hubAgentHistory: (procurementRecordId: number) =>
+    http<HiAgentHistory>(
+      `/api/communication-hub/agent/history?procurement_record_id=${procurementRecordId}`,
+    ),
+
+  hubAgentDismissAction: (body: {
+    chat_message_id: number;
+    action_type: "draft" | "subscription";
+    id: number;
+  }) =>
+    http<{ ok: boolean }>("/api/communication-hub/agent/history/dismiss", {
       method: "POST",
       body: JSON.stringify(body),
     }),
@@ -1114,19 +1119,22 @@ export const api = {
     supplier_po_no?: string | null;
     customer_mail_id?: number | null;
   }) =>
-    http<{
-      reply: string;
-      pending_actions: Array<{
-        type: "draft" | "subscription";
-        message_id?: number;
-        subscription_id?: number;
-        recipient?: string;
-        subject?: string;
-        kind?: string;
-        schedule?: string | null;
-      }>;
-      tools_used: Array<{ name: string }>;
-    }>("/api/eportal/hub/agent", {
+    http<HiAgentResponse>("/api/eportal/hub/agent", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  eportalHubAgentHistory: (procurementRecordId: number) =>
+    http<HiAgentHistory>(
+      `/api/eportal/hub/agent/history?procurement_record_id=${procurementRecordId}`,
+    ),
+
+  eportalHubAgentDismissAction: (body: {
+    chat_message_id: number;
+    action_type: "draft" | "subscription";
+    id: number;
+  }) =>
+    http<{ ok: boolean }>("/api/eportal/hub/agent/history/dismiss", {
       method: "POST",
       body: JSON.stringify(body),
     }),

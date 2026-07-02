@@ -721,6 +721,37 @@ export interface CommHubThread {
   messages: CommHubMessage[];
 }
 
+export interface HiAgentAction {
+  type: "draft" | "subscription";
+  message_id?: number;
+  subscription_id?: number;
+  recipient?: string;
+  subject?: string;
+  kind?: string;
+  schedule?: string | null;
+}
+
+export interface HiChatMessage {
+  id?: number;
+  role: "user" | "assistant";
+  text: string;
+  actions?: HiAgentAction[];
+  created_at?: string;
+}
+
+export interface HiAgentHistory {
+  thread_id: string;
+  messages: HiChatMessage[];
+}
+
+export interface HiAgentResponse {
+  reply: string;
+  pending_actions: HiAgentAction[];
+  tools_used: Array<{ name: string }>;
+  thread_id?: string;
+  messages?: HiChatMessage[];
+}
+
 export interface CommHubTasksGrouped {
   todo: CommunicationTask[];
   waiting_supplier: CommunicationTask[];

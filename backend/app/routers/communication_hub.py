@@ -44,6 +44,7 @@ from .. import seed as seed_mod
 from ..services import agent_subscription_service as agent_subs
 from ..services import communication_message_service as msg_service
 from ..services import hi_agent_service
+from ..services import hi_agent_history_service as agent_history
 from ..services import notification_service as notif
 from ..services import user_service
 from ..services import po_followup_mail_service
@@ -1668,6 +1669,12 @@ class HubAgentConfirmIn(BaseModel):
     id: int
 
 
+class HubAgentDismissIn(BaseModel):
+    chat_message_id: int
+    action_type: str  # "draft" | "subscription"
+    id: int
+
+
 def _notify_agent_recipient(db: Session, msg: CommunicationMessage) -> bool:
     """Create an in-app notification for the recipient of a confirmed HI-agent send.
 
@@ -1734,6 +1741,17 @@ def _confirm_action(db: Session, *, action_type: str, action_id: int) -> dict[st
     return {"ok": False, "error": f"Unknown action_type: {action_type}"}
 
 
+@router.get("/agent/history")
+def get_agent_history(
+    procurement_record_id: int = Query(...),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Return the durable HI transcript for one PO-ID thread."""
+    if db.get(ProcurementRecord, procurement_record_id) is None:
+        raise HTTPException(404, "Purchase order not found")
+    return agent_history.history(db, procurement_record_id)
+
+
 @router.post("/agent")
 def run_agent(
     payload: HubAgentIn,
@@ -1752,7 +1770,13 @@ def run_agent(
             raise HTTPException(404, "Customer mail not found")
         customer_email = cmail.from_email
         customer_name = cmail.customer_name or cmail.from_name
-    return hi_agent_service.run(
+    prior_messages: list[dict[str, str]] = []
+    if payload.procurement_record_id is not None and payload.customer_mail_id is None:
+        if db.get(ProcurementRecord, payload.procurement_record_id) is None:
+            raise HTTPException(404, "Purchase order not found")
+        prior_messages = agent_history.llm_context(db, payload.procurement_record_id)
+
+    result = hi_agent_service.run(
         db, user=user, message=payload.message,
         supplier_id=payload.supplier_id,
         procurement_record_id=payload.procurement_record_id,
@@ -1760,7 +1784,19 @@ def run_agent(
         customer_mail_id=payload.customer_mail_id,
         customer_email=customer_email,
         customer_name=customer_name,
+        history=prior_messages,
     )
+    if payload.procurement_record_id is not None and payload.customer_mail_id is None:
+        agent_history.append_exchange(
+            db,
+            procurement_record_id=payload.procurement_record_id,
+            user_id=user.id,
+            user_text=payload.message.strip(),
+            assistant_text=result.get("reply") or "",
+            actions=result.get("pending_actions") or [],
+        )
+        result.update(agent_history.history(db, payload.procurement_record_id))
+    return result
 
 
 @router.post("/agent/confirm")
@@ -1772,3 +1808,22 @@ def confirm_agent_action(
     if not out["ok"]:
         raise HTTPException(409, out.get("error") or "Could not confirm action")
     return out
+
+
+@router.post("/agent/history/dismiss")
+def dismiss_agent_action(
+    payload: HubAgentDismissIn,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Hide a pending action from its persisted assistant message."""
+    if payload.action_type not in {"draft", "subscription"}:
+        raise HTTPException(422, "Unknown action type")
+    row = agent_history.dismiss_action(
+        db,
+        chat_message_id=payload.chat_message_id,
+        action_type=payload.action_type,
+        action_id=payload.id,
+    )
+    if row is None:
+        raise HTTPException(404, "Chat message not found")
+    return {"ok": True}

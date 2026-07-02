@@ -22,6 +22,7 @@ from app.database import Base  # noqa: E402
 from app.models import (  # noqa: E402,F401
     CommunicationMessage,
     CommunicationTask,
+    HiAgentChatMessage,
     MailHistory,
     Notification,
     ProcurementRecord,
@@ -281,6 +282,28 @@ class OwnedPoSucceedsTests(unittest.TestCase):
             for key in ("thread_id", "supplier_po_no", "signal", "risk_level", "messages"):
                 self.assertIn(key, thread)
             self.assertEqual(thread["supplier_po_no"], "OWNED")
+
+    def test_agent_history_is_scoped_to_owned_po(self):
+        with _temp_db() as db:
+            emp = _emp(db, "EMP1")
+            owned = _po(db, po="OWNED", name="ACME TOOLS", owner="EMP1")
+            foreign = _po(db, po="FOREIGN", name="ACME TOOLS", owner="EMP2")
+            db.add(HiAgentChatMessage(
+                thread_id=str(owned.id), procurement_record_id=owned.id,
+                user_id=emp.id, role="user", content="remember me", actions=[],
+            ))
+            db.commit()
+
+            out = hub.get_agent_history(
+                procurement_record_id=owned.id, user=emp, db=db,
+            )
+            self.assertEqual(out["thread_id"], str(owned.id))
+            self.assertEqual(out["messages"][0]["text"], "remember me")
+            with self.assertRaises(HTTPException) as ctx:
+                hub.get_agent_history(
+                    procurement_record_id=foreign.id, user=emp, db=db,
+                )
+            self.assertEqual(ctx.exception.status_code, 404)
 
     def test_mark_read_on_owned_po(self):
         with _temp_db() as db:
