@@ -26,6 +26,8 @@ import type {
   TaskAssignee,
   TaskAnalytics,
   WorkloadReport,
+  WorkloadSupplierDetail,
+  WorkloadUserDetail,
   CommunicationDashboard,
   PortalTaskDashboard,
   CommHubDashboard,
@@ -827,6 +829,14 @@ export const api = {
 
   // ─── Admin workload report ─────────────────────────────────────────────
   workloadReport: () => http<WorkloadReport>("/api/reports/workload"),
+  workloadUserDetail: (userId: number) =>
+    http<WorkloadUserDetail>(`/api/reports/workload/users/${userId}`),
+  workloadSupplierDetail: (supplierId: number) =>
+    http<WorkloadSupplierDetail>(`/api/reports/workload/suppliers/${supplierId}`),
+  workloadExportUrl: () => `/api/reports/workload/export`,
+  workloadUserExportUrl: (userId: number) => `/api/reports/workload/users/${userId}/export`,
+  workloadSupplierExportUrl: (supplierId: number) =>
+    `/api/reports/workload/suppliers/${supplierId}/export`,
 
   // ─── Supplier portal (supplier accounts only) ─────────────────────────
   portalMe: () => http<PortalMe>("/api/portal/me"),

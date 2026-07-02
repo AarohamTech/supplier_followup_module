@@ -1,4 +1,5 @@
-"""Admin workload reports — per-user, per-supplier, and overall rollups.
+"""Admin workload reports — per-user, per-supplier, and overall rollups,
+plus per-entity detail drill-downs and Excel exports (meeting hand-outs).
 
 One endpoint (`GET /api/reports/workload`) returns everything the admin
 reporting dashboard needs in a single round-trip:
@@ -16,10 +17,12 @@ Postgres (prod). Mounted admin-only in main.py.
 """
 from __future__ import annotations
 
+import io
 from datetime import datetime, timedelta
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
@@ -274,3 +277,413 @@ def workload_report(db: Session = Depends(get_db)) -> dict[str, Any]:
         "generated_at": datetime.utcnow(),
     }
     return {"overall": overall, "users": user_rows, "suppliers": supplier_rows}
+
+
+# ── Detail drill-downs ───────────────────────────────────────────────────────
+_ROW_CAP = 300
+
+
+def _days_overdue(dt: datetime | None) -> int | None:
+    if dt is None:
+        return None
+    delta = (datetime.utcnow() - dt).days
+    return delta if delta > 0 else 0
+
+
+def _pending_po_rows(db: Session, clause: Any) -> list[dict[str, Any]]:
+    R = ProcurementRecord
+    pending = (R.po_status.is_(None)) | (func.upper(R.po_status).notin_(_DELIVERED_STATUS))
+    rows = db.scalars(
+        select(R).where(clause, pending)
+        .order_by(R.shipment_date.asc().nullslast())
+        .limit(_ROW_CAP)
+    ).all()
+    return [
+        {
+            "procurement_record_id": r.id,
+            "supplier_po_no": r.supplier_po_no,
+            "supplier_name": r.supplier_name,
+            "material_name": r.material_name,
+            "qty": float(r.qty) if r.qty is not None else None,
+            "uom": r.uom,
+            "signal": r.signal,
+            "po_status": r.po_status,
+            "shipment_date": r.shipment_date,
+            "days_overdue": _days_overdue(r.shipment_date),
+            "followup_count": r.followup_count or 0,
+            "commitment_date": r.commitment_date,
+            "escalation_level": r.escalation_level,
+        }
+        for r in rows
+    ]
+
+
+def _open_task_rows(db: Session, clause: Any) -> list[dict[str, Any]]:
+    T = CommunicationTask
+    rows = db.scalars(
+        select(T).where(clause, T.status != "DONE")
+        .order_by(T.due_date.asc().nullslast(), T.priority.asc())
+        .limit(_ROW_CAP)
+    ).all()
+    return [
+        {
+            "id": t.id,
+            "title": t.title,
+            "priority": t.priority,
+            "status": t.status,
+            "signal": t.signal,
+            "task_source": t.task_source,
+            "supplier_name": t.supplier_name,
+            "supplier_po_no": t.supplier_po_no,
+            "due_date": t.due_date,
+            "days_overdue": _days_overdue(t.due_date),
+            "progress_percent": t.progress_percent or 0,
+        }
+        for t in rows
+    ]
+
+
+def _task_breakdowns(db: Session, clause: Any) -> dict[str, Any]:
+    """by_status / by_priority counts + avg cycle hours + 14-day throughput."""
+    T = CommunicationTask
+    by_status: dict[str, int] = {}
+    for status_, n in db.execute(
+        select(T.status, func.count(T.id)).where(clause).group_by(T.status)
+    ).all():
+        by_status[status_ or "?"] = int(n or 0)
+    by_priority: dict[str, int] = {}
+    for pri, n in db.execute(
+        select(T.priority, func.count(T.id)).where(clause).group_by(T.priority)
+    ).all():
+        by_priority[pri or "?"] = int(n or 0)
+
+    done = db.execute(
+        select(T.created_at, T.closed_at).where(clause, T.closed_at.is_not(None))
+        .order_by(T.closed_at.desc()).limit(500)
+    ).all()
+    cycles = [
+        (c2 - c1).total_seconds() / 3600.0 for c1, c2 in done if c1 and c2 and c2 >= c1
+    ]
+    avg_cycle_hours = round(sum(cycles) / len(cycles), 1) if cycles else None
+
+    # 14-day created/completed throughput (grouped in Python: cross-DB safe).
+    since = datetime.utcnow() - timedelta(days=13)
+    day0 = since.replace(hour=0, minute=0, second=0, microsecond=0)
+    days = [(day0 + timedelta(days=i)).date() for i in range(14)]
+    created_counts = dict.fromkeys(days, 0)
+    completed_counts = dict.fromkeys(days, 0)
+    for (created_at,) in db.execute(
+        select(T.created_at).where(clause, T.created_at >= day0)
+    ).all():
+        if created_at and created_at.date() in created_counts:
+            created_counts[created_at.date()] += 1
+    for (closed_at,) in db.execute(
+        select(T.closed_at).where(clause, T.closed_at >= day0)
+    ).all():
+        if closed_at and closed_at.date() in completed_counts:
+            completed_counts[closed_at.date()] += 1
+    throughput = [
+        {"day": d.isoformat(), "created": created_counts[d], "completed": completed_counts[d]}
+        for d in days
+    ]
+    return {
+        "by_status": by_status,
+        "by_priority": by_priority,
+        "avg_cycle_hours": avg_cycle_hours,
+        "throughput": throughput,
+    }
+
+
+def _user_detail(db: Session, user_id: int) -> dict[str, Any]:
+    u = db.get(User, user_id)
+    if u is None or u.supplier_id is not None:
+        raise HTTPException(404, "User not found")
+    R, T = ProcurementRecord, CommunicationTask
+    emp_code = (u.emp_code or "").strip()
+    po_clause = R.owner_emp_code == emp_code if emp_code else R.id.is_(None)
+    task_clause = T.assigned_to_user_id == u.id
+
+    po_row = db.execute(select(*_po_measures()).where(po_clause)).one()
+    task_row = db.execute(select(*_task_measures()).where(task_clause)).one()
+    return {
+        "user": {
+            "user_id": u.id,
+            "name": u.full_name or u.username or u.email,
+            "role": u.role,
+            "emp_code": u.emp_code,
+            "email": u.email,
+            "last_login_at": u.last_login_at,
+        },
+        "pos": _po_dict(po_row),
+        "tasks": _task_dict(task_row),
+        **_task_breakdowns(db, task_clause),
+        "pending_pos": _pending_po_rows(db, po_clause),
+        "open_tasks": _open_task_rows(db, task_clause),
+    }
+
+
+def _supplier_detail(db: Session, supplier_id: int) -> dict[str, Any]:
+    s = db.get(SupplierMaster, supplier_id)
+    if s is None:
+        raise HTTPException(404, "Supplier not found")
+    R, T, M, A = ProcurementRecord, CommunicationTask, CommunicationMessage, Asn
+    key = (s.supplier_name or "").upper()
+    po_clause = func.upper(R.supplier_name) == key
+    task_clause = func.upper(T.supplier_name) == key
+
+    po_row = db.execute(select(*_po_measures()).where(po_clause)).one()
+    task_row = db.execute(select(*_task_measures()).where(task_clause)).one()
+    po_d = _po_dict(po_row)
+
+    ml = db.execute(
+        select(
+            func.sum(case((M.direction == "INCOMING", 1), else_=0)),
+            func.sum(case((M.direction == "OUTGOING", 1), else_=0)),
+            func.sum(case(
+                (M.direction == "INCOMING", case((M.read_at.is_(None), 1), else_=0)),
+                else_=0,
+            )),
+        ).where(func.upper(M.supplier_name) == key)
+    ).one()
+    incoming, outgoing = _one(ml[0]), _one(ml[1])
+    asns = db.scalars(
+        select(A).where(func.upper(A.supplier_name) == key)
+        .order_by(A.created_at.desc()).limit(_ROW_CAP)
+    ).all()
+    return {
+        "supplier": {
+            "supplier_id": s.id,
+            "supplier_name": s.supplier_name,
+            "is_active": s.is_active,
+        },
+        "worst_signal": next(
+            (c for c in ("BLACK", "RED", "YELLOW", "GREEN") if po_d[c.lower()] > 0), None
+        ),
+        "pos": po_d,
+        "tasks": _task_dict(task_row),
+        **_task_breakdowns(db, task_clause),
+        "mails": {
+            "incoming": incoming,
+            "outgoing": outgoing,
+            "unread": _one(ml[2]),
+            "response_rate": round(incoming / outgoing, 2) if outgoing else None,
+        },
+        "asns": [
+            {
+                "id": a.id,
+                "asn_no": a.asn_no,
+                "supplier_po_no": a.supplier_po_no,
+                "status": a.status,
+                "status_label": a.status_label,
+                "progress_percent": a.progress_percent,
+                "carrier_name": a.carrier_name,
+                "tracking_no": a.tracking_no,
+                "eta": a.eta,
+                "alert": a.alert,
+            }
+            for a in asns
+        ],
+        "pending_pos": _pending_po_rows(db, po_clause),
+        "open_tasks": _open_task_rows(db, task_clause),
+    }
+
+
+@router.get("/workload/users/{user_id}")
+def workload_user_detail(user_id: int, db: Session = Depends(get_db)) -> dict[str, Any]:
+    return _user_detail(db, user_id)
+
+
+@router.get("/workload/suppliers/{supplier_id}")
+def workload_supplier_detail(supplier_id: int, db: Session = Depends(get_db)) -> dict[str, Any]:
+    return _supplier_detail(db, supplier_id)
+
+
+# ── Excel exports ────────────────────────────────────────────────────────────
+def _fmt_cell(v: Any) -> Any:
+    if isinstance(v, datetime):
+        return v.strftime("%Y-%m-%d %H:%M")
+    return v
+
+
+def _add_sheet(wb: Any, title: str, headers: list[str], rows: list[list[Any]]) -> None:
+    from openpyxl.styles import Font
+
+    ws = wb.create_sheet(title=title[:31])
+    ws.append(headers)
+    for c in ws[1]:
+        c.font = Font(bold=True)
+    for row in rows:
+        ws.append([_fmt_cell(v) for v in row])
+    ws.freeze_panes = "A2"
+    for idx, h in enumerate(headers, start=1):
+        width = max(len(str(h)) + 2, 12)
+        for row in rows[:50]:
+            if idx - 1 < len(row) and row[idx - 1] is not None:
+                width = max(width, min(len(str(row[idx - 1])) + 2, 48))
+        ws.column_dimensions[ws.cell(row=1, column=idx).column_letter].width = width
+
+
+def _workbook_bytes(wb: Any) -> bytes:
+    # Drop openpyxl's default empty sheet.
+    if "Sheet" in wb.sheetnames:
+        del wb["Sheet"]
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def _xlsx_response(data: bytes, filename: str) -> StreamingResponse:
+    return StreamingResponse(
+        iter([data]),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+_PENDING_PO_HEADERS = [
+    "PO No", "Supplier", "Material", "Qty", "UOM", "Signal", "PO Status",
+    "Shipment Date", "Days Overdue", "Follow-ups", "Commitment Date", "Escalation",
+]
+_OPEN_TASK_HEADERS = [
+    "Task", "Priority", "Status", "Signal", "Source", "Supplier", "PO No",
+    "Due Date", "Days Overdue", "Progress %",
+]
+
+
+def _pending_po_sheet_rows(rows: list[dict[str, Any]]) -> list[list[Any]]:
+    return [
+        [r["supplier_po_no"], r["supplier_name"], r["material_name"], r["qty"], r["uom"],
+         r["signal"], r["po_status"], r["shipment_date"], r["days_overdue"],
+         r["followup_count"], r["commitment_date"], r["escalation_level"]]
+        for r in rows
+    ]
+
+
+def _open_task_sheet_rows(rows: list[dict[str, Any]]) -> list[list[Any]]:
+    return [
+        [t["title"], t["priority"], t["status"], t["signal"], t["task_source"],
+         t["supplier_name"], t["supplier_po_no"], t["due_date"], t["days_overdue"],
+         t["progress_percent"]]
+        for t in rows
+    ]
+
+
+@router.get("/workload/export")
+def workload_export(db: Session = Depends(get_db)) -> StreamingResponse:
+    from openpyxl import Workbook
+
+    data = workload_report(db=db)
+    wb = Workbook()
+
+    o = data["overall"]
+    _add_sheet(wb, "Overview", ["Metric", "Value"], [
+        ["Generated", o["generated_at"]],
+        ["Internal users", o["internal_users"]],
+        ["Active suppliers", o["suppliers_active"]],
+        ["PO lines", o["pos"]["total"]],
+        ["Pending POs", o["pos"]["pending"]],
+        ["Overdue POs", o["pos"]["overdue"]],
+        ["Green / Yellow / Red / Black",
+         f'{o["pos"]["green"]} / {o["pos"]["yellow"]} / {o["pos"]["red"]} / {o["pos"]["black"]}'],
+        ["Open tasks", o["tasks"]["open"]],
+        ["Overdue tasks", o["tasks"]["overdue"]],
+        ["Tasks done", o["tasks"]["done"]],
+        ["Open escalations", o["tasks"]["escalations"]],
+        ["Unassigned open tasks", o["unassigned_open_tasks"]],
+        ["Unread inbound mail", o["unread_inbound"]],
+        ["ASNs in transit", o["asns_in_transit"]],
+    ])
+    _add_sheet(
+        wb, "Users",
+        ["User", "Role", "Emp Code", "PO Lines", "Pending POs", "Overdue POs",
+         "Red POs", "Black POs", "Open Tasks", "Overdue Tasks", "Due Today",
+         "Done", "Open Escalations", "Last Login"],
+        [
+            [u["name"], u["role"], u["emp_code"], u["pos"]["total"], u["pos"]["pending"],
+             u["pos"]["overdue"], u["pos"]["red"], u["pos"]["black"], u["tasks"]["open"],
+             u["tasks"]["overdue"], u["tasks"]["due_today"], u["tasks"]["done"],
+             u["tasks"]["escalations"], u["last_login_at"]]
+            for u in data["users"]
+        ],
+    )
+    _add_sheet(
+        wb, "Suppliers",
+        ["Supplier", "Worst Signal", "PO Lines", "Pending POs", "Overdue POs",
+         "Red POs", "Black POs", "Avg Follow-ups", "Open Tasks", "Open Escalations",
+         "Mail In", "Mail Out", "Unread", "ASNs", "In Transit", "Delivered"],
+        [
+            [s["supplier_name"], s["worst_signal"], s["pos"]["total"], s["pos"]["pending"],
+             s["pos"]["overdue"], s["pos"]["red"], s["pos"]["black"],
+             s["pos"]["avg_followups"], s["tasks"]["open"], s["tasks"]["escalations"],
+             s["mails"]["incoming"], s["mails"]["outgoing"], s["mails"]["unread"],
+             s["asns"]["total"], s["asns"]["in_transit"], s["asns"]["delivered"]]
+            for s in data["suppliers"]
+        ],
+    )
+    stamp = datetime.utcnow().strftime("%Y-%m-%d")
+    return _xlsx_response(_workbook_bytes(wb), f"workload-report-{stamp}.xlsx")
+
+
+def _entity_workbook(detail: dict[str, Any], summary_rows: list[list[Any]]) -> bytes:
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    _add_sheet(wb, "Summary", ["Metric", "Value"], summary_rows)
+    _add_sheet(wb, "Pending POs", _PENDING_PO_HEADERS,
+               _pending_po_sheet_rows(detail["pending_pos"]))
+    _add_sheet(wb, "Open Tasks", _OPEN_TASK_HEADERS,
+               _open_task_sheet_rows(detail["open_tasks"]))
+    if "asns" in detail:
+        _add_sheet(
+            wb, "Shipments",
+            ["ASN", "PO No", "Status", "Progress %", "Carrier", "Tracking", "ETA", "Alert"],
+            [
+                [a["asn_no"], a["supplier_po_no"], a["status_label"] or a["status"],
+                 a["progress_percent"], a["carrier_name"], a["tracking_no"],
+                 a["eta"], "YES" if a["alert"] else ""]
+                for a in detail["asns"]
+            ],
+        )
+    return _workbook_bytes(wb)
+
+
+@router.get("/workload/users/{user_id}/export")
+def workload_user_export(user_id: int, db: Session = Depends(get_db)) -> StreamingResponse:
+    d = _user_detail(db, user_id)
+    u, p, t = d["user"], d["pos"], d["tasks"]
+    rows = [
+        ["User", u["name"]], ["Role", u["role"]], ["Emp code", u["emp_code"]],
+        ["Generated", datetime.utcnow()],
+        ["PO lines owned", p["total"]], ["Pending POs", p["pending"]],
+        ["Overdue POs", p["overdue"]],
+        ["Green / Yellow / Red / Black",
+         f'{p["green"]} / {p["yellow"]} / {p["red"]} / {p["black"]}'],
+        ["Open tasks", t["open"]], ["Overdue tasks", t["overdue"]],
+        ["Due today", t["due_today"]], ["Done", t["done"]],
+        ["Open escalations", t["escalations"]],
+        ["Avg task cycle (hours)", d["avg_cycle_hours"]],
+    ]
+    slug = "".join(ch for ch in (u["name"] or "user") if ch.isalnum() or ch in " -_").strip().replace(" ", "-")[:40]
+    return _xlsx_response(_entity_workbook(d, rows), f"workload-{slug or 'user'}.xlsx")
+
+
+@router.get("/workload/suppliers/{supplier_id}/export")
+def workload_supplier_export(supplier_id: int, db: Session = Depends(get_db)) -> StreamingResponse:
+    d = _supplier_detail(db, supplier_id)
+    s, p, t, m = d["supplier"], d["pos"], d["tasks"], d["mails"]
+    rows = [
+        ["Supplier", s["supplier_name"]], ["Generated", datetime.utcnow()],
+        ["Worst signal", d["worst_signal"]],
+        ["PO lines", p["total"]], ["Pending POs", p["pending"]],
+        ["Overdue POs", p["overdue"]],
+        ["Green / Yellow / Red / Black",
+         f'{p["green"]} / {p["yellow"]} / {p["red"]} / {p["black"]}'],
+        ["Avg follow-ups per line", p["avg_followups"]],
+        ["Open tasks", t["open"]], ["Open escalations", t["escalations"]],
+        ["Mail incoming / outgoing", f'{m["incoming"]} / {m["outgoing"]}'],
+        ["Unread inbound", m["unread"]],
+        ["Reply rate (in/out)", m["response_rate"]],
+        ["Shipments (total)", len(d["asns"])],
+    ]
+    slug = "".join(ch for ch in (s["supplier_name"] or "supplier") if ch.isalnum() or ch in " -_").strip().replace(" ", "-")[:40]
+    return _xlsx_response(_entity_workbook(d, rows), f"workload-{slug or 'supplier'}.xlsx")

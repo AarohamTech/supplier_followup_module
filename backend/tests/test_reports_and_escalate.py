@@ -201,5 +201,101 @@ class WorkloadReportTests(unittest.TestCase):
             self.assertEqual(data["overall"]["suppliers_active"], 1)
 
 
+class WorkloadDetailTests(unittest.TestCase):
+    def _seed_workload(self, db):
+        sup, staff, emp, sup_user, r1, r2 = _seed(db)
+        now = datetime.utcnow()
+        db.add_all([
+            CommunicationTask(
+                title="Chase PO-1", supplier_name="ACME TOOLS",
+                supplier_po_no="PO-1", status="TODO", priority="P1",
+                assigned_to_user_id=emp.id, assigned_to="Desk Owner",
+                due_date=now - timedelta(hours=3),
+            ),
+            CommunicationTask(
+                title="Done task", supplier_name="ACME TOOLS",
+                status="DONE", priority="P2",
+                assigned_to_user_id=emp.id, assigned_to="Desk Owner",
+                closed_at=now,
+            ),
+        ])
+        asn_service.create_asn(
+            db, supplier_id=sup.id, supplier_name="ACME TOOLS",
+            supplier_po_no="PO-1", submit=True,
+        )
+        db.commit()
+        return sup, emp
+
+    def test_user_detail_shape(self):
+        with _temp_db() as db:
+            _, emp = self._seed_workload(db)
+            d = reports_router.workload_user_detail(emp.id, db=db)
+            self.assertEqual(d["user"]["emp_code"], "E1")
+            self.assertEqual(d["pos"]["pending"], 1)
+            self.assertEqual(len(d["pending_pos"]), 1)
+            self.assertEqual(d["pending_pos"][0]["supplier_po_no"], "PO-1")
+            self.assertGreaterEqual(d["pending_pos"][0]["days_overdue"], 1)
+            self.assertEqual(len(d["open_tasks"]), 1)
+            self.assertEqual(d["by_status"].get("TODO"), 1)
+            self.assertEqual(d["by_priority"].get("P1"), 1)
+            self.assertEqual(len(d["throughput"]), 14)
+            # One task created + one completed today (last throughput bucket).
+            self.assertGreaterEqual(d["throughput"][-1]["created"], 1)
+            self.assertGreaterEqual(d["throughput"][-1]["completed"], 1)
+
+    def test_supplier_detail_shape(self):
+        with _temp_db() as db:
+            sup, _ = self._seed_workload(db)
+            d = reports_router.workload_supplier_detail(sup.id, db=db)
+            self.assertEqual(d["supplier"]["supplier_name"], "ACME TOOLS")
+            self.assertEqual(d["worst_signal"], "RED")
+            self.assertEqual(d["pos"]["pending"], 1)
+            self.assertEqual(len(d["asns"]), 1)
+            self.assertEqual(d["tasks"]["open"], 1)
+
+    def test_detail_404s(self):
+        from fastapi import HTTPException
+
+        with _temp_db() as db:
+            _seed(db)
+            with self.assertRaises(HTTPException):
+                reports_router.workload_user_detail(99999, db=db)
+            with self.assertRaises(HTTPException):
+                reports_router.workload_supplier_detail(99999, db=db)
+
+    def test_exports_are_valid_workbooks(self):
+        import asyncio
+        import io as _io
+
+        from openpyxl import load_workbook
+
+        with _temp_db() as db:
+            sup, emp = self._seed_workload(db)
+
+            def _bytes(resp):
+                async def _collect():
+                    return b"".join([chunk async for chunk in resp.body_iterator])
+                return asyncio.run(_collect())
+
+            full = load_workbook(_io.BytesIO(_bytes(reports_router.workload_export(db=db))))
+            self.assertEqual(full.sheetnames, ["Overview", "Users", "Suppliers"])
+            users_ws = full["Users"]
+            self.assertGreaterEqual(users_ws.max_row, 3)  # header + 2 users
+
+            per_user = load_workbook(
+                _io.BytesIO(_bytes(reports_router.workload_user_export(emp.id, db=db)))
+            )
+            self.assertEqual(per_user.sheetnames, ["Summary", "Pending POs", "Open Tasks"])
+            self.assertEqual(per_user["Pending POs"].max_row, 2)  # header + PO-1
+
+            per_sup = load_workbook(
+                _io.BytesIO(_bytes(reports_router.workload_supplier_export(sup.id, db=db)))
+            )
+            self.assertEqual(
+                per_sup.sheetnames, ["Summary", "Pending POs", "Open Tasks", "Shipments"]
+            )
+            self.assertEqual(per_sup["Shipments"].max_row, 2)  # header + 1 ASN
+
+
 if __name__ == "__main__":
     unittest.main()

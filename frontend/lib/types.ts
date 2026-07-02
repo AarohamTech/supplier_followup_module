@@ -406,6 +406,82 @@ export interface WorkloadReport {
   suppliers: WorkloadSupplierRow[];
 }
 
+export interface WorkloadPendingPo {
+  procurement_record_id: number;
+  supplier_po_no: string;
+  supplier_name?: string | null;
+  material_name: string;
+  qty?: number | null;
+  uom?: string | null;
+  signal?: string | null;
+  po_status?: string | null;
+  shipment_date?: string | null;
+  days_overdue?: number | null;
+  followup_count: number;
+  commitment_date?: string | null;
+  escalation_level?: string | null;
+}
+
+export interface WorkloadOpenTask {
+  id: number;
+  title: string;
+  priority: string;
+  status: string;
+  signal?: string | null;
+  task_source?: string | null;
+  supplier_name?: string | null;
+  supplier_po_no?: string | null;
+  due_date?: string | null;
+  days_overdue?: number | null;
+  progress_percent: number;
+}
+
+export interface WorkloadThroughputDay {
+  day: string;
+  created: number;
+  completed: number;
+}
+
+export interface WorkloadDetailCommon {
+  pos: WorkloadPoStats;
+  tasks: WorkloadTaskStats;
+  by_status: Record<string, number>;
+  by_priority: Record<string, number>;
+  avg_cycle_hours: number | null;
+  throughput: WorkloadThroughputDay[];
+  pending_pos: WorkloadPendingPo[];
+  open_tasks: WorkloadOpenTask[];
+}
+
+export interface WorkloadUserDetail extends WorkloadDetailCommon {
+  user: {
+    user_id: number;
+    name: string;
+    role: string;
+    emp_code?: string | null;
+    email?: string | null;
+    last_login_at?: string | null;
+  };
+}
+
+export interface WorkloadSupplierDetail extends WorkloadDetailCommon {
+  supplier: { supplier_id: number; supplier_name: string; is_active: boolean };
+  worst_signal?: string | null;
+  mails: { incoming: number; outgoing: number; unread: number; response_rate: number | null };
+  asns: Array<{
+    id: number;
+    asn_no: string;
+    supplier_po_no?: string | null;
+    status: string;
+    status_label?: string | null;
+    progress_percent: number;
+    carrier_name?: string | null;
+    tracking_no?: string | null;
+    eta?: string | null;
+    alert: boolean;
+  }>;
+}
+
 export interface TaskAnalytics {
   totals: { total: number; open: number; overdue: number; done: number; due_today: number };
   by_status: Record<string, number>;
