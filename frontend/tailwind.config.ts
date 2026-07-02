@@ -7,7 +7,10 @@ const v = (name: string) => `rgb(var(${name}) / <alpha-value>)`;
 
 export default {
   darkMode: "class",
-  content: ["./app/**/*.{ts,tsx}", "./components/**/*.{ts,tsx}"],
+  // NOTE: lib/** must be scanned too — signal/ASN colour classes live in
+  // lib/format.ts (signalClass, signalDot) and lib/asn.ts (STAGE_META, signalBadge).
+  // Leaving it out purges those dynamic classes, so pills/badges render uncoloured.
+  content: ["./app/**/*.{ts,tsx}", "./components/**/*.{ts,tsx}", "./lib/**/*.{ts,tsx}"],
   theme: {
     extend: {
       colors: {

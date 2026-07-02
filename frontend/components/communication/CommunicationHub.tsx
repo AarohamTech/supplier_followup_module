@@ -85,6 +85,17 @@ export interface CommunicationHubProps {
 // Constants
 // ─────────────────────────────────────────────────────────────────────────────
 
+type HiAgentAction = {
+  type: "draft" | "subscription";
+  message_id?: number;
+  subscription_id?: number;
+  recipient?: string;
+  subject?: string;
+  kind?: string;
+  schedule?: string | null;
+};
+type HiChatMessage = { role: "user" | "assistant"; text: string; actions?: HiAgentAction[] };
+
 const TEMPLATES: { label: string; body: string }[] = [
   {
     label: "Professional",
@@ -334,10 +345,11 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
   const [sendAsEmail, setSendAsEmail] = useState(true);
   const [replying, setReplying] = useState(false);
   const [agentBusy, setAgentBusy] = useState(false);
-  const [agentReply, setAgentReply] = useState<string | null>(null);
-  const [agentActions, setAgentActions] = useState<
-    Array<{ type: "draft" | "subscription"; message_id?: number; subscription_id?: number; recipient?: string; subject?: string; kind?: string; schedule?: string | null }>
-  >([]);
+  // /hi conversation lives in a dedicated right-side chat panel.
+  const [hiOpen, setHiOpen] = useState(false);
+  const [hiMessages, setHiMessages] = useState<HiChatMessage[]>([]);
+  const [hiInput, setHiInput] = useState("");
+  const hiEndRef = useRef<HTMLDivElement | null>(null);
   const [mentionList, setMentionList] = useState<TaskAssignee[]>([]);
   const [taskAssignees, setTaskAssignees] = useState<TaskAssignee[]>([]);
   const [mentionIdx, setMentionIdx] = useState(0);
@@ -827,9 +839,9 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
 
   const handleAgent = async (message: string) => {
     if (!activePo || agentBusy) return;
+    setHiOpen(true);
+    setHiMessages((prev) => [...prev, { role: "user", text: message }]);
     setAgentBusy(true);
-    setAgentReply(null);
-    setAgentActions([]);
     try {
       const res = await hub.agent({
         message,
@@ -837,15 +849,52 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
         procurement_record_id: activePo.procurement_record_id,
         supplier_po_no: activePo.supplier_po_no,
       });
-      setAgentReply(res.reply || "(no response)");
-      setAgentActions(res.pending_actions ?? []);
-      setComposer("");
+      setHiMessages((prev) => [
+        ...prev,
+        { role: "assistant", text: res.reply || "(no response)", actions: res.pending_actions ?? [] },
+      ]);
     } catch (e: unknown) {
-      setAgentReply(e instanceof Error ? e.message : "HI agent could not respond.");
+      setHiMessages((prev) => [
+        ...prev,
+        { role: "assistant", text: e instanceof Error ? e.message : "HI agent could not respond." },
+      ]);
     } finally {
       setAgentBusy(false);
     }
   };
+
+  // The right-panel's own follow-up input (no /hi prefix needed there).
+  const sendHi = () => {
+    const t = hiInput.trim();
+    if (!t || agentBusy || !activePo) return;
+    setHiInput("");
+    void handleAgent(t);
+  };
+
+  const confirmAgentAction = async (msgIndex: number, actionIndex: number) => {
+    const action = hiMessages[msgIndex]?.actions?.[actionIndex];
+    if (!action) return;
+    try {
+      await hub.agentConfirm({
+        action_type: action.type,
+        id: (action.message_id ?? action.subscription_id) as number,
+      });
+      pushToast("ok", action.type === "draft" ? "Sent" : "Confirmed");
+      setHiMessages((prev) =>
+        prev.map((m, i) =>
+          i === msgIndex ? { ...m, actions: (m.actions ?? []).filter((_, j) => j !== actionIndex) } : m,
+        ),
+      );
+      if (activePo) await loadThread(activePo.procurement_record_id);
+    } catch (e: unknown) {
+      pushToast("err", e instanceof Error ? e.message : "Confirm failed");
+    }
+  };
+
+  // Keep the HI chat scrolled to the latest message.
+  useEffect(() => {
+    if (hiOpen) hiEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [hiMessages, agentBusy, hiOpen]);
 
   const handleSendReply = async () => {
     const text = composer.trim();
@@ -1316,59 +1365,8 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
                 <div ref={threadEndRef} />
               </div>
 
-              {/* Composer — minimal */}
+              {/* Composer — minimal. /hi responses now open the HI chat panel (right). */}
               <div className="border-t border-brand-border px-5 py-3">
-                {/* HI agent response + confirm cards */}
-                {(agentReply || agentBusy) && (
-                  <div className="mb-2 rounded-lg border border-signal-red/30 bg-red-50/70 p-3 text-sm">
-                    <div className="mb-1 flex items-center gap-1.5 font-semibold text-signal-red">
-                      <Sparkles size={13} /> HI agent
-                      <button
-                        className="ml-auto text-[11px] font-normal text-brand-muted hover:text-brand-dark"
-                        onClick={() => { setAgentReply(null); setAgentActions([]); }}
-                      >
-                        dismiss
-                      </button>
-                    </div>
-                    {agentBusy ? (
-                      <div className="text-brand-muted">Thinking…</div>
-                    ) : (
-                      <div className="whitespace-pre-wrap text-brand-dark">{agentReply}</div>
-                    )}
-                    {agentActions.map((a, i) => (
-                      <div key={i} className="mt-2 flex items-center justify-between gap-2 rounded border border-brand-border bg-card p-2">
-                        <span className="min-w-0 truncate text-brand-dark">
-                          {a.type === "draft"
-                            ? `✉️ Email${a.recipient ? ` to ${a.recipient}` : ""}${a.subject ? `: ${a.subject}` : ""}`
-                            : `🔔 ${a.kind === "SCHEDULED_SUMMARY" ? "Scheduled summary" : "Followup"}${a.recipient ? ` for ${a.recipient}` : ""}${a.schedule ? ` (${a.schedule})` : ""}`}
-                        </span>
-                        <span className="flex shrink-0 gap-1.5">
-                          <button
-                            className="rounded-md bg-signal-red px-3 py-1 text-xs font-semibold text-white hover:opacity-90"
-                            onClick={async () => {
-                              try {
-                                await hub.agentConfirm({ action_type: a.type, id: (a.message_id ?? a.subscription_id) as number });
-                                pushToast("ok", a.type === "draft" ? "Sent" : "Confirmed");
-                                setAgentActions((prev) => prev.filter((_, j) => j !== i));
-                                if (activePo) await loadThread(activePo.procurement_record_id);
-                              } catch (e: unknown) {
-                                pushToast("err", e instanceof Error ? e.message : "Confirm failed");
-                              }
-                            }}
-                          >
-                            {a.type === "draft" ? "Send" : "Confirm"}
-                          </button>
-                          <button
-                            className="rounded-md border border-brand-border px-3 py-1 text-xs text-brand-muted hover:bg-subtle"
-                            onClick={() => setAgentActions((prev) => prev.filter((_, j) => j !== i))}
-                          >
-                            Cancel
-                          </button>
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
                 {/* /hi command hint */}
                 {/^\/hi\b/i.test(composer) && (
                   <div className="mb-2 rounded-lg border border-signal-red/20 bg-card p-2 text-[11px] text-brand-muted">
@@ -1490,8 +1488,121 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
           )}
         </main>
 
-        {/* RIGHT — details + actions (collapsible) */}
-        {detailsOpen ? (
+        {/* RIGHT — HI chat panel (when a /hi command is sent) OR details + actions */}
+        {hiOpen ? (
+          <aside className="flex w-[360px] shrink-0 flex-col overflow-hidden rounded-xl border border-signal-red/30 bg-card shadow-sm">
+            <div className="flex items-center justify-between border-b border-brand-border px-4 py-3">
+              <div className="flex min-w-0 items-center gap-1.5">
+                <Sparkles size={15} className="shrink-0 text-signal-red" />
+                <div className="min-w-0">
+                  <div className="text-sm font-semibold text-brand-dark">HI Assistant</div>
+                  <div className="truncate text-[11px] text-brand-muted">
+                    {activePo ? `PO #${activePo.supplier_po_no}` : "Ask about this thread"}
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={() => setHiOpen(false)}
+                className="rounded-md p-1.5 text-brand-muted hover:bg-subtle"
+                title="Close HI chat"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="flex-1 space-y-3 overflow-y-auto p-3">
+              {hiMessages.length === 0 && !agentBusy && (
+                <div className="mt-6 text-center text-xs text-brand-muted">
+                  Ask HI to summarise the thread, draft a reply, or set up a followup.
+                </div>
+              )}
+              {hiMessages.map((msg, mi) => (
+                <div key={mi} className={msg.role === "user" ? "flex justify-end" : "flex justify-start"}>
+                  <div
+                    className={
+                      "max-w-[85%] rounded-lg px-3 py-2 text-sm " +
+                      (msg.role === "user"
+                        ? "bg-signal-red text-white"
+                        : "border border-brand-border bg-subtle/60 text-brand-dark")
+                    }
+                  >
+                    <div className="whitespace-pre-wrap leading-relaxed">{msg.text}</div>
+                    {(msg.actions ?? []).map((a, ai) => (
+                      <div
+                        key={ai}
+                        className="mt-2 flex items-center justify-between gap-2 rounded border border-brand-border bg-card p-2 text-xs text-brand-dark"
+                      >
+                        <span className="min-w-0 truncate">
+                          {a.type === "draft"
+                            ? `✉️ Email${a.recipient ? ` to ${a.recipient}` : ""}${a.subject ? `: ${a.subject}` : ""}`
+                            : `🔔 ${a.kind === "SCHEDULED_SUMMARY" ? "Scheduled summary" : "Followup"}${a.recipient ? ` for ${a.recipient}` : ""}${a.schedule ? ` (${a.schedule})` : ""}`}
+                        </span>
+                        <span className="flex shrink-0 gap-1.5">
+                          <button
+                            className="rounded-md bg-signal-red px-2.5 py-1 text-[11px] font-semibold text-white hover:opacity-90"
+                            onClick={() => void confirmAgentAction(mi, ai)}
+                          >
+                            {a.type === "draft" ? "Send" : "Confirm"}
+                          </button>
+                          <button
+                            className="rounded-md border border-brand-border px-2.5 py-1 text-[11px] text-brand-muted hover:bg-subtle"
+                            onClick={() =>
+                              setHiMessages((prev) =>
+                                prev.map((m, j) =>
+                                  j === mi ? { ...m, actions: (m.actions ?? []).filter((_, k) => k !== ai) } : m,
+                                ),
+                              )
+                            }
+                          >
+                            Dismiss
+                          </button>
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+              {agentBusy && (
+                <div className="flex justify-start">
+                  <div className="inline-flex items-center gap-1.5 rounded-lg border border-brand-border bg-subtle/60 px-3 py-2 text-sm text-brand-muted">
+                    <Loader2 size={13} className="animate-spin" /> Thinking…
+                  </div>
+                </div>
+              )}
+              <div ref={hiEndRef} />
+            </div>
+
+            <div className="border-t border-brand-border p-3">
+              {noPo ? (
+                <div className="text-center text-[11px] text-brand-muted">Select a PO to chat with HI.</div>
+              ) : (
+                <div className="flex items-end gap-2">
+                  <textarea
+                    value={hiInput}
+                    onChange={(e) => setHiInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        sendHi();
+                      }
+                    }}
+                    rows={2}
+                    placeholder="Ask HI…"
+                    className="flex-1 resize-none rounded-lg border border-brand-border bg-subtle p-2 text-sm outline-none focus:border-signal-red/40 focus:bg-card"
+                  />
+                  <button
+                    className="rounded-md bg-signal-red p-2 text-white shadow-sm hover:opacity-90 disabled:opacity-50"
+                    disabled={!hiInput.trim() || agentBusy}
+                    onClick={() => sendHi()}
+                    title="Ask HI"
+                  >
+                    <Send size={16} />
+                  </button>
+                </div>
+              )}
+            </div>
+          </aside>
+        ) : detailsOpen ? (
           <aside className="flex w-[330px] shrink-0 flex-col overflow-hidden rounded-xl border border-brand-border bg-card shadow-sm">
             <div className="flex items-center justify-between border-b border-brand-border px-4 py-3">
               <div className="min-w-0">
