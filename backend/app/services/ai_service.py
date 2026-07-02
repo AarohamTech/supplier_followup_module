@@ -400,17 +400,25 @@ def suggest_customer_reply(
 
 # ── Agentic chat (tool calling) ──────────────────────────────────────────────
 def _agent_completion(convo: list[dict[str, Any]], provider: str,
-                      tools: list[dict[str, Any]] | None, cache_key: str | None):
-    """One agent-loop completion on the given provider."""
+                      tools: list[dict[str, Any]] | None, cache_key: str | None,
+                      tool_choice: str = "auto"):
+    """One agent-loop completion on the given provider.
+
+    `tool_choice="required"` (OpenAI only — the primary endpoint may not
+    support it, so it silently stays "auto" there) forces the model to call a
+    tool instead of answering in prose."""
     agent_timeout = settings.LLM_AGENT_TIMEOUT_SECONDS
     if provider == "openai":
         extra = _openai_extra(background=False, cache_key=cache_key)
+        if settings.OPENAI_AGENT_REASONING_EFFORT:
+            # Tool-call decisions need more thought than plain completions.
+            extra["reasoning_effort"] = settings.OPENAI_AGENT_REASONING_EFFORT
         if tools is not None:
             return _openai_client().chat.completions.create(
                 model=settings.OPENAI_MODEL,
                 messages=convo,
                 tools=tools,
-                tool_choice="auto",
+                tool_choice=tool_choice,
                 stream=False,
                 timeout=agent_timeout,
                 extra_body=extra,
@@ -452,6 +460,7 @@ def chat_with_tools(
     max_rounds: int | None = None,
     prefer_openai: bool = False,
     cache_key: str = "agent",
+    force_tools_first: bool = False,
 ) -> dict[str, Any]:
     """Run an agentic chat turn. The model may call `tools`; `executor(name, args)`
     runs each call and its JSON result is fed back until the model answers.
@@ -460,6 +469,10 @@ def chat_with_tools(
     with the primary endpoint as fallback; otherwise the order is reversed. If a
     provider dies mid-conversation we switch to the next one and keep the convo
     (tool results already executed are never re-run).
+
+    `force_tools_first=True` makes the FIRST round require a tool call (OpenAI
+    provider only) — used when the user's message clearly asks for an action
+    (draft/send/forward), so the model can't answer in prose and skip the tool.
 
     Returns {"reply": str, "tools_used": [{"name","args"}...]}.
     """
@@ -473,10 +486,11 @@ def chat_with_tools(
     ]
     used: list[dict[str, Any]] = []
 
-    def call(tools_arg: list[dict[str, Any]] | None):
+    def call(tools_arg: list[dict[str, Any]] | None, tool_choice: str = "auto"):
         while True:
             try:
-                return _agent_completion(convo, providers[0], tools_arg, cache_key)
+                return _agent_completion(convo, providers[0], tools_arg, cache_key,
+                                         tool_choice=tool_choice)
             except Exception:  # noqa: BLE001
                 failed = providers.pop(0)
                 if not providers:
@@ -484,8 +498,11 @@ def chat_with_tools(
                 log.warning("agent provider '%s' failed; switching to '%s'",
                             failed, providers[0], exc_info=True)
 
-    for _ in range(max(1, rounds)):
-        completion = call(tools)
+    for round_no in range(max(1, rounds)):
+        completion = call(
+            tools,
+            tool_choice="required" if (force_tools_first and round_no == 0) else "auto",
+        )
         msg = completion.choices[0].message
         tool_calls = getattr(msg, "tool_calls", None) or []
         if not tool_calls:

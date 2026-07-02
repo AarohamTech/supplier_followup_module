@@ -79,6 +79,9 @@ class Settings(BaseSettings):
     # gpt-5 reasoning effort: minimal | low | medium | high. "minimal" keeps
     # drafting fast and cheap; raise only if draft quality needs it.
     OPENAI_REASONING_EFFORT: str = Field(default="minimal")
+    # The agentic tool-calling loop needs better tool decisions than "minimal"
+    # gives (at minimal the model tends to chat instead of calling tools).
+    OPENAI_AGENT_REASONING_EFFORT: str = Field(default="low")
     # gpt-5 rejects `max_tokens` and counts hidden reasoning tokens against the
     # completion budget, so this needs more headroom than LLM_MAX_TOKENS.
     OPENAI_MAX_COMPLETION_TOKENS: int = Field(default=2048)

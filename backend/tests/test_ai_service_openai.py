@@ -136,6 +136,19 @@ class AgentRoutingTests(unittest.TestCase):
         self.assertEqual(kw["model"], settings.OPENAI_MODEL)
         self.assertEqual(kw["extra_body"]["prompt_cache_key"], "sfm-hi-agent")
 
+    def test_force_tools_first_requires_tool_call(self) -> None:
+        backup = _FakeClient(results=[_completion("done")])
+        with _both_enabled(), patch.object(ai_service, "_openai_client", return_value=backup):
+            ai_service.chat_with_tools(
+                [{"role": "user", "content": "send it"}],
+                tools=[{"type": "function", "function": {"name": "t", "parameters": {}}}],
+                executor=lambda name, args: {},
+                system="test system",
+                prefer_openai=True,
+                force_tools_first=True,
+            )
+        self.assertEqual(backup.calls[0]["tool_choice"], "required")
+
     def test_agent_switches_provider_on_failure(self) -> None:
         primary = _FakeClient(results=[RuntimeError("nim down")])
         backup = _FakeClient(results=[_completion("recovered")])

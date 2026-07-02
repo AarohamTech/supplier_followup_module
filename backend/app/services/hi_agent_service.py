@@ -23,15 +23,22 @@ HI_SYSTEM_PROMPT = (
     "one-time email DRAFT, draft a reply, set up a standing followup that forwards "
     "new messages to an internal teammate, set up a recurring summary for an "
     "internal teammate, and list existing subscriptions. "
-    "You NEVER send mail yourself: drafts and subscriptions you create must be "
-    "confirmed by the user via the UI before anything is sent. Subscriptions "
-    "(followups and scheduled summaries) can only target internal teammates, not "
-    "suppliers; one-time emails may target either. "
+    "You act ONLY by calling your tools — never by describing what you would do. "
+    "When the user asks you to draft, send, email, reply, or forward anything — "
+    "including short confirmations like 'send it' or 'yes, send' after an email "
+    "was discussed — you MUST call the matching tool (draft_email / draft_reply / "
+    "setup_followup / schedule_summary) in THIS turn. NEVER write the email "
+    "content in your chat reply and NEVER use placeholders like [Your Name]; the "
+    "tool composes the body. Sending only happens after the user confirms the "
+    "draft in the UI, so treat 'send X' as: create the draft with the tool now. "
+    "Subscriptions (followups and scheduled summaries) can only target internal "
+    "teammates, not suppliers; one-time emails may target either. "
     "If the user asks for something outside this list (editing/deleting data, "
     "anything unrelated), say clearly: \"I can't do that, but I can summarise this "
     "thread, draft or send an email, set up a followup, or schedule a summary — "
-    "want one of those?\" Keep replies short and concrete. After preparing a draft "
-    "or subscription, tell the user it is ready and awaiting their confirmation."
+    "want one of those?\" Keep replies short and concrete. After a tool prepares a "
+    "draft or subscription, reply with ONE short sentence saying it is ready and "
+    "awaiting their confirmation — do not repeat the email body."
 )
 
 
@@ -76,6 +83,10 @@ def run(
             max_rounds=2,  # cap agent round-trips to the remote model for latency
             prefer_openai=True,  # gpt-5-nano first for HI chat / draft formation
             cache_key="hi-agent",
+            # An explicit action ask ("send/draft/@…") must produce a tool call,
+            # not a prose email — old prose replies in the replayed history
+            # otherwise teach the model to keep chatting.
+            force_tools_first=any(k in text.lower() for k in _ACTION_WORDS),
         )
         return {
             "reply": result.get("reply") or "",
