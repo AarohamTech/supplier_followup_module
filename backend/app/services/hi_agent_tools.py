@@ -167,9 +167,15 @@ def tool_summarize(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
     transcript = build_transcript(rows)
     if not transcript:
         return {"summary": "There are no messages in this thread yet."}
-    if ai_service.is_enabled():
+    if ai_service.any_enabled():
         try:
-            return {"summary": ai_service.summarize_thread(transcript)}
+            # Scheduler-dispatched summaries have no user → background (flex)
+            # pricing; interactive HI chat prefers gpt-5-nano.
+            return {"summary": ai_service.summarize_thread(
+                transcript,
+                background=ctx.user is None,
+                prefer_openai=ctx.user is not None,
+            )}
         except Exception:  # noqa: BLE001
             log.exception("summarize_thread failed; using fallback")
     # Deterministic fallback: last inbound + counts.
@@ -189,12 +195,14 @@ def tool_action_items(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
     transcript = build_transcript(rows)
     if not transcript:
         return {"items": [], "note": "No messages to analyse."}
-    if ai_service.is_enabled():
+    if ai_service.any_enabled():
         try:
             data = ai_service.complete_json(
                 "Extract open action items and unanswered questions from this "
                 'procurement thread. Return STRICT JSON {"items": ["...", "..."]}.',
                 transcript[:6000],
+                cache_key="action-items",
+                prefer_openai=ctx.user is not None,
             )
             items = data.get("items")
             if isinstance(items, list):
@@ -376,7 +384,7 @@ def tool_draft_reply(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
     instruction = (args.get("instruction") or "").strip()
     is_customer = ctx.customer_mail_id is not None
     body = ""
-    if ai_service.is_enabled():
+    if ai_service.any_enabled():
         try:
             body = ai_service.suggest_customer_reply(
                 customer_name=ctx.customer_name if is_customer else None,
@@ -384,6 +392,7 @@ def tool_draft_reply(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
                 customer_message=last_incoming,
                 supplier_po_no=None if is_customer else ctx.supplier_po_no,
                 instruction=instruction or None,
+                prefer_openai=True,  # HI drafts form on gpt-5-nano first
             )
         except Exception:  # noqa: BLE001
             log.exception("suggest_customer_reply failed; using fallback body")

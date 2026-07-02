@@ -64,6 +64,30 @@ class Settings(BaseSettings):
     # fast helpers above (free-tier 70B tool-calling can take ~30-40s per call).
     LLM_AGENT_TIMEOUT_SECONDS: float = Field(default=60.0)
 
+    # ── OpenAI secondary provider (gpt-5-nano) ────────────────────────────────
+    # A second, real-OpenAI endpoint used two ways:
+    #   1. PRIMARY model for the HI thread-chat and its draft formation.
+    #   2. Automatic BACKUP for every other LLM task (daily digest, triage,
+    #      thread summaries, auto PO follow-ups) when the main endpoint fails.
+    # Cost controls: background/cron calls use the ~50%-cheaper "flex" service
+    # tier, and calls carry a prompt_cache_key so OpenAI's automatic prompt
+    # caching (90% off cached input tokens) hits reliably.
+    OPENAI_ENABLED: bool = Field(default=False)
+    OPENAI_API_KEY: str | None = Field(default=None)
+    OPENAI_BASE_URL: str = Field(default="https://api.openai.com/v1")
+    OPENAI_MODEL: str = Field(default="gpt-5-nano-2025-08-07")
+    # gpt-5 reasoning effort: minimal | low | medium | high. "minimal" keeps
+    # drafting fast and cheap; raise only if draft quality needs it.
+    OPENAI_REASONING_EFFORT: str = Field(default="minimal")
+    # gpt-5 rejects `max_tokens` and counts hidden reasoning tokens against the
+    # completion budget, so this needs more headroom than LLM_MAX_TOKENS.
+    OPENAI_MAX_COMPLETION_TOKENS: int = Field(default=2048)
+    OPENAI_TIMEOUT_SECONDS: float = Field(default=45.0)
+    # Flex tier is slower and may shed load (429) — background callers retry
+    # once at the standard tier, so cron jobs never lose their backup.
+    OPENAI_FLEX_FOR_BACKGROUND: bool = Field(default=True)
+    OPENAI_FLEX_TIMEOUT_SECONDS: float = Field(default=120.0)
+
     # ── Agentic assistant + AI feature toggles ───────────────────────────────
     # Let the Assistant chatbot call DB tools (PO lookups, supplier search, RAG).
     AI_AGENT_ENABLED: bool = Field(default=True)

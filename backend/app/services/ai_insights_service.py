@@ -408,7 +408,7 @@ def _heuristic_triage(subject: str | None, body: str | None) -> dict[str, Any]:
 def triage_mail(db: Session, mail: CustomerMail, *, use_ai: bool = True) -> dict[str, Any]:
     """Classify a customer mail and persist the result on the row."""
     result: dict[str, Any]
-    if use_ai and ai_service.is_enabled():
+    if use_ai and ai_service.any_enabled():
         try:
             result = ai_service.triage_customer_mail(
                 subject=mail.subject, body=mail.body, sender=mail.from_email
@@ -450,7 +450,7 @@ def summarize_customer_mail(db: Session, mail_id: int) -> str | None:
         lines.append(f"\n{who}: {(r.body or '').strip()}")
     transcript = "\n".join(lines)
 
-    if ai_service.is_enabled():
+    if ai_service.any_enabled():
         try:
             summary = ai_service.summarize_thread(transcript)
         except Exception:  # noqa: BLE001

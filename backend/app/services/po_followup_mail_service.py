@@ -256,7 +256,7 @@ def _ai_followup_narrative(
     Returns (narrative, ai_error). narrative is None when AI is disabled or fails;
     ai_error is the error string only when AI was attempted and errored.
     """
-    if not ai_service.is_enabled():
+    if not ai_service.any_enabled():
         return None, None
     try:
         due = group.get("earliest_due_date")
@@ -277,6 +277,7 @@ def _ai_followup_narrative(
             last_supplier_reply=getattr(anchor_rec, "last_supplier_reply", None),
             precedent=_supplier_precedent(db, group.get("supplier_name")),
             instruction=instruction,
+            background=True,  # auto-followup worker → flex tier on the OpenAI backup
         )
         return (body.strip() if body and body.strip() else None), None
     except Exception as exc:  # noqa: BLE001
@@ -826,7 +827,7 @@ def command_followup(
             "subject": result.subject or subject,
             "body": result.body or "",
             "body_html": result.body_html or "",
-            "source": "ai" if ai_service.is_enabled() else "template",
+            "source": "ai" if ai_service.any_enabled() else "template",
             "mapping_active": group.get("mapping_active"),
             "skipped_reason": result.skipped_reason,
             "message_id": result.message_id,

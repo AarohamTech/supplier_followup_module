@@ -147,7 +147,7 @@ def _fallback_summary(counts: dict) -> str:
 
 
 def _ai_summary(counts: dict, critical: list[dict], heated: list[dict]) -> str:
-    if not ai_service.is_enabled():
+    if not ai_service.any_enabled():
         return _fallback_summary(counts)
     try:
         crit = "; ".join(f"{c['po']} {c['supplier']} ({c['signal']}, risk {c['risk']})"
@@ -159,6 +159,8 @@ def _ai_summary(counts: dict, critical: list[dict], heated: list[dict]) -> str:
                     "Return JSON {\"summary\": \"...\"}. No markdown, no lists."),
             user=(f"Counts: {counts}. Most critical: {crit}. Heated threads: {heat}."),
             temperature=0.3,
+            background=True,  # cron job → flex tier on the OpenAI backup
+            cache_key="digest",
         )
         text = (result or {}).get("summary", "").strip()
         return text or _fallback_summary(counts)
@@ -226,7 +228,7 @@ def _score_tone(db: Session, candidate) -> tuple[str, float, str | None]:
         .limit(1)
     ).first()
     quote = (last.body or "")[:160].strip() if last and last.body else None
-    if not ai_service.is_enabled() or not quote:
+    if not ai_service.any_enabled() or not quote:
         # Heuristic: lots of recent back-and-forth reads as tense.
         tone = "tense" if candidate.recent_count >= 3 else "neutral"
         return tone, min(0.6, 0.2 + candidate.recent_count * 0.1), quote
@@ -237,6 +239,8 @@ def _score_tone(db: Session, candidate) -> tuple[str, float, str | None]:
                     "\"score\": 0..1}."),
             user=quote,
             temperature=0.0,
+            background=True,  # cron job → flex tier on the OpenAI backup
+            cache_key="tone",
         )
         tone = str((result or {}).get("tone", "neutral")).lower()
         if tone not in HEAT_TONE_LABELS:

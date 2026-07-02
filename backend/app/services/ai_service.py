@@ -1,13 +1,22 @@
 """Dedicated AI service — the single place that talks to the LLM.
 
-Wraps an OpenAI-compatible endpoint (NVIDIA NIM by default). Everything LLM-
-related lives here so the rest of the app depends on plain functions, not on the
-LLM SDK. Safe by default: if `LLM_ENABLED` is false or misconfigured, callers get
-a clear `AIDisabledError` (or a `None`/fallback) instead of a crash.
+Two providers:
+  - Primary: an OpenAI-compatible endpoint (NVIDIA NIM by default, LLM_* keys).
+  - Secondary: real OpenAI gpt-5-nano (OPENAI_* keys) — the PRIMARY model for
+    the HI thread-chat / draft formation (`prefer_openai=True`), and the
+    automatic BACKUP for everything else (digest cron, triage, summaries) when
+    the primary endpoint fails. Cost controls: background/cron calls run on the
+    ~50%-cheaper flex service tier, and each task carries a `prompt_cache_key`
+    so OpenAI's automatic prompt caching (90% off cached input tokens) hits.
+
+Everything LLM-related lives here so the rest of the app depends on plain
+functions, not on the LLM SDK. Safe by default: if no provider is configured,
+callers get a clear `AIDisabledError` (or a `None`/fallback) instead of a crash.
 
 Used by:
   - routers/ai.py        → the Assistant chatbot
   - customer_mail_service → AI-polished reply drafts
+  - hi_agent_service      → the /hi thread chat (gpt-5-nano first)
 """
 from __future__ import annotations
 
@@ -179,7 +188,18 @@ class AIDisabledError(RuntimeError):
 
 
 def is_enabled() -> bool:
+    """The primary (NVIDIA NIM / OpenAI-compatible) endpoint is configured."""
     return bool(settings.LLM_ENABLED and settings.LLM_API_KEY)
+
+
+def openai_enabled() -> bool:
+    """The secondary OpenAI (gpt-5-nano) provider is configured."""
+    return bool(settings.OPENAI_ENABLED and settings.OPENAI_API_KEY)
+
+
+def any_enabled() -> bool:
+    """At least one LLM provider is usable."""
+    return is_enabled() or openai_enabled()
 
 
 @lru_cache(maxsize=1)
@@ -195,10 +215,83 @@ def _client():
     )
 
 
-def _complete(messages: list[dict[str, str]], *, temperature: float | None = None,
-              max_tokens: int | None = None) -> str:
-    if not is_enabled():
-        raise AIDisabledError("AI is disabled (set LLM_ENABLED=true and LLM_API_KEY).")
+@lru_cache(maxsize=1)
+def _openai_client():
+    """Lazily build (and cache) the real-OpenAI client (gpt-5-nano)."""
+    from openai import OpenAI
+
+    return OpenAI(
+        base_url=settings.OPENAI_BASE_URL,
+        api_key=settings.OPENAI_API_KEY,
+        timeout=settings.OPENAI_TIMEOUT_SECONDS,
+        max_retries=0,
+    )
+
+
+def _provider_order(prefer_openai: bool) -> list[str]:
+    """Enabled providers in attempt order. HI chat prefers OpenAI (gpt-5-nano);
+    everything else runs the primary endpoint with OpenAI as the backup."""
+    order: list[str] = []
+    if prefer_openai and openai_enabled():
+        order.append("openai")
+    if is_enabled():
+        order.append("primary")
+    if not prefer_openai and openai_enabled():
+        order.append("openai")
+    return order
+
+
+def _openai_extra(*, background: bool, cache_key: str | None,
+                  max_tokens: int | None = None) -> dict[str, Any]:
+    """gpt-5-family request params, sent via extra_body so any openai-sdk
+    version passes them through untouched."""
+    extra: dict[str, Any] = {
+        # gpt-5 rejects `max_tokens`; reasoning tokens also bill against the
+        # completion budget, so never go below the configured headroom.
+        "max_completion_tokens": max(int(max_tokens or 0), settings.OPENAI_MAX_COMPLETION_TOKENS),
+    }
+    if settings.OPENAI_REASONING_EFFORT:
+        extra["reasoning_effort"] = settings.OPENAI_REASONING_EFFORT
+    if cache_key:
+        # Routes same-prefix requests to the same cache shard so OpenAI's
+        # automatic prompt caching (90% off cached input) hits reliably.
+        extra["prompt_cache_key"] = f"sfm-{cache_key}"
+    if background and settings.OPENAI_FLEX_FOR_BACKGROUND:
+        extra["service_tier"] = "flex"  # ~50% cheaper; fine for cron jobs
+    return extra
+
+
+def _openai_complete(messages: list[dict[str, str]], *, background: bool = False,
+                     cache_key: str | None = None, max_tokens: int | None = None) -> str:
+    """One completion on gpt-5-nano. No temperature/top_p — gpt-5 only accepts
+    the defaults. Flex-tier calls that fail (capacity shed) retry once standard."""
+    extra = _openai_extra(background=background, cache_key=cache_key, max_tokens=max_tokens)
+    flex = extra.get("service_tier") == "flex"
+    try:
+        completion = _openai_client().chat.completions.create(
+            model=settings.OPENAI_MODEL,
+            messages=messages,
+            stream=False,
+            timeout=settings.OPENAI_FLEX_TIMEOUT_SECONDS if flex else settings.OPENAI_TIMEOUT_SECONDS,
+            extra_body=extra,
+        )
+    except Exception:  # noqa: BLE001
+        if not flex:
+            raise
+        log.warning("OpenAI flex-tier call failed; retrying at standard tier", exc_info=True)
+        retry_extra = {k: v for k, v in extra.items() if k != "service_tier"}
+        completion = _openai_client().chat.completions.create(
+            model=settings.OPENAI_MODEL,
+            messages=messages,
+            stream=False,
+            timeout=settings.OPENAI_TIMEOUT_SECONDS,
+            extra_body=retry_extra,
+        )
+    return (completion.choices[0].message.content or "").strip()
+
+
+def _primary_complete(messages: list[dict[str, str]], *, temperature: float | None = None,
+                      max_tokens: int | None = None) -> str:
     # `reasoning_effort` is a gpt-oss feature (low/medium/high) — low keeps it fast.
     extra: dict[str, Any] = {}
     if settings.LLM_REASONING_EFFORT:
@@ -215,6 +308,31 @@ def _complete(messages: list[dict[str, str]], *, temperature: float | None = Non
     # Some models (e.g. gpt-oss) return chain-of-thought in `reasoning_content`;
     # we only want the user-facing answer.
     return (completion.choices[0].message.content or "").strip()
+
+
+def _complete(messages: list[dict[str, str]], *, temperature: float | None = None,
+              max_tokens: int | None = None, background: bool = False,
+              cache_key: str | None = None, prefer_openai: bool = False) -> str:
+    """Run one completion across the configured providers, in order, falling
+    back to the next provider on any error. `background` marks cron/worker
+    traffic (flex tier on OpenAI); `prefer_openai` puts gpt-5-nano first."""
+    providers = _provider_order(prefer_openai)
+    if not providers:
+        raise AIDisabledError("AI is disabled (set LLM_ENABLED or OPENAI_ENABLED plus an API key).")
+    last_exc: Exception | None = None
+    for i, provider in enumerate(providers):
+        try:
+            if provider == "openai":
+                return _openai_complete(messages, background=background,
+                                        cache_key=cache_key, max_tokens=max_tokens)
+            return _primary_complete(messages, temperature=temperature, max_tokens=max_tokens)
+        except Exception as exc:  # noqa: BLE001
+            last_exc = exc
+            if i + 1 < len(providers):
+                log.warning("LLM provider '%s' failed; falling back to '%s'",
+                            provider, providers[i + 1], exc_info=True)
+    assert last_exc is not None
+    raise last_exc
 
 
 def _normalize_messages(messages: Iterable[dict[str, Any]]) -> list[dict[str, str]]:
@@ -234,7 +352,7 @@ def chat(messages: Iterable[dict[str, Any]], *, system: str | None = None) -> st
     """Run a chat turn for the Assistant. `messages` is a [{role, content}] list."""
     convo = _normalize_messages(messages)
     payload = [{"role": "system", "content": system or _prompt("assistant")}, *convo]
-    return _complete(payload)
+    return _complete(payload, cache_key="assistant")
 
 
 def suggest_customer_reply(
@@ -247,6 +365,7 @@ def suggest_customer_reply(
     status: str | None = None,
     dispatch_date: str | None = None,
     instruction: str | None = None,
+    prefer_openai: bool = False,
 ) -> str:
     """Draft a customer reply body from the order facts (returns plain text).
 
@@ -274,35 +393,37 @@ def suggest_customer_reply(
     return _complete(
         [{"role": "system", "content": _prompt("customer_reply")}, {"role": "user", "content": user}],
         temperature=0.5,
+        cache_key="customer-reply",
+        prefer_openai=prefer_openai,
     )
 
 
 # ── Agentic chat (tool calling) ──────────────────────────────────────────────
-def chat_with_tools(
-    messages: Iterable[dict[str, Any]],
-    *,
-    tools: list[dict[str, Any]],
-    executor: Callable[[str, dict[str, Any]], Any],
-    system: str | None = None,
-    max_rounds: int | None = None,
-) -> dict[str, Any]:
-    """Run an agentic chat turn. The model may call `tools`; `executor(name, args)`
-    runs each call and its JSON result is fed back until the model answers.
-
-    Returns {"reply": str, "tools_used": [{"name","args"}...]}.
-    """
-    if not is_enabled():
-        raise AIDisabledError("AI is disabled (set LLM_ENABLED=true and LLM_API_KEY).")
-    rounds = max_rounds or int(settings.AI_AGENT_MAX_ROUNDS)
-    convo: list[dict[str, Any]] = [
-        {"role": "system", "content": system or (_prompt("assistant") + AGENT_TOOLS_SUFFIX)},
-        *_normalize_messages(messages),
-    ]
-    used: list[dict[str, Any]] = []
-
+def _agent_completion(convo: list[dict[str, Any]], provider: str,
+                      tools: list[dict[str, Any]] | None, cache_key: str | None):
+    """One agent-loop completion on the given provider."""
     agent_timeout = settings.LLM_AGENT_TIMEOUT_SECONDS
-    for _ in range(max(1, rounds)):
-        completion = _client().chat.completions.create(
+    if provider == "openai":
+        extra = _openai_extra(background=False, cache_key=cache_key)
+        if tools is not None:
+            return _openai_client().chat.completions.create(
+                model=settings.OPENAI_MODEL,
+                messages=convo,
+                tools=tools,
+                tool_choice="auto",
+                stream=False,
+                timeout=agent_timeout,
+                extra_body=extra,
+            )
+        return _openai_client().chat.completions.create(
+            model=settings.OPENAI_MODEL,
+            messages=convo,
+            stream=False,
+            timeout=agent_timeout,
+            extra_body=extra,
+        )
+    if tools is not None:
+        return _client().chat.completions.create(
             model=settings.LLM_MODEL,
             messages=convo,
             tools=tools,
@@ -312,6 +433,59 @@ def chat_with_tools(
             stream=False,
             timeout=agent_timeout,  # longer than the fail-fast helper timeout
         )
+    return _client().chat.completions.create(
+        model=settings.LLM_MODEL,
+        messages=convo,
+        temperature=settings.LLM_TEMPERATURE,
+        max_tokens=settings.LLM_MAX_TOKENS,
+        stream=False,
+        timeout=agent_timeout,
+    )
+
+
+def chat_with_tools(
+    messages: Iterable[dict[str, Any]],
+    *,
+    tools: list[dict[str, Any]],
+    executor: Callable[[str, dict[str, Any]], Any],
+    system: str | None = None,
+    max_rounds: int | None = None,
+    prefer_openai: bool = False,
+    cache_key: str = "agent",
+) -> dict[str, Any]:
+    """Run an agentic chat turn. The model may call `tools`; `executor(name, args)`
+    runs each call and its JSON result is fed back until the model answers.
+
+    `prefer_openai=True` runs the turn on gpt-5-nano first (HI chat / drafting),
+    with the primary endpoint as fallback; otherwise the order is reversed. If a
+    provider dies mid-conversation we switch to the next one and keep the convo
+    (tool results already executed are never re-run).
+
+    Returns {"reply": str, "tools_used": [{"name","args"}...]}.
+    """
+    providers = _provider_order(prefer_openai)
+    if not providers:
+        raise AIDisabledError("AI is disabled (set LLM_ENABLED or OPENAI_ENABLED plus an API key).")
+    rounds = max_rounds or int(settings.AI_AGENT_MAX_ROUNDS)
+    convo: list[dict[str, Any]] = [
+        {"role": "system", "content": system or (_prompt("assistant") + AGENT_TOOLS_SUFFIX)},
+        *_normalize_messages(messages),
+    ]
+    used: list[dict[str, Any]] = []
+
+    def call(tools_arg: list[dict[str, Any]] | None):
+        while True:
+            try:
+                return _agent_completion(convo, providers[0], tools_arg, cache_key)
+            except Exception:  # noqa: BLE001
+                failed = providers.pop(0)
+                if not providers:
+                    raise
+                log.warning("agent provider '%s' failed; switching to '%s'",
+                            failed, providers[0], exc_info=True)
+
+    for _ in range(max(1, rounds)):
+        completion = call(tools)
         msg = completion.choices[0].message
         tool_calls = getattr(msg, "tool_calls", None) or []
         if not tool_calls:
@@ -363,14 +537,7 @@ def chat_with_tools(
             "content": "Answer the user now using the tool results above. Do not call more tools.",
         }
     )
-    final = _client().chat.completions.create(
-        model=settings.LLM_MODEL,
-        messages=convo,
-        temperature=settings.LLM_TEMPERATURE,
-        max_tokens=settings.LLM_MAX_TOKENS,
-        stream=False,
-        timeout=agent_timeout,
-    )
+    final = call(None)
     return {"reply": (final.choices[0].message.content or "").strip(), "tools_used": used}
 
 
@@ -392,10 +559,15 @@ def _parse_json(raw: str) -> dict[str, Any]:
     return {}
 
 
-def complete_json(system: str, user: str, *, temperature: float = 0.2) -> dict[str, Any]:
+def complete_json(system: str, user: str, *, temperature: float = 0.2,
+                  background: bool = False, cache_key: str | None = None,
+                  prefer_openai: bool = False) -> dict[str, Any]:
     raw = _complete(
         [{"role": "system", "content": system}, {"role": "user", "content": user}],
         temperature=temperature,
+        background=background,
+        cache_key=cache_key,
+        prefer_openai=prefer_openai,
     )
     return _parse_json(raw)
 
@@ -414,7 +586,8 @@ def triage_customer_mail(
         f"Subject: {subject or '(none)'}\n\n"
         f"Body:\n{(body or '').strip()[:4000]}"
     )
-    data = complete_json(_prompt("triage"), user)
+    # Triage always runs from the mail-fetch worker — background traffic.
+    data = complete_json(_prompt("triage"), user, background=True, cache_key="triage")
     category = str(data.get("category") or "GENERAL").upper().strip()
     urgency = str(data.get("urgency") or "MEDIUM").upper().strip()
     action = str(data.get("action") or "REPLY").upper().strip()
@@ -427,12 +600,16 @@ def triage_customer_mail(
     }
 
 
-def summarize_thread(transcript: str) -> str:
+def summarize_thread(transcript: str, *, background: bool = False,
+                     prefer_openai: bool = False) -> str:
     """Summarise an email thread transcript into a short paragraph."""
     user = f"Summarise this thread:\n\n{transcript.strip()[:6000]}"
     return _complete(
         [{"role": "system", "content": _prompt("summary")}, {"role": "user", "content": user}],
         temperature=0.3,
+        background=background,
+        cache_key="summary",
+        prefer_openai=prefer_openai,
     )
 
 
@@ -448,6 +625,7 @@ def suggest_po_followup(
     last_supplier_reply: str | None = None,
     precedent: str | None = None,
     instruction: str | None = None,
+    background: bool = False,
 ) -> str:
     """Draft an AI supplier follow-up body grounded in the PO facts.
 
@@ -489,7 +667,8 @@ def suggest_po_followup(
     )
     base_prompt = _prompt("po_followup")
     system = base_prompt + ' Output ONLY a strict JSON object {"draft": "..."} and nothing else.'
-    data = complete_json(system, user, temperature=0.4)
+    data = complete_json(system, user, temperature=0.4, background=background,
+                         cache_key="po-followup")
     draft = str(data.get("draft") or "").strip()
     if not draft:
         # Fallback: plain completion if JSON parsing failed.
@@ -499,6 +678,8 @@ def suggest_po_followup(
                 {"role": "user", "content": user + "\n\n(If JSON is hard, just return the prose body.)"},
             ],
             temperature=0.4,
+            background=background,
+            cache_key="po-followup",
         )
     return _strip_md_tables(draft)
 
@@ -526,8 +707,15 @@ def health() -> dict[str, Any]:
         "model": settings.LLM_MODEL,
         "base_url": settings.LLM_BASE_URL,
         "has_key": bool(settings.LLM_API_KEY),
-        "agent_enabled": bool(settings.AI_AGENT_ENABLED and is_enabled()),
+        "agent_enabled": bool(settings.AI_AGENT_ENABLED and any_enabled()),
         "triage_enabled": bool(settings.AI_TRIAGE_ENABLED),
         "po_followup_ai": bool(settings.AI_PO_FOLLOWUP_ENABLED),
+        "openai": {
+            "enabled": openai_enabled(),
+            "model": settings.OPENAI_MODEL,
+            "has_key": bool(settings.OPENAI_API_KEY),
+            "role": "hi-chat primary + cron/backend backup",
+            "flex_for_background": bool(settings.OPENAI_FLEX_FOR_BACKGROUND),
+        },
         "rag": embeddings_service.health(),
     }
