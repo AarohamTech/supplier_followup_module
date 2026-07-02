@@ -51,6 +51,11 @@ class PortalMessageCreate(BaseModel):
     subject: Optional[str] = None
 
 
+class PortalEscalateIn(BaseModel):
+    # Optional free-text reason shown to the buyer team on the task + notification.
+    reason: Optional[str] = Field(default=None, max_length=500)
+
+
 class PortalPoMaterial(BaseModel):
     procurement_record_id: int
     crm_no: str

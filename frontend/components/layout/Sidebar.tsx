@@ -14,6 +14,7 @@ import {
   Mail,
   MailCheck,
   MessagesSquare,
+  PieChart,
   Settings,
   ShieldAlert,
   ShieldCheck,
@@ -69,6 +70,7 @@ const groups: { label: string; items: NavItem[] }[] = [
   {
     label: "Administration",
     items: [
+      { href: "/reports/workload", label: "Workload Report", icon: PieChart, minRole: "admin" },
       { href: "/ai-prompts", label: "HI Prompts", icon: Wand2, minRole: "manager" },
       { href: "/settings", label: "Settings", icon: Settings, minRole: "manager" },
       { href: "/admin/users", label: "Users", icon: ShieldCheck, minRole: "admin" },

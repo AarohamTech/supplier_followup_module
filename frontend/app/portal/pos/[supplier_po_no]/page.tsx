@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, CalendarCheck, ListChecks, MessageSquare, Save, Truck } from "lucide-react";
+import { AlertTriangle, ArrowLeft, CalendarCheck, ListChecks, MessageSquare, Save, Truck } from "lucide-react";
 
 import { api } from "@/lib/api";
 import { signalBadge } from "@/lib/asn";
@@ -53,6 +53,10 @@ export default function PoDetailPage() {
   const [saving, setSaving] = useState(false);
   const [savedMsg, setSavedMsg] = useState<string | null>(null);
   const [openAsn, setOpenAsn] = useState<Asn | null>(null);
+  const [escalateOpen, setEscalateOpen] = useState(false);
+  const [escalateReason, setEscalateReason] = useState("");
+  const [escalating, setEscalating] = useState(false);
+  const [escalated, setEscalated] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -99,6 +103,24 @@ export default function PoDetailPage() {
   const setDraft = (id: number, patch: Partial<Draft>) =>
     setDrafts((prev) => ({ ...prev, [id]: { ...prev[id], ...patch } }));
 
+  const isEscalated = Boolean(po?.escalated) || escalated;
+
+  const escalate = async () => {
+    setEscalating(true);
+    setError(null);
+    try {
+      await api.portalEscalate(poNo, escalateReason.trim() || null);
+      setEscalated(true);
+      setEscalateOpen(false);
+      setEscalateReason("");
+      setSavedMsg("Escalation sent — your buyer team has been notified and will prioritise this PO.");
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setEscalating(false);
+    }
+  };
+
   const save = async () => {
     setSaving(true);
     setError(null);
@@ -142,10 +164,48 @@ export default function PoDetailPage() {
               Review material commitments, buyer tasks and shipment progress for this purchase order.
             </p>
           </div>
-          <button onClick={() => router.push(`/portal/communication?po=${encodeURIComponent(poNo)}`)} className="btn-outline shrink-0">
-            <MessageSquare size={15} /> Open communication
-          </button>
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
+            {isEscalated ? (
+              <span className="inline-flex items-center gap-1.5 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-signal-red">
+                <AlertTriangle size={13} /> Escalated to buyer team
+              </span>
+            ) : (
+              <button onClick={() => setEscalateOpen((v) => !v)} className="btn-outline border-red-200 text-signal-red hover:bg-red-50">
+                <AlertTriangle size={15} /> Escalate
+              </button>
+            )}
+            <button onClick={() => router.push(`/portal/communication?po=${encodeURIComponent(poNo)}`)} className="btn-outline">
+              <MessageSquare size={15} /> Open communication
+            </button>
+          </div>
         </div>
+
+        {escalateOpen && !isEscalated && (
+          <div className="border-t border-brand-border bg-red-50/40 px-5 py-4 dark:bg-red-950/20">
+            <div className="mb-1 flex items-center gap-2 text-sm font-semibold text-brand-dark">
+              <AlertTriangle size={14} className="text-signal-red" /> Escalate this purchase order
+            </div>
+            <p className="mb-2 text-xs text-brand-muted">
+              This alerts the buyer team immediately and opens a priority task on their side. Add a short reason so they can act fast.
+            </p>
+            <textarea
+              value={escalateReason}
+              onChange={(e) => setEscalateReason(e.target.value)}
+              rows={2}
+              maxLength={500}
+              placeholder="e.g. Production line blocked — need dispatch confirmation today"
+              className="input w-full resize-none text-sm"
+            />
+            <div className="mt-2 flex items-center justify-end gap-2">
+              <button className="btn-ghost text-xs" onClick={() => setEscalateOpen(false)} disabled={escalating}>
+                Cancel
+              </button>
+              <button className="btn-primary text-xs" onClick={() => void escalate()} disabled={escalating}>
+                {escalating ? "Sending…" : "Confirm escalation"}
+              </button>
+            </div>
+          </div>
+        )}
 
         <dl className="grid grid-cols-2 border-t border-brand-border bg-subtle/70 sm:grid-cols-4">
           {[

@@ -350,6 +350,62 @@ export interface TaskAssignee {
   email?: string;
 }
 
+// ─── Admin workload report (per-user / per-supplier / overall) ───────────────
+export interface WorkloadPoStats {
+  total: number;
+  pending: number;
+  overdue: number;
+  green: number;
+  yellow: number;
+  red: number;
+  black: number;
+  avg_followups: number;
+}
+
+export interface WorkloadTaskStats {
+  total: number;
+  open: number;
+  overdue: number;
+  done: number;
+  due_today: number;
+  escalations: number;
+}
+
+export interface WorkloadUserRow {
+  user_id: number;
+  name: string;
+  role: string;
+  emp_code?: string | null;
+  last_login_at?: string | null;
+  pos: WorkloadPoStats;
+  tasks: WorkloadTaskStats;
+}
+
+export interface WorkloadSupplierRow {
+  supplier_id: number;
+  supplier_name: string;
+  worst_signal?: string | null;
+  pos: WorkloadPoStats;
+  tasks: WorkloadTaskStats;
+  mails: { incoming: number; outgoing: number; unread: number };
+  asns: { total: number; in_transit: number; delivered: number };
+}
+
+export interface WorkloadReport {
+  overall: {
+    pos: WorkloadPoStats;
+    tasks: WorkloadTaskStats;
+    suppliers_active: number;
+    internal_users: number;
+    unassigned_open_tasks: number;
+    unread_inbound: number;
+    asns_in_transit: number;
+    generated_at: string;
+  };
+  users: WorkloadUserRow[];
+  suppliers: WorkloadSupplierRow[];
+}
+
 export interface TaskAnalytics {
   totals: { total: number; open: number; overdue: number; done: number; due_today: number };
   by_status: Record<string, number>;

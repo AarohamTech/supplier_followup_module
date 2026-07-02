@@ -25,6 +25,7 @@ import type {
   TaskActivity,
   TaskAssignee,
   TaskAnalytics,
+  WorkloadReport,
   CommunicationDashboard,
   PortalTaskDashboard,
   CommHubDashboard,
@@ -824,6 +825,9 @@ export const api = {
   refreshAsnTracking: (id: number) =>
     http<Asn>(`/api/asns/${id}/refresh-tracking`, { method: "POST" }),
 
+  // ─── Admin workload report ─────────────────────────────────────────────
+  workloadReport: () => http<WorkloadReport>("/api/reports/workload"),
+
   // ─── Supplier portal (supplier accounts only) ─────────────────────────
   portalMe: () => http<PortalMe>("/api/portal/me"),
   portalSummary: () => http<PortalSummary>("/api/portal/summary"),
@@ -837,6 +841,11 @@ export const api = {
     }),
   portalPoTasks: (supplierPoNo: string) =>
     http<PortalTask[]>(`/api/portal/pos/${encodeURIComponent(supplierPoNo)}/tasks`),
+  portalEscalate: (supplierPoNo: string, reason?: string | null) =>
+    http<{ ok: boolean; already_escalated: boolean; task_id: number }>(
+      `/api/portal/pos/${encodeURIComponent(supplierPoNo)}/escalate`,
+      { method: "POST", body: JSON.stringify({ reason: reason || null }) },
+    ),
   // Read-only Task Manager view (backend nulls internal fields server-side).
   portalTasks: () => http<CommunicationTask[]>("/api/portal/tasks"),
   portalTasksDashboard: () => http<PortalTaskDashboard>("/api/portal/tasks/dashboard"),

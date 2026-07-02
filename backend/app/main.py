@@ -11,6 +11,7 @@ from .core.deps import (
     get_current_staff,
     get_current_supplier,
     get_current_user,
+    require_admin,
     require_writer_for_writes,
 )
 from .core.logging import setup_logging
@@ -36,6 +37,7 @@ from .routers import (
     employee_portal,
     eportal_hub,
     notifications,
+    reports,
     supplier_accounts,
     employee_accounts,
     settings as settings_router,
@@ -128,6 +130,9 @@ app.include_router(communication_hub.router, dependencies=_rbac)
 app.include_router(customer_mails.router, dependencies=_rbac)
 app.include_router(po_followups.router, dependencies=_rbac)
 app.include_router(settings_router.router, dependencies=_rbac)
+
+# Admin-only workload reports (per-user / per-supplier / overall rollups).
+app.include_router(reports.router, dependencies=[Depends(require_admin)])
 
 # AI assistant + insights: available to any logged-in *staff* user (incl. viewers).
 # Write/heavy actions inside add their own require_writer / require_manager.

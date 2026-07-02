@@ -28,6 +28,7 @@ from ..schemas.asn import AsnCreate, AsnEventIn, AsnListOut, AsnOut, AsnSummaryO
 from ..schemas.communication_task import CommunicationTaskOut
 from ..schemas.portal import (
     PortalCommitmentSubmit,
+    PortalEscalateIn,
     PortalMessage,
     PortalMessageCreate,
     PortalPo,
@@ -545,6 +546,102 @@ def post_po_message(
         procurement_record_id=rec.id,
     )
     return _to_portal_message(cm, name)
+
+
+@router.post("/pos/{supplier_po_no}/escalate")
+def escalate_po(
+    supplier_po_no: str,
+    payload: PortalEscalateIn,
+    user: User = Depends(get_current_supplier),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Supplier-raised escalation: flags the PO, opens a P0 ESCALATION task for
+    the buyer team, posts an INCOMING note into the staff Hub thread, and fires
+    a SUPPLIER_ESCALATION bell notification to the PO owners."""
+    name = _supplier_name(db, user)
+    rec = _po_is_owned(db, name, supplier_po_no)
+    if rec is None:
+        raise HTTPException(404, "PO not found for your account")
+    reason = (payload.reason or "").strip()
+
+    # Idempotence: one open supplier-raised escalation per PO.
+    existing = db.scalar(
+        select(CommunicationTask).where(
+            CommunicationTask.supplier_po_no == supplier_po_no,
+            CommunicationTask.task_source == "ESCALATION",
+            CommunicationTask.assigned_by == "Supplier Portal",
+            CommunicationTask.status != "DONE",
+        )
+    )
+    if existing is not None:
+        return {"ok": True, "already_escalated": True, "task_id": existing.id}
+
+    # Flag every line of this PO so the "Escalated" badge lights on both sides.
+    po_records = db.scalars(
+        select(ProcurementRecord).where(
+            func.upper(ProcurementRecord.supplier_name) == (name or "").upper(),
+            ProcurementRecord.supplier_po_no == supplier_po_no,
+        )
+    ).all()
+    for r in po_records or [rec]:
+        if (r.escalation_level or "NONE").upper() == "NONE":
+            r.escalation_level = "ESCALATED"
+
+    # Route the task to the PO's desk owner when resolvable.
+    owner = None
+    if rec.owner_emp_code:
+        owner = db.scalar(
+            select(User).where(
+                User.emp_code == rec.owner_emp_code, User.is_active.is_(True)
+            )
+        )
+    task = CommunicationTask(
+        supplier_id=user.supplier_id,
+        supplier_name=name,
+        supplier_po_no=supplier_po_no,
+        procurement_record_id=rec.id,
+        title=f"Supplier escalation: PO #{supplier_po_no}",
+        description=reason or "The supplier escalated this PO from the portal.",
+        task_source="ESCALATION",
+        priority="P0",
+        status="TODO",
+        signal="RED",
+        assigned_to_user_id=owner.id if owner else None,
+        assigned_to=(owner.full_name or owner.username) if owner else None,
+        assigned_by="Supplier Portal",
+    )
+    db.add(task)
+
+    # Make it visible inside the staff Hub conversation for this PO.
+    msg_service.create_message(
+        db,
+        direction="INCOMING",
+        status="RECEIVED",
+        supplier_id=user.supplier_id,
+        supplier_name=name,
+        procurement_record_id=rec.id,
+        supplier_po_no=supplier_po_no,
+        subject=f"Escalation raised · PO {supplier_po_no}",
+        body=reason or "The supplier escalated this purchase order from the portal.",
+        sender_email=user.email,
+        mail_type="PORTAL_ESCALATION",
+        received_at=datetime.utcnow(),
+        commit=False,
+    )
+    db.commit()
+    db.refresh(task)
+
+    notif.safe(
+        notif.notify_po_owners, db,
+        type="SUPPLIER_ESCALATION",
+        title=f"Escalation: {name or 'a supplier'} raised PO {supplier_po_no}",
+        body=(reason[:140] if reason else "Escalation raised from the supplier portal."),
+        link="/tasks",
+        supplier_id=user.supplier_id,
+        supplier_po_no=supplier_po_no,
+        procurement_record_id=rec.id,
+    )
+    return {"ok": True, "already_escalated": False, "task_id": task.id}
 
 
 @router.post("/pos/{supplier_po_no}/messages/mark-read")
