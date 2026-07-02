@@ -36,9 +36,23 @@ def list_mails(
     search: str | None = None,
     limit: int = 100,
     offset: int = 0,
+    # Employee scope: only mails linked to one of these POs OR assigned to one
+    # of these display names. None = unscoped (staff view).
+    owned_po_nos: set[str] | None = None,
+    assigned_names: list[str] | None = None,
 ) -> tuple[list[CustomerMail], int]:
     stmt = select(CustomerMail)
     count_stmt = select(func.count(CustomerMail.id))
+    if owned_po_nos is not None or assigned_names:
+        clauses = []
+        if owned_po_nos is not None:
+            clauses.append(CustomerMail.linked_supplier_po_no.in_(owned_po_nos))
+        for name in assigned_names or []:
+            if name:
+                clauses.append(CustomerMail.assigned_to == name)
+        scope = or_(*clauses) if clauses else CustomerMail.id.is_(None)
+        stmt = stmt.where(scope)
+        count_stmt = count_stmt.where(scope)
     if status:
         stmt = stmt.where(CustomerMail.status == status)
         count_stmt = count_stmt.where(CustomerMail.status == status)

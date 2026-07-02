@@ -906,6 +906,40 @@ export const api = {
     ),
   eportalSummary: () => http<EmployeeSummary>("/api/eportal/summary"),
 
+  // Employee-scoped shipments + customer mails (own POs / allocated-to-me only).
+  eportalAsnSummary: () => http<AsnSummary>("/api/eportal/asns/summary"),
+  eportalListAsns: (params: { tab?: string; status?: string; search?: string } = {}) => {
+    const q = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== "") q.append(k, String(v));
+    });
+    const qs = q.toString();
+    return http<AsnListResponse>(`/api/eportal/asns${qs ? `?${qs}` : ""}`);
+  },
+  eportalGetAsn: (id: number) => http<Asn>(`/api/eportal/asns/${id}`),
+  eportalRefreshAsnTracking: (id: number) =>
+    http<Asn>(`/api/eportal/asns/${id}/refresh-tracking`, { method: "POST" }),
+  eportalListMails: (params: { search?: string; status?: string; limit?: number } = {}) => {
+    const q = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== "") q.append(k, String(v));
+    });
+    const qs = q.toString();
+    return http<{ items: CustomerMail[]; total: number }>(`/api/eportal/mails${qs ? `?${qs}` : ""}`);
+  },
+  eportalGetMailReplies: (id: number) =>
+    http<CustomerReply[]>(`/api/eportal/mails/${id}/replies`),
+  eportalReplyToMail: (id: number, body: string) =>
+    http<{ ok: boolean; message_id: number; queued: boolean; mail_status: string }>(
+      `/api/eportal/mails/${id}/reply`,
+      { method: "POST", body: JSON.stringify({ body }) },
+    ),
+  eportalDraftMailReply: (id: number, ai = false) =>
+    http<CustomerDraftReply>(
+      `/api/eportal/mails/${id}/draft-reply${ai ? "?ai=true" : ""}`,
+      { method: "POST", body: JSON.stringify({}) },
+    ),
+
   // PO Follow-ups (mirrors the staff /api/procurement endpoints, scoped to the
   // employee's owned records — IDENTICAL response shapes + query building so the
   // staff store/components can be reused verbatim).

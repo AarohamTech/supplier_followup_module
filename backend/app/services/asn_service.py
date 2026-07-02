@@ -220,15 +220,24 @@ def add_event(
 
 
 # ── Queries ───────────────────────────────────────────────────────────────────
-def _base_query(supplier_id: int | None):
+def _base_query(supplier_id: int | None, po_nos: set[str] | None = None):
     stmt = select(Asn).options(selectinload(Asn.items), selectinload(Asn.events))
     if supplier_id is not None:
         stmt = stmt.where(Asn.supplier_id == supplier_id)
+    # Employee scope: only shipments against this PO-number set (empty → none).
+    if po_nos is not None:
+        stmt = stmt.where(Asn.supplier_po_no.in_(po_nos))
     return stmt
 
 
-def get_asn(db: Session, asn_id: int, *, supplier_id: int | None = None) -> Optional[Asn]:
-    stmt = _base_query(supplier_id).where(Asn.id == asn_id)
+def get_asn(
+    db: Session,
+    asn_id: int,
+    *,
+    supplier_id: int | None = None,
+    po_nos: set[str] | None = None,
+) -> Optional[Asn]:
+    stmt = _base_query(supplier_id, po_nos).where(Asn.id == asn_id)
     return db.scalar(stmt)
 
 
@@ -239,8 +248,9 @@ def list_asns(
     tab: str | None = None,
     search: str | None = None,
     status: str | None = None,
+    po_nos: set[str] | None = None,
 ) -> list[Asn]:
-    stmt = _base_query(supplier_id)
+    stmt = _base_query(supplier_id, po_nos)
     tab = (tab or "").lower()
     if tab == "active":
         stmt = stmt.where(Asn.status.in_(ACTIVE_STATUSES))
@@ -265,12 +275,16 @@ def list_asns(
     return list(db.scalars(stmt).all())
 
 
-def asn_summary(db: Session, *, supplier_id: int | None = None) -> dict[str, int]:
+def asn_summary(
+    db: Session, *, supplier_id: int | None = None, po_nos: set[str] | None = None
+) -> dict[str, int]:
     """The four shipment-tracking cards: active / pending / urgent / finalized."""
     def count(*conditions) -> int:
         stmt = select(func.count(Asn.id))
         if supplier_id is not None:
             stmt = stmt.where(Asn.supplier_id == supplier_id)
+        if po_nos is not None:
+            stmt = stmt.where(Asn.supplier_po_no.in_(po_nos))
         for cond in conditions:
             stmt = stmt.where(cond)
         return int(db.scalar(stmt) or 0)

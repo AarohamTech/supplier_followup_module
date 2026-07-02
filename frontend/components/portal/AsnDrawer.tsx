@@ -14,16 +14,27 @@ export default function AsnDrawer({
   onClose,
   onUpdated,
   staff = false,
+  mode,
 }: {
   asn: Asn;
   onClose: () => void;
   onUpdated: (asn: Asn) => void;
   // staff=true → drive the internal /api/asns endpoints instead of the portal ones.
   staff?: boolean;
+  // "eportal" → employee read-only view (own-PO scope): live tracking refresh
+  // works, but no add-event / submit actions.
+  mode?: "staff" | "portal" | "eportal";
 }) {
-  const addEvent = staff ? api.addAsnEvent : api.addPortalAsnEvent;
-  const updateAsn = staff ? api.updateAsn : api.updatePortalAsn;
-  const refreshTracking = staff ? api.refreshAsnTracking : api.refreshPortalAsnTracking;
+  const m = mode ?? (staff ? "staff" : "portal");
+  const readOnly = m === "eportal";
+  const addEvent = m === "staff" ? api.addAsnEvent : api.addPortalAsnEvent;
+  const updateAsn = m === "staff" ? api.updateAsn : api.updatePortalAsn;
+  const refreshTracking =
+    m === "staff"
+      ? api.refreshAsnTracking
+      : m === "eportal"
+        ? api.eportalRefreshAsnTracking
+        : api.refreshPortalAsnTracking;
   const meta = stageMeta(asn.status);
   const [stage, setStage] = useState<string>("");
   const [location, setLocation] = useState("");
@@ -204,13 +215,13 @@ export default function AsnDrawer({
           </div>
 
           {/* Actions */}
-          {asn.status === "DRAFT" && (
+          {!readOnly && asn.status === "DRAFT" && (
             <button className="btn-primary w-full" disabled={busy} onClick={submitDraft}>
               <Send size={14} /> Submit ASN
             </button>
           )}
 
-          {!isClosed && asn.status !== "DRAFT" && (
+          {!readOnly && !isClosed && asn.status !== "DRAFT" && (
             <div className="rounded-lg border border-brand-border p-3 space-y-3">
               <div className="text-[10px] uppercase tracking-wider text-brand-muted font-semibold">Add tracking update</div>
               <select className="input" value={stage} onChange={(e) => setStage(e.target.value)}>
