@@ -200,6 +200,38 @@ class WorkloadReportTests(unittest.TestCase):
             self.assertEqual(data["overall"]["asns_in_transit"], 1)
             self.assertEqual(data["overall"]["suppliers_active"], 1)
 
+    def test_by_customer_groups_procurement_by_customer_name(self):
+        with _temp_db() as db:
+            _seed(db)
+            # Two customers, one sharing a supplier PO number across suppliers.
+            db.add_all([
+                ProcurementRecord(
+                    crm_no="CC1", supplier_po_no="000449", material_name="Drill A",
+                    supplier_name="Vedant Tools Pvt Ltd", customer_name="ZANVAR GROUP",
+                    signal="RED", po_status="OPEN",
+                ),
+                ProcurementRecord(
+                    crm_no="CC2", supplier_po_no="000449", material_name="Bar B",
+                    supplier_name="ALFA TOOLINGS", customer_name="ZANVAR GROUP",
+                    signal="YELLOW", po_status="OPEN",
+                ),
+                ProcurementRecord(
+                    crm_no="CC3", supplier_po_no="000501", material_name="Bit C",
+                    supplier_name="Vedant Tools Pvt Ltd", customer_name="OTHER CUST",
+                    signal="GREEN", po_status="OPEN",
+                ),
+            ])
+            db.commit()
+
+            data = reports_router.workload_report(db=db)
+            customers = {c["customer_name"]: c for c in data["customers"]}
+            self.assertIn("ZANVAR GROUP", customers)
+            zg = customers["ZANVAR GROUP"]
+            self.assertEqual(zg["pos"]["total"], 2)
+            self.assertEqual(zg["suppliers"], 2)      # Vedant + Alfa on one customer
+            self.assertEqual(zg["worst_signal"], "RED")
+            self.assertEqual(data["overall"]["customers_active"], 2)
+
 
 class WorkloadDetailTests(unittest.TestCase):
     def _seed_workload(self, db):
@@ -278,7 +310,7 @@ class WorkloadDetailTests(unittest.TestCase):
                 return asyncio.run(_collect())
 
             full = load_workbook(_io.BytesIO(_bytes(reports_router.workload_export(db=db))))
-            self.assertEqual(full.sheetnames, ["Overview", "Users", "Suppliers"])
+            self.assertEqual(full.sheetnames, ["Overview", "Users", "Suppliers", "Customers"])
             users_ws = full["Users"]
             self.assertGreaterEqual(users_ws.max_row, 3)  # header + 2 users
 

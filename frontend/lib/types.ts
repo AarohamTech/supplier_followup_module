@@ -26,7 +26,10 @@ export interface ProcurementRecord {
   supplier_name?: string | null;
   quantity?: number | null;
   rate?: number | null;
-  po_no?: string | null; // deprecated source column, still referenced by some views
+  po_no?: string | null; // end-customer PO number (distinct from supplier_po_no)
+  customer_name?: string | null;
+  customer_po_no?: string | null; // mirror of po_no exposed by the API
+  po_date?: string | null; // end-customer PO date
 
   followup_status: string;
   mail_status: string;
@@ -391,11 +394,20 @@ export interface WorkloadSupplierRow {
   asns: { total: number; in_transit: number; delivered: number };
 }
 
+export interface WorkloadCustomerRow {
+  customer_name: string;
+  worst_signal?: string | null;
+  pos: WorkloadPoStats;
+  suppliers: number;
+  po_lines: number;
+}
+
 export interface WorkloadReport {
   overall: {
     pos: WorkloadPoStats;
     tasks: WorkloadTaskStats;
     suppliers_active: number;
+    customers_active?: number;
     internal_users: number;
     unassigned_open_tasks: number;
     unread_inbound: number;
@@ -404,6 +416,7 @@ export interface WorkloadReport {
   };
   users: WorkloadUserRow[];
   suppliers: WorkloadSupplierRow[];
+  customers: WorkloadCustomerRow[];
 }
 
 export interface WorkloadPendingPo {

@@ -18,7 +18,7 @@ from .followup_engine import apply_followup_logic
 log = logging.getLogger(__name__)
 
 REQUIRED_KEY_FIELDS = ("crm_no", "supplier_po_no", "material_name")
-DATE_FIELDS = {"supplier_date"}
+DATE_FIELDS = {"supplier_date", "po_date"}
 DATETIME_FIELDS = {"shipment_date"}
 NUMERIC_FIELDS = {"stock", "qty", "quantity", "rate"}
 INTEGER_FIELDS = {"lead_time"}
@@ -32,6 +32,8 @@ STRING_FIELDS = {
     "supplier_po_no",
     "supplier_name",
     "owner_emp_code",
+    "customer_name",
+    "customer_po_no",
 }
 
 UPDATABLE_FROM_SOURCE = (
@@ -231,8 +233,10 @@ def upsert_one(db: Session, payload: ProcurementCreate) -> tuple[ProcurementReco
     existing = _find(db, payload)
     if existing is None:
         data = payload.model_dump()
-        # Old local SQLite DBs still have a NOT NULL po_no column.
-        data["po_no"] = payload.supplier_po_no
+        # po_no holds the CUSTOMER PO (falls back to supplier PO when the feed
+        # has no customer PO); the column is also NOT NULL on old SQLite DBs.
+        data.pop("customer_po_no", None)
+        data["po_no"] = payload.customer_po_no or payload.supplier_po_no
         rec = ProcurementRecord(**data)
         apply_followup_logic(rec)
         db.add(rec)
@@ -246,9 +250,15 @@ def upsert_one(db: Session, payload: ProcurementCreate) -> tuple[ProcurementReco
             setattr(existing, field, new_val)
             changed = True
 
-    if existing.po_no != payload.supplier_po_no:
-        existing.po_no = payload.supplier_po_no
+    customer_po = payload.customer_po_no or payload.supplier_po_no
+    if existing.po_no != customer_po:
+        existing.po_no = customer_po
         changed = True
+    for field in ("customer_name", "po_date"):
+        new_val = getattr(payload, field, None)
+        if new_val is not None and getattr(existing, field) != new_val:
+            setattr(existing, field, new_val)
+            changed = True
 
     if changed:
         existing.updated_at = datetime.utcnow()

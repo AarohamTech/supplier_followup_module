@@ -44,8 +44,14 @@ class ProcurementBase(BaseModel):
     quantity: Optional[float] = None
     rate: Optional[float] = None
     owner_emp_code: Optional[str] = None
+    # End-customer fields from the CRM feed. customer_po_no is the customer's own
+    # PO number (distinct from supplier_po_no, which is the recycled CRM PoNo) and
+    # is written to the procurement_records.po_no column.
+    customer_name: Optional[str] = None
+    customer_po_no: Optional[str] = None
+    po_date: Optional[date] = None
 
-    @field_validator("supplier_date", mode="before")
+    @field_validator("supplier_date", "po_date", mode="before")
     @classmethod
     def _v_dates(cls, v):
         d = _parse_date(v)
@@ -93,6 +99,7 @@ class ProcurementOut(ProcurementBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    po_no: Optional[str] = None  # end-customer PO (same value as customer_po_no)
     followup_status: str
     mail_status: str
     followup_count: int

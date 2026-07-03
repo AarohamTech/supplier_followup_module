@@ -154,7 +154,21 @@ def fetch_desk(desk_id: str | None = None) -> list[dict[str, Any]]:
                 return data[key]
     if not isinstance(data, list):
         raise RuntimeError(f"CRM desk feed returned {type(data).__name__}, expected a list")
+    _log_row_keys(data)
     return data
+
+
+_row_keys_logged = False
+
+
+def _log_row_keys(data: list[dict[str, Any]]) -> None:
+    """Log the desk-row field names once, so the real end-customer field names
+    (see _CUSTOMER_*_KEYS) can be confirmed from the prod logs and pruned."""
+    global _row_keys_logged
+    if _row_keys_logged or not data or not isinstance(data[0], dict):
+        return
+    log.info("[crm] desk row keys: %s", sorted(data[0].keys()))
+    _row_keys_logged = True
 
 
 def _emp_code(value: Any) -> str | None:
@@ -168,6 +182,30 @@ def _is_generated(row: dict[str, Any]) -> bool:
     status = str(row.get("PoStatus") or "").strip().upper()
     vendor = str(row.get("PoLongName") or "").strip()
     return status == "APPROVED" and bool(vendor)
+
+
+# End-customer CRM field names vary by feed. We read the first present candidate
+# so the mapping is robust; confirm the real names from the one-time
+# "[crm] desk row keys" log on the prod box and prune this list to the exact key.
+_CUSTOMER_NAME_KEYS = (
+    "CustomerName", "CustName", "PartyName", "BuyerName", "Customer",
+    "CustomerLongName", "PartyLongName",
+)
+_CUSTOMER_PO_KEYS = (
+    "CustomerPoNo", "CustPoNo", "CustomerPONo", "PartyPoNo", "CustomerRefNo",
+    "CustPoNumber", "CustomerOrderNo",
+)
+_CUSTOMER_PO_DATE_KEYS = (
+    "CustomerPoDate", "CustPoDate", "PartyPoDate", "CustomerOrderDate", "PoDate",
+)
+
+
+def _first(row: dict[str, Any], keys: tuple[str, ...]) -> Any:
+    for k in keys:
+        v = row.get(k)
+        if v not in (None, ""):
+            return v
+    return None
 
 
 def map_row(row: dict[str, Any]) -> dict[str, Any]:
@@ -192,6 +230,10 @@ def map_row(row: dict[str, Any]) -> dict[str, Any]:
         # matches the employee master's EMPLOYEE_ID. NOT `EmpCode` (the indenter/
         # requester — a company-wide code that rarely maps to a portal user).
         "owner_emp_code": _emp_code(row.get("UserId")),
+        # End-customer fields (candidate keys — see note above).
+        "customer_name": _first(row, _CUSTOMER_NAME_KEYS),
+        "customer_po_no": _first(row, _CUSTOMER_PO_KEYS),
+        "po_date": _first(row, _CUSTOMER_PO_DATE_KEYS),
     }
 
 
@@ -230,7 +272,11 @@ def _col_values(payload: dict[str, Any]) -> dict[str, Any]:
         "supplier_quantity": payload.get("quantity"),
         "rate": payload.get("rate"),
         "owner_emp_code": payload.get("owner_emp_code"),
-        "po_no": payload["supplier_po_no"],
+        # po_no is the CUSTOMER PO (falls back to the supplier PO when the feed
+        # carries no customer PO, preserving the old not-null behaviour).
+        "po_no": payload.get("customer_po_no") or payload["supplier_po_no"],
+        "customer_name": payload.get("customer_name"),
+        "po_date": payload.get("po_date"),
         "followup_status": rule.followup_status,
         "escalation_level": rule.escalation_level,
         "ai_required": rule.ai_required,
@@ -249,6 +295,7 @@ _MISSING = object()
 _HASH_FIELDS = (
     "signal", "po_status", "adv_status", "shipment_date", "qty", "rate", "stock",
     "supplier_name", "supplier_date", "lead_time", "uom", "owner_emp_code", "quantity",
+    "customer_name", "customer_po_no", "po_date",
 )
 
 
@@ -335,6 +382,8 @@ def _bulk_upsert(db: Session, raw_rows: list[dict[str, Any]]) -> tuple[int, int,
                 "rate": stmt.excluded.rate,
                 "owner_emp_code": stmt.excluded.owner_emp_code,
                 "po_no": stmt.excluded.po_no,
+                "customer_name": stmt.excluded.customer_name,
+                "po_date": stmt.excluded.po_date,
                 "source_hash": stmt.excluded.source_hash,
                 "followup_status": case(
                     (sig == "GREEN", "PENDING_ACK"),
