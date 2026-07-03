@@ -220,7 +220,7 @@ def po_materials(
             ProcurementRecord.supplier_po_no == supplier_po_no,
         )
     ).all()
-    commits = _commitments_by_material(db, supplier_po_no)
+    commits = _commitments_by_material(db, supplier_po_no, name)
     return [_material_out(r, commits.get((r.material_name or "").strip().upper())) for r in rows]
 
 
@@ -230,11 +230,21 @@ def _as_dt(d) -> datetime | None:
     return d if isinstance(d, datetime) else datetime.combine(d, datetime.min.time())
 
 
-def _commitments_by_material(db: Session, supplier_po_no: str) -> dict[str, SupplierMaterialCommitment]:
+def _commitments_by_material(
+    db: Session, supplier_po_no: str, supplier_name: str | None = None
+) -> dict[str, SupplierMaterialCommitment]:
+    stmt = select(SupplierMaterialCommitment).where(
+        SupplierMaterialCommitment.supplier_po_no == supplier_po_no
+    )
+    # PO numbers are recycled across suppliers — scope to this supplier so a
+    # shared PO number does not surface another supplier's commitment.
+    if supplier_name:
+        stmt = stmt.where(
+            func.upper(SupplierMaterialCommitment.supplier_name)
+            == supplier_name.strip().upper()
+        )
     rows = db.scalars(
-        select(SupplierMaterialCommitment)
-        .where(SupplierMaterialCommitment.supplier_po_no == supplier_po_no)
-        .order_by(SupplierMaterialCommitment.updated_at.desc())
+        stmt.order_by(SupplierMaterialCommitment.updated_at.desc())
     ).all()
     out: dict[str, SupplierMaterialCommitment] = {}
     for c in rows:
@@ -321,7 +331,7 @@ def submit_commitments(
             supplier_id=user.supplier_id,
             supplier_po_no=supplier_po_no,
         )
-    commits = _commitments_by_material(db, supplier_po_no)
+    commits = _commitments_by_material(db, supplier_po_no, name)
     rows = db.scalars(
         select(ProcurementRecord).where(
             func.upper(ProcurementRecord.supplier_name) == (name or "").upper(),

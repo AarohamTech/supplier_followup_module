@@ -90,12 +90,21 @@ def _is_valid_commitment_row(c: SupplierMaterialCommitment) -> bool:
 
 
 def _load_commitments(
-    db: Session, supplier_po_no: str
+    db: Session, supplier_po_no: str, supplier_name: Optional[str] = None
 ) -> dict[tuple[str, str], SupplierMaterialCommitment]:
+    stmt = select(SupplierMaterialCommitment).where(
+        SupplierMaterialCommitment.supplier_po_no == supplier_po_no
+    )
+    # PO numbers (CRM PoNo) are recycled across suppliers — scope to this
+    # supplier so a shared PO number + material name does not pull in another
+    # supplier's commitment.
+    if supplier_name:
+        stmt = stmt.where(
+            func.upper(SupplierMaterialCommitment.supplier_name)
+            == supplier_name.strip().upper()
+        )
     rows = db.scalars(
-        select(SupplierMaterialCommitment)
-        .where(SupplierMaterialCommitment.supplier_po_no == supplier_po_no)
-        .order_by(SupplierMaterialCommitment.updated_at.desc())
+        stmt.order_by(SupplierMaterialCommitment.updated_at.desc())
     ).all()
     by_key: dict[tuple[str, str], SupplierMaterialCommitment] = {}
     for row in rows:
@@ -199,7 +208,7 @@ def build_po_group_payload(
     sorted_records = sorted(
         records, key=lambda r: (r.shipment_date or datetime.max, r.material_name or "")
     )
-    commitments = _load_commitments(db, supplier_po_no)
+    commitments = _load_commitments(db, supplier_po_no, supplier_name)
     materials = [
         _material_line(rec, _commitment_for_record(rec, commitments))
         for rec in sorted_records
@@ -402,17 +411,25 @@ def upsert_commitment(
     reply_mail_id: Optional[int],
     commit: bool = True,
 ) -> SupplierMaterialCommitment:
-    row = db.scalar(
-        select(SupplierMaterialCommitment).where(
-            SupplierMaterialCommitment.supplier_po_no == supplier_po_no.strip(),
-            func.upper(SupplierMaterialCommitment.material_name)
-            == material_name.strip().upper(),
-        )
+    # PO numbers are recycled across suppliers — the commitment identity is
+    # (supplier_name, supplier_po_no, material_name). Scope the lookup by
+    # supplier so one supplier's reply never overwrites another's row.
+    lookup = select(SupplierMaterialCommitment).where(
+        SupplierMaterialCommitment.supplier_po_no == supplier_po_no.strip(),
+        func.upper(SupplierMaterialCommitment.material_name)
+        == material_name.strip().upper(),
     )
+    if supplier_name:
+        lookup = lookup.where(
+            func.upper(SupplierMaterialCommitment.supplier_name)
+            == supplier_name.strip().upper()
+        )
+    row = db.scalar(lookup)
     if row is None:
         row = SupplierMaterialCommitment(
             supplier_po_no=supplier_po_no.strip(),
             material_name=material_name.strip(),
+            supplier_name=supplier_name,
         )
         db.add(row)
 
