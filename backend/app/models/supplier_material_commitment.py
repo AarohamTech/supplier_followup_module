@@ -1,9 +1,11 @@
 """Material-wise supplier commitments captured from parsed reply tables.
 
-One row per (supplier_po_no, material_code or material_name). Newer replies
-overwrite the latest commitment but the full history is preserved by inserting
-new rows when the underlying procurement record id differs or by leaving
-existing rows in place and writing an updated one.
+One row per (supplier_name, supplier_po_no, material_name). The CRM PoNo is a
+recycled counter shared across suppliers, so supplier_name MUST be part of the
+identity — otherwise two suppliers sharing a PO number + material name collide.
+Newer replies overwrite the latest commitment but the full history is preserved
+by inserting new rows when the underlying procurement record id differs or by
+leaving existing rows in place and writing an updated one.
 """
 from datetime import date, datetime
 
@@ -70,9 +72,14 @@ class SupplierMaterialCommitment(Base):
     )
 
     __table_args__ = (
+        # PO numbers (CRM PoNo) are recycled across suppliers, so the identity
+        # must include supplier_name. See migration
+        # scripts/migrate_commitment_supplier_unique.py for the prod ALTER
+        # (create_all does not alter existing constraints).
         UniqueConstraint(
+            "supplier_name",
             "supplier_po_no",
             "material_name",
-            name="uq_commitment_po_material",
+            name="uq_commitment_supplier_po_material",
         ),
     )

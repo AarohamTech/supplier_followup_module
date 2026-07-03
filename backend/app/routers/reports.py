@@ -251,6 +251,43 @@ def workload_report(db: Session = Depends(get_db)) -> dict[str, Any]:
                        r["supplier_name"] or "")
     )
 
+    # ── per-customer (procurement only — the customer identity comes from the
+    # PO feed; tasks/mail/ASN are not customer-scoped) ───────────────────────
+    _has_customer = (R.customer_name.is_not(None), R.customer_name != "")
+    cust_extra = {
+        name: (nsup, nlines)
+        for name, nsup, nlines in db.execute(
+            select(
+                R.customer_name,
+                func.count(func.distinct(R.supplier_name)),
+                func.count(R.id),
+            ).where(*_has_customer).group_by(R.customer_name)
+        ).all()
+    }
+    customer_rows = []
+    for name, *po in db.execute(
+        select(R.customer_name, *_po_measures())
+        .where(*_has_customer)
+        .group_by(R.customer_name)
+    ).all():
+        po_d = _po_dict(po)
+        worst = next(
+            (c for c in ("BLACK", "RED", "YELLOW", "GREEN") if po_d[c.lower()] > 0),
+            None,
+        )
+        nsup, nlines = cust_extra.get(name, (0, 0))
+        customer_rows.append({
+            "customer_name": name,
+            "worst_signal": worst,
+            "pos": po_d,
+            "suppliers": _one(nsup),
+            "po_lines": _one(nlines),
+        })
+    customer_rows.sort(
+        key=lambda r: (-r["pos"]["black"], -r["pos"]["red"], -r["pos"]["pending"],
+                       r["customer_name"] or "")
+    )
+
     # ── overall ─────────────────────────────────────────────────────────────
     po_all = db.execute(select(*_po_measures())).one()
     task_all = db.execute(select(*_task_measures())).one()
@@ -258,6 +295,7 @@ def workload_report(db: Session = Depends(get_db)) -> dict[str, Any]:
         "pos": _po_dict(po_all),
         "tasks": _task_dict(task_all),
         "suppliers_active": len(supplier_rows),
+        "customers_active": len(customer_rows),
         "internal_users": len(user_rows),
         "unassigned_open_tasks": _one(db.scalar(
             select(func.count(T.id)).where(
@@ -276,7 +314,12 @@ def workload_report(db: Session = Depends(get_db)) -> dict[str, Any]:
         )),
         "generated_at": datetime.utcnow(),
     }
-    return {"overall": overall, "users": user_rows, "suppliers": supplier_rows}
+    return {
+        "overall": overall,
+        "users": user_rows,
+        "suppliers": supplier_rows,
+        "customers": customer_rows,
+    }
 
 
 # ── Detail drill-downs ───────────────────────────────────────────────────────
@@ -580,6 +623,7 @@ def workload_export(db: Session = Depends(get_db)) -> StreamingResponse:
         ["Generated", o["generated_at"]],
         ["Internal users", o["internal_users"]],
         ["Active suppliers", o["suppliers_active"]],
+        ["Active customers", o.get("customers_active", 0)],
         ["PO lines", o["pos"]["total"]],
         ["Pending POs", o["pos"]["pending"]],
         ["Overdue POs", o["pos"]["overdue"]],
@@ -618,6 +662,17 @@ def workload_export(db: Session = Depends(get_db)) -> StreamingResponse:
              s["mails"]["incoming"], s["mails"]["outgoing"], s["mails"]["unread"],
              s["asns"]["total"], s["asns"]["in_transit"], s["asns"]["delivered"]]
             for s in data["suppliers"]
+        ],
+    )
+    _add_sheet(
+        wb, "Customers",
+        ["Customer", "Worst Signal", "Suppliers", "PO Lines", "Pending POs",
+         "Overdue POs", "Green", "Yellow", "Red", "Black"],
+        [
+            [c["customer_name"], c["worst_signal"], c["suppliers"], c["pos"]["total"],
+             c["pos"]["pending"], c["pos"]["overdue"], c["pos"]["green"],
+             c["pos"]["yellow"], c["pos"]["red"], c["pos"]["black"]]
+            for c in data.get("customers", [])
         ],
     )
     stamp = datetime.utcnow().strftime("%Y-%m-%d")

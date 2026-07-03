@@ -160,13 +160,24 @@ export default function CustomerWorkspace() {
     }
     let cancelled = false;
     setLoadingContext(true);
-    Promise.all([
-      api.listProcurement({ supplier_po_no: linkedPo, size: 50 }),
-      api.listCommitments({ supplier_po_no: linkedPo }),
-    ])
-      .then(([proc, commitments]) => {
+    // PO numbers (CRM PoNo) are recycled across suppliers, so a bare PO-number
+    // lookup mixes suppliers. Fetch procurement first, derive the supplier that
+    // owns this linked PO, then scope both the context records and commitments
+    // to that supplier.
+    api
+      .listProcurement({ supplier_po_no: linkedPo, size: 50 })
+      .then(async (proc) => {
         if (cancelled) return;
-        const records = proc.items ?? [];
+        const allRecords = proc.items ?? [];
+        const supplierName = allRecords[0]?.supplier_name ?? undefined;
+        const records = supplierName
+          ? allRecords.filter((r) => r.supplier_name === supplierName)
+          : allRecords;
+        const commitments = await api.listCommitments({
+          supplier_po_no: linkedPo,
+          supplier_name: supplierName,
+        });
+        if (cancelled) return;
         const first = records[0];
         const commit = commitments[0];
         const ctx: ProcurementContext = {

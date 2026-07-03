@@ -8,17 +8,23 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useTheme } from "@/lib/theme";
 import { fmtDate } from "@/lib/format";
-import type { WorkloadReport, WorkloadSupplierRow, WorkloadUserRow } from "@/lib/types";
+import type {
+  WorkloadCustomerRow,
+  WorkloadReport,
+  WorkloadSupplierRow,
+  WorkloadUserRow,
+} from "@/lib/types";
 import SignalDonut from "@/components/dashboard/SignalDonut";
 import PageHeader from "@/components/layout/PageHeader";
 import { ExportButton, Num, signalChip, Tile } from "@/components/reports/WorkloadShared";
 
-type Tab = "overview" | "users" | "suppliers";
+type Tab = "overview" | "users" | "suppliers" | "customers";
 
 const TABS: { key: Tab; label: string }[] = [
   { key: "overview", label: "Overview" },
   { key: "users", label: "By user" },
   { key: "suppliers", label: "By supplier" },
+  { key: "customers", label: "By customer" },
 ];
 
 export default function WorkloadReportPage() {
@@ -31,6 +37,7 @@ export default function WorkloadReportPage() {
   const [tab, setTab] = useState<Tab>("overview");
   const [userQuery, setUserQuery] = useState("");
   const [supQuery, setSupQuery] = useState("");
+  const [custQuery, setCustQuery] = useState("");
 
   const isAdmin = hasRole("admin");
 
@@ -67,6 +74,13 @@ export default function WorkloadReportPage() {
     if (!q) return rows;
     return rows.filter((s) => (s.supplier_name || "").toLowerCase().includes(q));
   }, [data, supQuery]);
+
+  const customers = useMemo<WorkloadCustomerRow[]>(() => {
+    const q = custQuery.trim().toLowerCase();
+    const rows = data?.customers ?? [];
+    if (!q) return rows;
+    return rows.filter((c) => (c.customer_name || "").toLowerCase().includes(q));
+  }, [data, custQuery]);
 
   // Single-hue magnitude bars (workload, not status): blue, never the signal red.
   const barHue = isDark ? "#60A5FA" : "#3B82F6";
@@ -124,6 +138,7 @@ export default function WorkloadReportPage() {
             {t.label}
             {t.key === "users" && data ? ` (${data.users.length})` : ""}
             {t.key === "suppliers" && data ? ` (${data.suppliers.length})` : ""}
+            {t.key === "customers" && data ? ` (${data.customers?.length ?? 0})` : ""}
           </button>
         ))}
       </div>
@@ -142,9 +157,10 @@ export default function WorkloadReportPage() {
 
       {data && tab === "overview" && (
         <>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-8">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-9">
             <Tile label="Internal users" value={data.overall.internal_users} />
             <Tile label="Active suppliers" value={data.overall.suppliers_active} />
+            <Tile label="Active customers" value={data.overall.customers_active ?? 0} />
             <Tile label="Pending POs" value={data.overall.pos.pending} />
             <Tile label="Overdue POs" value={data.overall.pos.overdue} accent />
             <Tile label="Open tasks" value={data.overall.tasks.open} />
@@ -332,6 +348,68 @@ export default function WorkloadReportPage() {
                 {suppliers.length === 0 && (
                   <tr>
                     <td colSpan={10} className="px-4 py-8 text-center text-brand-muted">No suppliers match.</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      {data && tab === "customers" && (
+        <section className="card overflow-hidden">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-brand-border px-4 py-3">
+            <p className="text-xs text-brand-muted">
+              PO lines grouped by customer (from the CRM feed). Empty until customer fields are ingested.
+            </p>
+            <div className="relative">
+              <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-brand-muted" />
+              <input
+                value={custQuery}
+                onChange={(e) => setCustQuery(e.target.value)}
+                placeholder="Filter customers…"
+                className="input h-8 w-52 pl-8 text-xs"
+              />
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-brand-border bg-subtle/60 text-left text-[10px] uppercase tracking-wider text-brand-muted">
+                  <th className="px-4 py-2 font-semibold">Customer</th>
+                  <th className="px-3 py-2 font-semibold">Signal</th>
+                  <th className="px-3 py-2 text-right font-semibold">Suppliers</th>
+                  <th className="px-3 py-2 text-right font-semibold">PO lines</th>
+                  <th className="px-3 py-2 text-right font-semibold">Pending POs</th>
+                  <th className="px-3 py-2 text-right font-semibold">Overdue POs</th>
+                  <th className="px-3 py-2 text-right font-semibold">Red POs</th>
+                  <th className="px-3 py-2 text-right font-semibold">Black POs</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-brand-border">
+                {customers.map((c) => (
+                  <tr key={c.customer_name} className="hover:bg-subtle/50">
+                    <td className="px-4 py-2 font-medium text-brand-dark">{c.customer_name}</td>
+                    <td className="px-3 py-2">
+                      {c.worst_signal ? (
+                        <span className={`badge ${signalChip(c.worst_signal)}`}>{c.worst_signal}</span>
+                      ) : (
+                        <span className="text-brand-muted">—</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-right"><Num v={c.suppliers} /></td>
+                    <td className="px-3 py-2 text-right"><Num v={c.po_lines} /></td>
+                    <td className="px-3 py-2 text-right"><Num v={c.pos.pending} /></td>
+                    <td className="px-3 py-2 text-right"><Num v={c.pos.overdue} warn /></td>
+                    <td className="px-3 py-2 text-right"><Num v={c.pos.red} warn /></td>
+                    <td className="px-3 py-2 text-right"><Num v={c.pos.black} warn /></td>
+                  </tr>
+                ))}
+                {customers.length === 0 && (
+                  <tr>
+                    <td colSpan={8} className="px-4 py-8 text-center text-brand-muted">
+                      No customers yet — customer fields populate on the next CRM ingest.
+                    </td>
                   </tr>
                 )}
               </tbody>

@@ -385,6 +385,38 @@ export const api = {
       { method: "POST" },
     ),
 
+  // Compose — standalone mail to arbitrary supplier/customer recipients.
+  hubCompose: (body: {
+    audience: "supplier" | "customer";
+    to_emails: string[];
+    cc_emails?: string[];
+    bcc_emails?: string[];
+    subject: string;
+    body: string;
+    supplier_name?: string | null;
+    supplier_po_no?: string | null;
+    procurement_record_id?: number | null;
+    customer_mail_id?: number | null;
+    send: boolean;
+  }) =>
+    http<{ ok: boolean; message_id: number; sent: boolean; status: string; emailed_to?: string[] }>(
+      "/api/communication-hub/compose",
+      { method: "POST", body: JSON.stringify(body) },
+    ),
+
+  hubComposeDraft: (body: {
+    audience: "supplier" | "customer";
+    instruction: string;
+    subject?: string;
+    supplier_name?: string | null;
+    supplier_po_no?: string | null;
+    recipient_name?: string | null;
+  }) =>
+    http<{ body: string; source: "ai" | "template" }>(
+      "/api/communication-hub/compose/draft",
+      { method: "POST", body: JSON.stringify(body) },
+    ),
+
   hubAgent: (body: {
     message: string;
     supplier_id?: number | null;
@@ -1162,6 +1194,42 @@ export const api = {
     });
     return http<SupplierMaterialCommitment[]>(`/api/eportal/hub/commitments?${q.toString()}`);
   },
+
+  // Employee-scoped compose (own suppliers/POs only; no customer audience).
+  eportalCompose: (body: {
+    audience: "supplier" | "customer";
+    to_emails: string[];
+    cc_emails?: string[];
+    bcc_emails?: string[];
+    subject: string;
+    body: string;
+    supplier_name?: string | null;
+    supplier_po_no?: string | null;
+    procurement_record_id?: number | null;
+    send: boolean;
+  }) =>
+    http<{ ok: boolean; message_id: number; sent: boolean; status: string; emailed_to?: string[] }>(
+      "/api/eportal/hub/compose",
+      { method: "POST", body: JSON.stringify(body) },
+    ),
+
+  eportalComposeDraft: (body: {
+    audience: "supplier" | "customer";
+    instruction: string;
+    subject?: string;
+    supplier_name?: string | null;
+    supplier_po_no?: string | null;
+    recipient_name?: string | null;
+  }) =>
+    http<{ body: string; source: "ai" | "template" }>(
+      "/api/eportal/hub/compose/draft",
+      { method: "POST", body: JSON.stringify(body) },
+    ),
+
+  eportalHubSupplierEmails: () =>
+    http<{ supplier_name: string; to_emails: string[]; cc_emails: string[] }[]>(
+      "/api/eportal/hub/supplier-emails",
+    ),
 
   eportalHubApproveMessage: (id: number) =>
     http<{ ok: boolean; message_id: number; status: string }>(

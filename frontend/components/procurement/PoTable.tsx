@@ -1,8 +1,8 @@
 "use client";
-import { useMemo, useState, Fragment } from "react";
+import { useEffect, useMemo, useState, Fragment, type ReactNode } from "react";
 import { useStore } from "@/lib/store";
 import { fmtDate, fmtNum, signalClass, overdueDays } from "@/lib/format";
-import { ChevronDown, ChevronRight, Mail, Sparkles, Loader2 } from "lucide-react";
+import { ChevronDown, ChevronRight, Mail, Sparkles, Loader2, SlidersHorizontal } from "lucide-react";
 import type { ProcurementRecord } from "@/lib/types";
 
 const baseGroupHeaders = [
@@ -16,18 +16,54 @@ const baseGroupHeaders = [
   "HI Required",
 ];
 
-const materialHeaders = [
-  "CRM No.",
-  "Material Name",
-  "Shipment Date",
-  "Overdue",
-  "Signal",
-  "PO Status",
-  "Qty",
-  "Supplier Recent Reply",
-  "Last Commitment Date",
-  "Follow-up Status",
+// Detail (per-material) columns. `on` marks the default-visible set — the full
+// list the user asked for; CRM No. / PO Status / Follow-up are opt-in extras.
+// Visibility is user-toggleable and persisted to localStorage.
+interface DetailColumn {
+  key: string;
+  label: string;
+  on: boolean;
+  render: (r: ProcurementRecord) => ReactNode;
+}
+
+const DETAIL_COLUMNS: DetailColumn[] = [
+  { key: "customer", label: "Customer", on: true,
+    render: (r) => <span className="max-w-[180px] truncate inline-block align-bottom" title={r.customer_name ?? ""}>{r.customer_name ?? "—"}</span> },
+  { key: "customer_po", label: "Customer PO", on: true,
+    render: (r) => <span className="font-mono">{r.po_no ?? "—"}</span> },
+  { key: "po_date", label: "PO Date", on: true, render: (r) => fmtDate(r.po_date) },
+  { key: "material", label: "Material Name", on: true,
+    render: (r) => <span className="max-w-[280px] truncate inline-block align-bottom" title={r.material_name}>{r.material_name}</span> },
+  { key: "signal", label: "Signal", on: true, render: (r) => <SignalBadge signal={r.signal} /> },
+  { key: "qty", label: "Qty", on: true, render: (r) => <>{fmtNum(r.qty)} {r.uom}</> },
+  { key: "supplier_po", label: "Supplier PO", on: true,
+    render: (r) => <span className="font-mono">{r.supplier_po_no}</span> },
+  { key: "supplier_po_date", label: "Supplier PO Date", on: true, render: (r) => fmtDate(r.supplier_date) },
+  { key: "stock", label: "Stock", on: true, render: (r) => fmtNum(r.stock) },
+  { key: "ship_date", label: "Ship Date", on: true, render: (r) => fmtDate(r.shipment_date) },
+  { key: "overdue", label: "Overdue", on: true,
+    render: (r) => overdueDays(r.shipment_date) > 0
+      ? <span className="font-semibold text-signal-red">{overdueDays(r.shipment_date)}d</span>
+      : <span className="text-brand-muted">—</span> },
+  { key: "commitment", label: "Commitment", on: true, render: (r) => fmtDate(r.commitment_date) },
+  { key: "remark", label: "Supplier Remark", on: true,
+    render: (r) => <span className="line-clamp-2 max-w-[220px] text-brand-muted">{r.last_supplier_reply ?? "—"}</span> },
+  { key: "crm", label: "CRM No.", on: false, render: (r) => <span className="font-mono">{r.crm_no}</span> },
+  { key: "po_status", label: "PO Status", on: false, render: (r) => r.po_status ?? "—" },
+  { key: "followup", label: "Follow-up", on: false,
+    render: (r) => (<><div className="font-medium">{r.followup_status}</div><div className="text-brand-muted">{r.escalation_level}</div></>) },
 ];
+
+const COLS_STORAGE_KEY = "po-detail-cols";
+
+function SignalBadge({ signal }: { signal?: string | null }) {
+  const s = (signal || "").toUpperCase();
+  return (
+    <span className={"inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold ring-1 " + (signalClass[s] ?? "")}>
+      {s || "-"}
+    </span>
+  );
+}
 
 const SIGNAL_RANK: Record<string, number> = { GREEN: 1, YELLOW: 2, RED: 3, BLACK: 4 };
 
@@ -112,18 +148,85 @@ export default function PoTable() {
     });
   };
 
+  // Detail column visibility (persisted). Default = every column's `on` flag.
+  const [visibleCols, setVisibleCols] = useState<Set<string>>(
+    () => new Set(DETAIL_COLUMNS.filter((c) => c.on).map((c) => c.key)),
+  );
+  const [colMenuOpen, setColMenuOpen] = useState(false);
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem(COLS_STORAGE_KEY);
+      if (saved) setVisibleCols(new Set(JSON.parse(saved) as string[]));
+    } catch {
+      /* ignore */
+    }
+  }, []);
+  const toggleCol = (key: string) =>
+    setVisibleCols((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      try {
+        window.localStorage.setItem(COLS_STORAGE_KEY, JSON.stringify([...next]));
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  const activeCols = useMemo(
+    () => DETAIL_COLUMNS.filter((c) => visibleCols.has(c.key)),
+    [visibleCols],
+  );
+
   return (
     <div className="card overflow-hidden">
-      <div className="px-4 py-3 border-b border-brand-border flex items-center justify-between">
+      <div className="px-4 py-3 border-b border-brand-border flex items-center justify-between gap-2">
         <div className="text-sm font-semibold">PO Follow-up List (grouped by Supplier + PO)</div>
-        <div className="text-xs text-brand-muted">
-          {loading ? (
-            <span className="inline-flex items-center gap-1">
-              <Loader2 size={12} className="animate-spin" /> Loading...
-            </span>
-          ) : (
-            `${groups.length} PO group(s) · ${total} material row(s)`
-          )}
+        <div className="flex items-center gap-3">
+          <div className="text-xs text-brand-muted">
+            {loading ? (
+              <span className="inline-flex items-center gap-1">
+                <Loader2 size={12} className="animate-spin" /> Loading...
+              </span>
+            ) : (
+              `${groups.length} PO group(s) · ${total} material row(s)`
+            )}
+          </div>
+          <div className="relative">
+            <button
+              onClick={() => setColMenuOpen((v) => !v)}
+              className="inline-flex items-center gap-1.5 rounded-md border border-brand-border px-2.5 py-1 text-xs font-medium text-brand-dark hover:bg-subtle"
+              title="Show / hide detail columns"
+            >
+              <SlidersHorizontal size={13} /> Columns
+            </button>
+            {colMenuOpen && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setColMenuOpen(false)} aria-hidden />
+                <div className="absolute right-0 z-20 mt-1 w-56 rounded-md border border-brand-border bg-card p-2 shadow-lg">
+                  <div className="mb-1 px-1 text-[10px] font-semibold uppercase tracking-wider text-brand-muted">
+                    Detail columns
+                  </div>
+                  <div className="max-h-72 overflow-y-auto">
+                    {DETAIL_COLUMNS.map((c) => (
+                      <label
+                        key={c.key}
+                        className="flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-xs hover:bg-subtle"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={visibleCols.has(c.key)}
+                          onChange={() => toggleCol(c.key)}
+                          className="accent-signal-red"
+                        />
+                        {c.label}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </div>
       {error && (
@@ -220,62 +323,26 @@ export default function PoTable() {
                           <table className="min-w-full text-xs border border-brand-border bg-card">
                             <thead className="bg-subtle">
                               <tr>
-                                {materialHeaders.map((h, i) => (
+                                {activeCols.map((c) => (
                                   <th
-                                    key={i}
+                                    key={c.key}
                                     className="text-left px-2 py-1.5 font-semibold text-brand-dark border-b border-brand-border whitespace-nowrap"
                                   >
-                                    {h}
+                                    {c.label}
                                   </th>
                                 ))}
                               </tr>
                             </thead>
                             <tbody>
-                              {g.records.map((r) => {
-                                const rsig = (r.signal || "").toUpperCase();
-                                return (
-                                  <tr key={r.id} className="border-t border-brand-border hover:bg-blue-50/50">
-                                    <td className="px-2 py-1.5 whitespace-nowrap font-mono">{r.crm_no}</td>
-                                    <td className="px-2 py-1.5 max-w-[280px] truncate" title={r.material_name}>
-                                      {r.material_name}
+                              {g.records.map((r) => (
+                                <tr key={r.id} className="border-t border-brand-border hover:bg-blue-50/50">
+                                  {activeCols.map((c) => (
+                                    <td key={c.key} className="px-2 py-1.5 align-top">
+                                      {c.render(r)}
                                     </td>
-                                    <td className="px-2 py-1.5 whitespace-nowrap">{fmtDate(r.shipment_date)}</td>
-                                    <td className="px-2 py-1.5 whitespace-nowrap">
-                                      {overdueDays(r.shipment_date) > 0 ? (
-                                        <span className="font-semibold text-signal-red">
-                                          {overdueDays(r.shipment_date)}d
-                                        </span>
-                                      ) : (
-                                        <span className="text-brand-muted">—</span>
-                                      )}
-                                    </td>
-                                    <td className="px-2 py-1.5">
-                                      <span
-                                        className={
-                                          "inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold ring-1 " +
-                                          (signalClass[rsig] ?? "")
-                                        }
-                                      >
-                                        {rsig || "-"}
-                                      </span>
-                                    </td>
-                                    <td className="px-2 py-1.5 whitespace-nowrap">{r.po_status ?? "-"}</td>
-                                    <td className="px-2 py-1.5 whitespace-nowrap">
-                                      {fmtNum(r.qty)} {r.uom}
-                                    </td>
-                                    <td className="px-2 py-1.5 max-w-[200px]">
-                                      <div className="line-clamp-2 text-brand-muted">
-                                        {r.last_supplier_reply ?? "-"}
-                                      </div>
-                                    </td>
-                                    <td className="px-2 py-1.5 whitespace-nowrap">{fmtDate(r.commitment_date)}</td>
-                                    <td className="px-2 py-1.5 whitespace-nowrap">
-                                      <div className="font-medium">{r.followup_status}</div>
-                                      <div className="text-brand-muted">{r.escalation_level}</div>
-                                    </td>
-                                  </tr>
-                                );
-                              })}
+                                  ))}
+                                </tr>
+                              ))}
                             </tbody>
                           </table>
                         </div>

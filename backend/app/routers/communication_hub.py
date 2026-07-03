@@ -16,7 +16,7 @@ from pydantic import BaseModel
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
-from ..core.deps import get_current_user, require_manager
+from ..core.deps import get_current_user, require_manager, require_writer
 from ..database import get_db
 from ..models.user import User
 from ..models.communication_task import (
@@ -40,6 +40,7 @@ import logging
 from ..services.followup_engine import apply_followup_logic, get_followup_rule
 from ..services.mail_template_service import build_context, pick_template, render
 from ..services import ai_service
+from ..services import compose_service
 from .. import seed as seed_mod
 from ..services import agent_subscription_service as agent_subs
 from ..services import communication_message_service as msg_service
@@ -1590,6 +1591,70 @@ def reply_now(payload: HubReplyIn, db: Session = Depends(get_db)) -> dict[str, A
         "emailed_to": to_emails if want_email else [],
         "no_email_on_file": bool(payload.send_email and not to_emails),
     }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 10b. Compose — a standalone mail to arbitrary supplier/customer recipients
+# ─────────────────────────────────────────────────────────────────────────────
+class HubComposeIn(BaseModel):
+    audience: str = "supplier"  # "supplier" | "customer" — drives the UI only
+    to_emails: list[str] = []
+    cc_emails: list[str] = []
+    bcc_emails: list[str] = []
+    subject: str
+    body: str
+    # Optional PO / customer threading context.
+    supplier_name: str | None = None
+    supplier_po_no: str | None = None
+    procurement_record_id: int | None = None
+    customer_mail_id: int | None = None
+    send: bool = True  # True → SMTP send now; False → save as DRAFT
+
+
+@router.post("/compose", dependencies=[Depends(require_writer)])
+def compose_now(payload: HubComposeIn, db: Session = Depends(get_db)) -> dict[str, Any]:
+    """Compose and (optionally) send a standalone mail via the mail engine.
+
+    Unlike /reply this is not tied to an existing thread — recipients are chosen
+    freely. It is logged as an OUTGOING CommunicationMessage (so it appears in the
+    hub) and delivered over SMTP when `send` is true; otherwise it is a DRAFT.
+    """
+    return compose_service.compose_and_send(
+        db,
+        to_emails=payload.to_emails,
+        cc_emails=payload.cc_emails,
+        bcc_emails=payload.bcc_emails,
+        subject=payload.subject,
+        body=payload.body,
+        supplier_name=payload.supplier_name,
+        supplier_po_no=payload.supplier_po_no,
+        procurement_record_id=payload.procurement_record_id,
+        customer_mail_id=payload.customer_mail_id,
+        send=payload.send,
+    )
+
+
+class HubComposeDraftIn(BaseModel):
+    audience: str = "supplier"
+    instruction: str = ""
+    subject: str | None = None
+    supplier_name: str | None = None
+    supplier_po_no: str | None = None
+    recipient_name: str | None = None
+
+
+@router.post("/compose/draft", dependencies=[Depends(require_writer)])
+def compose_draft(payload: HubComposeDraftIn) -> dict[str, Any]:
+    """HI assist for the compose page — draft a professional email body from a
+    short instruction. Falls back to a deterministic template if AI is off/busy."""
+    return compose_service.draft_body(
+        audience=payload.audience,
+        instruction=payload.instruction,
+        subject=payload.subject,
+        supplier_name=payload.supplier_name,
+        supplier_po_no=payload.supplier_po_no,
+        recipient_name=payload.recipient_name,
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────────

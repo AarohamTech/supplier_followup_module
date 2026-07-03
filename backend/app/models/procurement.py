@@ -82,3 +82,9 @@ class ProcurementRecord(Base):
         UniqueConstraint("crm_no", "supplier_po_no", "material_name", name="uq_procurement_match_latest"),
         Index("ix_procurement_signal_status", "signal", "po_status"),
     )
+
+    @property
+    def customer_po_no(self) -> str | None:
+        """The end-customer PO — stored in the po_no column (distinct from the
+        recycled supplier_po_no). Exposed so schemas can read it by that name."""
+        return self.po_no

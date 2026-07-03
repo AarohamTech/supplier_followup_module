@@ -15,6 +15,7 @@ import {
   MailCheck,
   MessagesSquare,
   PieChart,
+  Send,
   Settings,
   ShieldAlert,
   ShieldCheck,
@@ -60,6 +61,7 @@ const groups: { label: string; items: NavItem[] }[] = [
     label: "Communication",
     items: [
       { href: "/mail-history", label: "Communication Hub", icon: MessagesSquare },
+      { href: "/compose", label: "Compose Mail", icon: Send, minRole: "user" },
       { href: "/customer-mails", label: "Customer Mails", icon: Inbox },
       { href: "/approvals", label: "Approvals", icon: MailCheck, minRole: "manager" },
       { href: "/tasks", label: "Tasks", icon: ListChecks },
