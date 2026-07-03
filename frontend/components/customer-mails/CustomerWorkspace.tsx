@@ -69,8 +69,8 @@ export default function CustomerWorkspace() {
   const [searchInput, setSearchInput] = useState("");
   const search = useDebouncedValue(searchInput, 350);
   const [activeTab, setActiveTab] = useState(QUEUE_TABS[0].key);
-  // Customer vs non-customer scope. A mail is treated as non-customer when it's
-  // been categorised as SUPPLIER; everything else is customer-facing.
+  // Customer vs non-customer scope. Customers are senders on a customer domain
+  // (@zanvargroup.com); every other sender domain is "non-customer".
   const [mailScope, setMailScope] = useState<"customer" | "other">("customer");
 
   // ── Data ───────────────────────────────────────────────────────────────
@@ -104,12 +104,12 @@ export default function CustomerWorkspace() {
   const [agentActions, setAgentActions] = useState<AgentAction[]>([]);
   const [agentBusy, setAgentBusy] = useState(false);
 
-  // ── Fetch list (debounced search only; tabs group client-side) ───────────
+  // ── Fetch list (debounced search + customer/non-customer scope) ───────────
   useEffect(() => {
     let cancelled = false;
     setLoadingList(true);
     api
-      .listCustomerMails({ search: search || undefined, limit: 200 })
+      .listCustomerMails({ search: search || undefined, scope: mailScope, limit: 200 })
       .then((res) => {
         if (!cancelled) setData(res);
       })
@@ -122,13 +122,10 @@ export default function CustomerWorkspace() {
     return () => {
       cancelled = true;
     };
-  }, [search, reloadKey]);
+  }, [search, mailScope, reloadKey]);
 
-  const items = useMemo(() => {
-    const all = data?.items ?? [];
-    const isNonCustomer = (m: CustomerMail) => (m.ai_category || "").toUpperCase() === "SUPPLIER";
-    return all.filter((m) => (mailScope === "other" ? isNonCustomer(m) : !isNonCustomer(m)));
-  }, [data, mailScope]);
+  // Scope filtering happens on the backend (customer domains vs the inverse).
+  const items = useMemo(() => data?.items ?? [], [data]);
 
   // Auto-select the first mail; also re-point if the current selection has
   // dropped out of the list (e.g. after a filter/search or a status change).

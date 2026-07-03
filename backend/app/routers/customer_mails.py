@@ -167,6 +167,7 @@ def list_customer_mails(
     mail_type: str | None = Query(default=None),
     assigned_to: str | None = Query(default=None),
     search: str | None = Query(default=None),
+    scope: str = Query(default="customer", pattern="^(customer|other)$"),
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
 ) -> Any:
@@ -176,6 +177,7 @@ def list_customer_mails(
         mail_type=mail_type,
         assigned_to=assigned_to,
         search=search,
+        scope=scope,
         limit=limit,
         offset=offset,
     )

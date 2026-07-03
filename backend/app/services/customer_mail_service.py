@@ -6,7 +6,7 @@ from datetime import datetime
 from html import escape
 from typing import Any
 
-from sqlalchemy import or_, select, func
+from sqlalchemy import not_, or_, select, func
 from sqlalchemy.orm import Session
 
 from ..models.communication_message import CommunicationMessage
@@ -36,6 +36,9 @@ def list_mails(
     search: str | None = None,
     limit: int = 100,
     offset: int = 0,
+    # "customer" (default) = senders on a customer domain; "other" = every other
+    # sender (non-customer / unmatched). Drives the workspace Customers|Non-customer toggle.
+    scope: str = "customer",
     # Employee scope: only mails linked to one of these POs OR assigned to one
     # of these display names. None = unscoped (staff view).
     owned_po_nos: set[str] | None = None,
@@ -62,11 +65,14 @@ def list_mails(
     if assigned_to:
         stmt = stmt.where(CustomerMail.assigned_to == assigned_to)
         count_stmt = count_stmt.where(CustomerMail.assigned_to == assigned_to)
-    # Customer inbox = mail from the configured customer domain(s) only; other
-    # unmatched senders (bounces, spam) stay stored but hidden from this view.
+    # Customer inbox = mail from the configured customer domain(s); the "other"
+    # scope is the inverse (non-customer / unmatched senders, incl. unknown).
     domains = settings.customer_mail_domains
     if domains:
-        dom_clause = or_(*[CustomerMail.from_email.ilike(f"%@{d}") for d in domains])
+        in_customer = or_(
+            *[func.coalesce(CustomerMail.from_email, "").ilike(f"%@{d}") for d in domains]
+        )
+        dom_clause = not_(in_customer) if scope == "other" else in_customer
         stmt = stmt.where(dom_clause)
         count_stmt = count_stmt.where(dom_clause)
     if search:

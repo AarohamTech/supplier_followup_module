@@ -566,6 +566,7 @@ export const api = {
     mail_type?: string;
     assigned_to?: string;
     search?: string;
+    scope?: "customer" | "other";
     limit?: number;
     offset?: number;
   } = {}) => {
