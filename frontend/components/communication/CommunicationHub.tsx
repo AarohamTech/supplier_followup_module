@@ -321,8 +321,10 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
   const [selectedSupplierName, setSelectedSupplierName] = useState<string | null>(null);
   const [selectedSupplierId, setSelectedSupplierId] = useState<number | null>(null);
   const [selectedProcurementId, setSelectedProcurementId] = useState<number | null>(null);
-  // Non-PO "Other Mails": the toggle, the loaded list, and the selected thread key.
-  const [showOtherMails, setShowOtherMails] = useState(false);
+  // Non-PO "Other Mails": which list the lower panel shows. It's a swap, not a
+  // stack — suppliers can have hundreds of POs, so the Other list must replace
+  // the PO list rather than sit below it. Plus the loaded list + selected key.
+  const [poView, setPoView] = useState<"pos" | "other">("pos");
   const [otherMails, setOtherMails] = useState<OtherMailThread[]>([]);
   const [selectedOtherKey, setSelectedOtherKey] = useState<string | null>(null);
 
@@ -588,6 +590,7 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
       setSelectedProcurementId(null);
       setSelectedOtherKey(null);
       setOtherMails([]);
+      setPoView("pos"); // new supplier → back to its PO list
       setPoList([]);
       setThread(null);
       setTaskGroups(null);
@@ -706,12 +709,12 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
     if (source === "suppliers") void loadAll();
   }, [loadAll, source]);
 
-  // Lazy-load the active supplier's non-PO "Other Mails" when the toggle is on.
+  // Lazy-load the active supplier's non-PO "Other Mails" when its tab is active.
   useEffect(() => {
-    if (source === "suppliers" && showOtherMails && selectedSupplierName) {
+    if (source === "suppliers" && poView === "other" && selectedSupplierName) {
       void loadOtherMails(selectedSupplierName, selectedSupplierId);
     }
-  }, [source, showOtherMails, selectedSupplierName, selectedSupplierId, loadOtherMails]);
+  }, [source, poView, selectedSupplierName, selectedSupplierId, loadOtherMails]);
 
   useEffect(() => {
     const handleMailHistoryUpdated = () => {
@@ -1177,35 +1180,50 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
             )}
           </div>
 
-          <div className="flex items-center justify-between gap-2 px-4 py-2.5">
-            <div className="min-w-0">
-              <div className="text-xs font-semibold uppercase tracking-wide text-brand-muted">Purchase Orders</div>
-              <div className="truncate text-[11px] text-brand-muted">
-                {activeSupplier ? activeSupplier.supplier_name : "Select a supplier"}
-              </div>
+          <div className="px-4 py-2.5">
+            <div className="mb-2 truncate text-[11px] text-brand-muted">
+              {activeSupplier ? activeSupplier.supplier_name : "Select a supplier"}
             </div>
             {activeSupplier && (
-              <div className="flex shrink-0 items-center gap-1.5">
-                <span className="rounded-full bg-subtle px-2 py-0.5 text-[10px] font-semibold text-brand-muted">
-                  {poList.length}
-                </span>
-                {/* Toggle: reveal incoming supplier mails that have no PO number. */}
+              // Segmented toggle: switching swaps which list the panel shows, so
+              // the Other Mails list is never buried below hundreds of POs.
+              <div className="flex rounded-lg border border-brand-border bg-subtle p-0.5 text-xs font-semibold">
                 <button
-                  onClick={() => setShowOtherMails((v) => !v)}
-                  title="Show mails with no PO number"
-                  className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[10px] font-semibold transition ${
-                    showOtherMails
-                      ? "border-signal-red/30 bg-red-50 text-signal-red"
-                      : "border-brand-border text-brand-muted hover:bg-subtle"
+                  onClick={() => setPoView("pos")}
+                  className={`flex flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 transition ${
+                    poView === "pos"
+                      ? "bg-card text-signal-red shadow-sm"
+                      : "text-brand-muted hover:text-brand-dark"
+                  }`}
+                >
+                  Purchase Orders
+                  <span
+                    className={`rounded-full px-1.5 text-[10px] font-bold ${
+                      poView === "pos" ? "bg-signal-red text-white" : "bg-card text-brand-muted"
+                    }`}
+                  >
+                    {poList.length}
+                  </span>
+                </button>
+                <button
+                  onClick={() => setPoView("other")}
+                  title="Mails with no PO number"
+                  className={`flex flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 transition ${
+                    poView === "other"
+                      ? "bg-card text-signal-red shadow-sm"
+                      : "text-brand-muted hover:text-brand-dark"
                   }`}
                 >
                   Other
-                  {(activeSupplier.non_po_count ?? 0) > 0 && (
-                    <span className="rounded-full bg-signal-red px-1.5 text-[9px] font-bold leading-4 text-white">
-                      {activeSupplier.non_po_count}
-                    </span>
-                  )}
-                  <ChevronRight size={11} className={`transition-transform ${showOtherMails ? "rotate-90" : ""}`} />
+                  <span
+                    className={`rounded-full px-1.5 text-[10px] font-bold ${
+                      poView === "other" || (activeSupplier.non_po_count ?? 0) > 0
+                        ? "bg-signal-red text-white"
+                        : "bg-card text-brand-muted"
+                    }`}
+                  >
+                    {poView === "other" ? otherMails.length : activeSupplier.non_po_count ?? 0}
+                  </span>
                 </button>
               </div>
             )}
@@ -1214,48 +1232,30 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
           <div className="flex-1 overflow-y-auto border-t border-brand-border">
             {!activeSupplier ? (
               <EmptyState icon={<Inbox size={18} />}>Pick a supplier to see its POs.</EmptyState>
+            ) : poView === "pos" ? (
+              poList.length === 0 && !loading ? (
+                <EmptyState icon={<Inbox size={18} />}>No POs for this supplier.</EmptyState>
+              ) : (
+                poList.map((p) => (
+                  <PoRow
+                    key={p.procurement_record_id}
+                    p={p}
+                    active={p.procurement_record_id === selectedProcurementId && !inOther}
+                    onClick={() => void handleSelectPo(p.procurement_record_id, p.supplier_name, p.supplier_po_no)}
+                  />
+                ))
+              )
+            ) : otherMails.length === 0 ? (
+              <EmptyState icon={<Inbox size={18} />}>No mails without a PO for this supplier.</EmptyState>
             ) : (
-              <>
-                {poList.length === 0 && !loading ? (
-                  <EmptyState icon={<Inbox size={18} />}>No POs for this supplier.</EmptyState>
-                ) : (
-                  poList.map((p) => (
-                    <PoRow
-                      key={p.procurement_record_id}
-                      p={p}
-                      active={p.procurement_record_id === selectedProcurementId && !inOther}
-                      onClick={() => void handleSelectPo(p.procurement_record_id, p.supplier_name, p.supplier_po_no)}
-                    />
-                  ))
-                )}
-
-                {showOtherMails && (
-                  <div className="border-t border-brand-border">
-                    <div className="flex items-center justify-between px-4 py-2">
-                      <span className="text-[11px] font-semibold uppercase tracking-wide text-brand-muted">
-                        Other Mails <span className="font-normal normal-case">(no PO)</span>
-                      </span>
-                      <span className="rounded-full bg-subtle px-2 py-0.5 text-[10px] font-semibold text-brand-muted">
-                        {otherMails.length}
-                      </span>
-                    </div>
-                    {otherMails.length === 0 ? (
-                      <div className="px-4 pb-3 text-[11px] text-brand-muted">
-                        No mails without a PO for this supplier.
-                      </div>
-                    ) : (
-                      otherMails.map((t) => (
-                        <OtherMailRow
-                          key={t.thread_key}
-                          t={t}
-                          active={t.thread_key === selectedOtherKey}
-                          onClick={() => void handleSelectOther(t)}
-                        />
-                      ))
-                    )}
-                  </div>
-                )}
-              </>
+              otherMails.map((t) => (
+                <OtherMailRow
+                  key={t.thread_key}
+                  t={t}
+                  active={t.thread_key === selectedOtherKey}
+                  onClick={() => void handleSelectOther(t)}
+                />
+              ))
             )}
           </div>
         </aside>
