@@ -1000,8 +1000,12 @@ export const api = {
   },
 
   eportalPos: () => http<EmployeePoListResponse>("/api/eportal/pos"),
-  eportalPoMaterials: (supplierPoNo: string) =>
-    http<EmployeePoMaterial[]>(`/api/eportal/pos/${encodeURIComponent(supplierPoNo)}/materials`),
+  eportalPoMaterials: (supplierPoNo: string, supplierName?: string) =>
+    http<EmployeePoMaterial[]>(
+      `/api/eportal/pos/${encodeURIComponent(supplierPoNo)}/materials${
+        supplierName ? `?supplier_name=${encodeURIComponent(supplierName)}` : ""
+      }`,
+    ),
   eportalPoMessages: (supplierPoNo: string) =>
     http<PortalMessage[]>(`/api/eportal/pos/${encodeURIComponent(supplierPoNo)}/messages`),
   eportalSendMessage: (supplierPoNo: string, body: string, subject?: string) =>

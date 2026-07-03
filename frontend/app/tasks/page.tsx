@@ -59,13 +59,12 @@ const SOURCE_OPTIONS: { value: TaskSource | ""; label: string }[] = [
   { value: "ESCALATION", label: "Escalation" },
 ];
 
-const PRIORITY_OPTS = ["P0", "P1", "P2", "P3"];
+const PRIORITY_OPTS = ["LOW", "MEDIUM", "HIGH"];
 
 const PRIORITY_BADGE: Record<string, string> = {
-  P0: "bg-rose-100 text-rose-700",
-  P1: "bg-amber-100 text-amber-700",
-  P2: "bg-blue-100 text-blue-700",
-  P3: "bg-subtle text-brand-muted",
+  HIGH: "bg-rose-100 text-rose-700",
+  MEDIUM: "bg-amber-100 text-amber-700",
+  LOW: "bg-subtle text-brand-muted",
 };
 
 const SOURCE_BADGE: Record<string, string> = {
@@ -640,7 +639,7 @@ function TaskDrawer({
   async function escalate() {
     await patch({
       escalation_level: (task.escalation_level ?? 0) + 1,
-      priority: "P0",
+      priority: "HIGH",
       signal: "RED",
     });
   }

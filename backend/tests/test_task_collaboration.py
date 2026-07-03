@@ -26,7 +26,7 @@ def _temp_db():
 
 
 def _make_task(db) -> CommunicationTask:
-    task = CommunicationTask(title="Follow up PO", status="TODO", priority="P2", signal="YELLOW")
+    task = CommunicationTask(title="Follow up PO", status="TODO", priority="MEDIUM", signal="YELLOW")
     db.add(task)
     db.commit()
     db.refresh(task)
@@ -66,7 +66,7 @@ class TaskActivityTests(unittest.TestCase):
                 task,
                 {
                     "status": ("TODO", "IN_PROGRESS"),
-                    "priority": ("P2", "P2"),  # unchanged → ignored
+                    "priority": ("MEDIUM", "MEDIUM"),  # unchanged → ignored
                     "assigned_to": (None, "alice"),
                 },
             )

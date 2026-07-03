@@ -23,7 +23,7 @@ CUSTOMER_MAIL_TYPES = (
     "FINANCE",
 )
 CUSTOMER_MAIL_STATUSES = ("OPEN", "IN_PROGRESS", "RESOLVED", "CLOSED")
-CUSTOMER_MAIL_PRIORITIES = ("P0", "P1", "P2", "P3")
+CUSTOMER_MAIL_PRIORITIES = ("LOW", "MEDIUM", "HIGH")
 
 
 class CustomerMail(Base):
@@ -43,7 +43,7 @@ class CustomerMail(Base):
     customer_name: Mapped[str | None] = mapped_column(String(255), index=True)
     status: Mapped[str] = mapped_column(String(32), default="OPEN", index=True)
     assigned_to: Mapped[str | None] = mapped_column(String(128), index=True)
-    priority: Mapped[str] = mapped_column(String(8), default="P2")
+    priority: Mapped[str] = mapped_column(String(8), default="MEDIUM")
 
     linked_task_id: Mapped[int | None] = mapped_column(
         ForeignKey("communication_tasks.id"), index=True

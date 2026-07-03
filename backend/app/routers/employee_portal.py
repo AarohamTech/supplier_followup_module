@@ -129,12 +129,17 @@ def list_pos(
     user: User = Depends(get_current_employee), db: Session = Depends(get_db)
 ) -> EmployeePoListResponse:
     records = _emp_records(db, user.emp_code)
-    groups: dict[str, dict] = {}
+    # CRM PoNo is recycled across suppliers, so a bare PO number can belong to
+    # two different suppliers for the same employee. Group by (supplier, PO) so
+    # each supplier's PO is its own row instead of being merged/duplicated.
+    groups: dict[tuple[str, str], dict] = {}
     for r in records:
         po = r.supplier_po_no
         if not po:
             continue
-        g = groups.setdefault(po, {
+        key = ((r.supplier_name or "").strip().upper(), po)
+        g = groups.setdefault(key, {
+            "supplier_po_no": po,
             "crm_no": r.crm_no,
             "supplier_name": r.supplier_name,
             "signals": [],
@@ -151,25 +156,29 @@ def list_pos(
         if sd and (g["earliest"] is None or sd < g["earliest"]):
             g["earliest"] = sd
 
-    # Unread supplier replies (INCOMING, not yet read) per PO.
-    unread_counts: dict[str, int] = {}
-    po_nos = [po for po in groups.keys() if po]
+    # Unread supplier replies (INCOMING, not yet read) per (supplier, PO).
+    unread_counts: dict[tuple[str, str], int] = {}
+    po_nos = [g["supplier_po_no"] for g in groups.values()]
     if po_nos:
-        for po_no, cnt in db.execute(
-            select(CommunicationMessage.supplier_po_no, func.count(CommunicationMessage.id))
+        for sup_name, po_no, cnt in db.execute(
+            select(
+                CommunicationMessage.supplier_name,
+                CommunicationMessage.supplier_po_no,
+                func.count(CommunicationMessage.id),
+            )
             .where(
                 CommunicationMessage.direction == "INCOMING",
                 CommunicationMessage.read_at.is_(None),
                 CommunicationMessage.supplier_po_no.in_(po_nos),
             )
-            .group_by(CommunicationMessage.supplier_po_no)
+            .group_by(CommunicationMessage.supplier_name, CommunicationMessage.supplier_po_no)
         ).all():
             if po_no:
-                unread_counts[po_no] = int(cnt or 0)
+                unread_counts[((sup_name or "").strip().upper(), po_no)] = int(cnt or 0)
 
     items = [
         EmployeePo(
-            supplier_po_no=po,
+            supplier_po_no=g["supplier_po_no"],
             crm_no=g["crm_no"],
             supplier_name=g["supplier_name"],
             material_count=g["count"],
@@ -177,9 +186,9 @@ def list_pos(
             po_status=g["po_status"],
             earliest_shipment_date=g["earliest"],
             escalated=g["escalated"],
-            unread_inbound=unread_counts.get(po, 0),
+            unread_inbound=unread_counts.get(key_, 0),
         )
-        for po, g in groups.items()
+        for key_, g in groups.items()
     ]
     items.sort(
         key=lambda p: (
@@ -194,15 +203,21 @@ def list_pos(
 @router.get("/pos/{supplier_po_no}/materials", response_model=list[EmployeePoMaterial])
 def po_materials(
     supplier_po_no: str,
+    supplier_name: Optional[str] = None,
     user: User = Depends(get_current_employee),
     db: Session = Depends(get_db),
 ) -> list[EmployeePoMaterial]:
-    rows = db.scalars(
-        select(ProcurementRecord).where(
-            ProcurementRecord.owner_emp_code == user.emp_code,
-            ProcurementRecord.supplier_po_no == supplier_po_no,
+    stmt = select(ProcurementRecord).where(
+        ProcurementRecord.owner_emp_code == user.emp_code,
+        ProcurementRecord.supplier_po_no == supplier_po_no,
+    )
+    # PO numbers are recycled across suppliers — scope to the supplier so a
+    # shared PO number does not mix another vendor's materials into this PO.
+    if supplier_name:
+        stmt = stmt.where(
+            func.upper(ProcurementRecord.supplier_name) == supplier_name.strip().upper()
         )
-    ).all()
+    rows = db.scalars(stmt).all()
     return [
         EmployeePoMaterial(
             procurement_record_id=r.id,

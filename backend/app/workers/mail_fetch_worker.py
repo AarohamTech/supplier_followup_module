@@ -174,7 +174,7 @@ def _process_one(
                 mail_type=classified_type,
                 customer_name=parseaddr(from_header)[0] or sender_email,
                 status="OPEN",
-                priority="P2",
+                priority="MEDIUM",
                 # Link to the related order when a PO/CRM number was parsed, so the
                 # customer mail shows its order context instead of being orphaned.
                 linked_supplier_po_no=parsed.get("supplier_po_no"),

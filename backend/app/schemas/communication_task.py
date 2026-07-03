@@ -13,7 +13,7 @@ TaskStatus = Literal[
     "BLOCKED",
     "DONE",
 ]
-TaskPriority = Literal["P0", "P1", "P2", "P3"]
+TaskPriority = Literal["LOW", "MEDIUM", "HIGH"]
 TaskSignal = Literal["GREEN", "YELLOW", "RED", "BLACK"]
 TaskSource = Literal["SUPPLIER", "CUSTOMER", "INTERNAL", "ESCALATION"]
 
@@ -34,7 +34,7 @@ class CommunicationTaskBase(BaseModel):
     assigned_to_user_id: Optional[int] = None
     assigned_by: Optional[str] = None
     watchers: list[int] = Field(default_factory=list)
-    priority: TaskPriority = "P2"
+    priority: TaskPriority = "MEDIUM"
     status: TaskStatus = "TODO"
     signal: TaskSignal = "YELLOW"
     escalation_level: int = 0

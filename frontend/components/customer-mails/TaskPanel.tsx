@@ -20,10 +20,9 @@ interface TaskPanelProps {
 }
 
 const PRIORITY_DOT: Record<string, string> = {
-  P0: "bg-signal-red",
-  P1: "bg-orange-500",
-  P2: "bg-amber-500",
-  P3: "bg-gray-400",
+  HIGH: "bg-signal-red",
+  MEDIUM: "bg-amber-500",
+  LOW: "bg-gray-400",
 };
 
 function TaskPanelBase({

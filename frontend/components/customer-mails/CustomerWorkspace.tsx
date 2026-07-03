@@ -69,6 +69,9 @@ export default function CustomerWorkspace() {
   const [searchInput, setSearchInput] = useState("");
   const search = useDebouncedValue(searchInput, 350);
   const [activeTab, setActiveTab] = useState(QUEUE_TABS[0].key);
+  // Customer vs non-customer scope. A mail is treated as non-customer when it's
+  // been categorised as SUPPLIER; everything else is customer-facing.
+  const [mailScope, setMailScope] = useState<"customer" | "other">("customer");
 
   // ── Data ───────────────────────────────────────────────────────────────
   const [data, setData] = useState<CustomerMailListResponse | null>(null);
@@ -121,7 +124,11 @@ export default function CustomerWorkspace() {
     };
   }, [search, reloadKey]);
 
-  const items = useMemo(() => data?.items ?? [], [data]);
+  const items = useMemo(() => {
+    const all = data?.items ?? [];
+    const isNonCustomer = (m: CustomerMail) => (m.ai_category || "").toUpperCase() === "SUPPLIER";
+    return all.filter((m) => (mailScope === "other" ? isNonCustomer(m) : !isNonCustomer(m)));
+  }, [data, mailScope]);
 
   // Auto-select the first mail; also re-point if the current selection has
   // dropped out of the list (e.g. after a filter/search or a status change).
@@ -390,7 +397,7 @@ export default function CustomerWorkspace() {
       };
       setCreating(true);
       api
-        .createTaskForCustomerMail(selectedId, { title: titles[kind], priority: "P2" })
+        .createTaskForCustomerMail(selectedId, { title: titles[kind], priority: "MEDIUM" })
         .then(() => {
           setTaskReloadKey((k) => k + 1);
           setReloadKey((k) => k + 1); // refresh list so tab counts/buckets update
@@ -522,6 +529,28 @@ export default function CustomerWorkspace() {
         tone="red"
         actions={
           <>
+          {/* Scope toggle: customer conversations vs all non-customer mail. */}
+          <div className="inline-flex rounded-lg border border-brand-border bg-subtle p-0.5 text-xs font-semibold">
+            <button
+              type="button"
+              onClick={() => setMailScope("customer")}
+              className={`rounded-md px-3 py-1.5 transition ${
+                mailScope === "customer" ? "bg-card text-signal-red shadow-sm" : "text-brand-muted hover:text-brand-dark"
+              }`}
+            >
+              Customers
+            </button>
+            <button
+              type="button"
+              onClick={() => setMailScope("other")}
+              title="All non-customer mail (supplier / other)"
+              className={`rounded-md px-3 py-1.5 transition ${
+                mailScope === "other" ? "bg-card text-signal-red shadow-sm" : "text-brand-muted hover:text-brand-dark"
+              }`}
+            >
+              Non-customer
+            </button>
+          </div>
           {toast && (
             <span className="rounded-md bg-ink px-3 py-1.5 text-xs text-white">{toast}</span>
           )}

@@ -68,7 +68,7 @@ export default function CustomerTaskModal({
   );
   const [material, setMaterial] = useState(context?.material || "");
   const [priority, setPriority] = useState<TaskPriority>(
-    (mail.priority as TaskPriority) || "P2",
+    (mail.priority as TaskPriority) || "MEDIUM",
   );
   const [signal, setSignal] = useState<TaskSignal>(
     (context?.risk as TaskSignal) || "YELLOW",
@@ -197,7 +197,7 @@ export default function CustomerTaskModal({
               onChange={(e) => setPriority(e.target.value as TaskPriority)}
               className={INPUT}
             >
-              {(["P0", "P1", "P2", "P3"] as TaskPriority[]).map((p) => (
+              {(["LOW", "MEDIUM", "HIGH"] as TaskPriority[]).map((p) => (
                 <option key={p} value={p}>
                   {p}
                 </option>

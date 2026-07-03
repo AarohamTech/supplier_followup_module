@@ -39,13 +39,11 @@ export const QUEUE_TABS: QueueTab[] = [
   },
 ];
 
-// Soft priority chips, matching the Communication Hub PRIORITY_CHIP scale
-// (red / orange / amber / gray — no blue).
+// Soft priority chips, matching the Communication Hub PRIORITY_CHIP scale.
 export const PRIORITY_TONE: Record<string, string> = {
-  P0: "bg-red-100 text-signal-red",
-  P1: "bg-orange-100 text-orange-700",
-  P2: "bg-amber-100 text-amber-700",
-  P3: "bg-subtle text-brand-muted",
+  HIGH: "bg-red-100 text-signal-red",
+  MEDIUM: "bg-amber-100 text-amber-700",
+  LOW: "bg-subtle text-brand-muted",
 };
 
 /** AI-triage urgency badge tones. */

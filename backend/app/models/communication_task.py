@@ -16,7 +16,7 @@ TASK_STATUSES = (
     "BLOCKED",
     "DONE",
 )
-TASK_PRIORITIES = ("P0", "P1", "P2", "P3")
+TASK_PRIORITIES = ("LOW", "MEDIUM", "HIGH")
 TASK_SIGNALS = ("GREEN", "YELLOW", "RED", "BLACK")
 TASK_SOURCES = ("SUPPLIER", "CUSTOMER", "INTERNAL", "ESCALATION")
 
@@ -61,7 +61,7 @@ class CommunicationTask(Base):
     watchers: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
 
     # Workflow
-    priority: Mapped[str] = mapped_column(String(8), default="P2", index=True)
+    priority: Mapped[str] = mapped_column(String(8), default="MEDIUM", index=True)
     status: Mapped[str] = mapped_column(String(32), default="TODO", index=True)
     signal: Mapped[str] = mapped_column(String(16), default="YELLOW", index=True)
     escalation_level: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

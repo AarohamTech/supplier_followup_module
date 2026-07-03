@@ -30,22 +30,29 @@ function fmtDate(d?: string | null) {
   return isNaN(dt.getTime()) ? "—" : dt.toLocaleDateString();
 }
 
+// PO numbers are recycled across suppliers, so a bare PO number is not a unique
+// key — scope every row/cache entry by (supplier, PO).
+function poKey(p: EmployeePo): string {
+  return `${(p.supplier_name || "").toUpperCase()}|${p.supplier_po_no}`;
+}
+
 export default function EmployeePoTable({ pos }: { pos: EmployeePo[] }) {
   const [open, setOpen] = useState<string | null>(null);
   const [materials, setMaterials] = useState<Record<string, EmployeePoMaterial[]>>({});
   const [loading, setLoading] = useState<string | null>(null);
 
-  const toggle = async (po: string) => {
-    if (open === po) {
+  const toggle = async (p: EmployeePo) => {
+    const key = poKey(p);
+    if (open === key) {
       setOpen(null);
       return;
     }
-    setOpen(po);
-    if (!materials[po]) {
-      setLoading(po);
+    setOpen(key);
+    if (!materials[key]) {
+      setLoading(key);
       try {
-        const m = await api.eportalPoMaterials(po);
-        setMaterials((cur) => ({ ...cur, [po]: m }));
+        const m = await api.eportalPoMaterials(p.supplier_po_no, p.supplier_name || undefined);
+        setMaterials((cur) => ({ ...cur, [key]: m }));
       } catch {
         /* ignore */
       } finally {
@@ -74,13 +81,14 @@ export default function EmployeePoTable({ pos }: { pos: EmployeePo[] }) {
         </thead>
         <tbody>
           {pos.map((p) => {
-            const isOpen = open === p.supplier_po_no;
-            const mats = materials[p.supplier_po_no];
+            const key = poKey(p);
+            const isOpen = open === key;
+            const mats = materials[key];
             return (
-              <Fragment key={p.supplier_po_no}>
+              <Fragment key={key}>
                 <tr
                   className="cursor-pointer border-t border-brand-border hover:bg-subtle"
-                  onClick={() => toggle(p.supplier_po_no)}
+                  onClick={() => toggle(p)}
                 >
                   <td className="px-3 py-2 text-brand-muted">
                     {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
@@ -102,7 +110,7 @@ export default function EmployeePoTable({ pos }: { pos: EmployeePo[] }) {
                 {isOpen && (
                   <tr className="bg-subtle/60">
                     <td colSpan={7} className="px-3 py-3">
-                      {loading === p.supplier_po_no ? (
+                      {loading === key ? (
                         <div className="flex items-center gap-2 text-xs text-brand-muted">
                           <Loader2 size={14} className="animate-spin" /> Loading materials…
                         </div>

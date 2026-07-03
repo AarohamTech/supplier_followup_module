@@ -146,7 +146,8 @@ export function PendingPoTable({ rows, showSupplier }: { rows: WorkloadPendingPo
         <table className="w-full text-xs">
           <thead>
             <tr className="border-b border-brand-border bg-subtle/60 text-left text-[10px] uppercase tracking-wider text-brand-muted">
-              <th className="px-4 py-2 font-semibold">PO / Material</th>
+              <th className="px-4 py-2 font-semibold">PO No.</th>
+              <th className="px-3 py-2 font-semibold">Material</th>
               {showSupplier && <th className="px-3 py-2 font-semibold">Supplier</th>}
               <th className="px-3 py-2 font-semibold">Signal</th>
               <th className="px-3 py-2 text-right font-semibold">Qty</th>
@@ -160,9 +161,9 @@ export function PendingPoTable({ rows, showSupplier }: { rows: WorkloadPendingPo
           <tbody className="divide-y divide-brand-border">
             {rows.map((r) => (
               <tr key={r.procurement_record_id} className="hover:bg-subtle/50">
-                <td className="max-w-[280px] px-4 py-2">
-                  <div className="font-medium text-brand-dark">{r.supplier_po_no}</div>
-                  <div className="truncate text-[10px] text-brand-muted" title={r.material_name}>{r.material_name}</div>
+                <td className="px-4 py-2 font-medium text-brand-dark whitespace-nowrap">{r.supplier_po_no}</td>
+                <td className="max-w-[280px] px-3 py-2">
+                  <div className="truncate text-brand-dark" title={r.material_name}>{r.material_name}</div>
                 </td>
                 {showSupplier && <td className="max-w-[160px] truncate px-3 py-2 text-brand-dark">{r.supplier_name || "—"}</td>}
                 <td className="px-3 py-2">
@@ -180,7 +181,7 @@ export function PendingPoTable({ rows, showSupplier }: { rows: WorkloadPendingPo
             ))}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={showSupplier ? 9 : 8} className="px-4 py-8 text-center text-brand-muted">Nothing pending. 🎉</td>
+                <td colSpan={showSupplier ? 10 : 9} className="px-4 py-8 text-center text-brand-muted">Nothing pending. 🎉</td>
               </tr>
             )}
           </tbody>

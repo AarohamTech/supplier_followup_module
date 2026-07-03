@@ -198,3 +198,66 @@ def update_record(rec_id: int, payload: ProcurementUpdate, db: Session = Depends
     db.commit()
     db.refresh(rec)
     return rec
+
+
+@router.delete("/po", dependencies=[Depends(require_admin)])
+def delete_po(
+    supplier_po_no: str = Query(..., description="Supplier PO number to delete"),
+    supplier_name: str = Query(
+        ...,
+        description="Supplier name — REQUIRED because the CRM PoNo is recycled "
+        "across suppliers, so a PO number alone is ambiguous.",
+    ),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Delete a purchase order — every material line — for ONE supplier.
+
+    Admin only. Active commitments for this (supplier, PO) are deactivated so they
+    stop surfacing; mail/task history is retained for audit. Returns the counts.
+    """
+    name = supplier_name.strip()
+    po = supplier_po_no.strip()
+    rows = db.scalars(
+        select(ProcurementRecord).where(
+            func.upper(ProcurementRecord.supplier_name) == name.upper(),
+            ProcurementRecord.supplier_po_no == po,
+        )
+    ).all()
+    if not rows:
+        raise HTTPException(404, "No PO found for that supplier + PO number")
+
+    from ..models.supplier_material_commitment import SupplierMaterialCommitment
+
+    deactivated = 0
+    for c in db.scalars(
+        select(SupplierMaterialCommitment).where(
+            func.upper(SupplierMaterialCommitment.supplier_name) == name.upper(),
+            SupplierMaterialCommitment.supplier_po_no == po,
+            SupplierMaterialCommitment.is_active.is_(True),
+        )
+    ).all():
+        c.is_active = False
+        deactivated += 1
+
+    deleted = len(rows)
+    for r in rows:
+        db.delete(r)
+    db.commit()
+    return {
+        "ok": True,
+        "supplier_name": name,
+        "supplier_po_no": po,
+        "deleted_lines": deleted,
+        "commitments_deactivated": deactivated,
+    }
+
+
+@router.delete("/{rec_id}", dependencies=[Depends(require_admin)])
+def delete_record(rec_id: int, db: Session = Depends(get_db)) -> dict[str, Any]:
+    """Delete a single PO material line by its record id. Admin only."""
+    rec = db.get(ProcurementRecord, rec_id)
+    if not rec:
+        raise HTTPException(404, "Not found")
+    db.delete(rec)
+    db.commit()
+    return {"ok": True, "deleted_id": rec_id}

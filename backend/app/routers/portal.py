@@ -613,7 +613,7 @@ def escalate_po(
         title=f"Supplier escalation: PO #{supplier_po_no}",
         description=reason or "The supplier escalated this PO from the portal.",
         task_source="ESCALATION",
-        priority="P0",
+        priority="HIGH",
         status="TODO",
         signal="RED",
         assigned_to_user_id=owner.id if owner else None,

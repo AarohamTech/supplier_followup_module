@@ -166,10 +166,10 @@ class EmployeeTaskScopeTests(unittest.TestCase):
             # Full field update allowed on a task on the employee's own PO.
             out = employee_portal.update_my_task(
                 on_owned.id,
-                CommunicationTaskUpdate(status="DONE", priority="P1", signal="RED"),
+                CommunicationTaskUpdate(status="DONE", priority="HIGH", signal="RED"),
                 user=emp, db=db)
             self.assertEqual(out.status, "DONE")
-            self.assertEqual(out.priority, "P1")
+            self.assertEqual(out.priority, "HIGH")
             self.assertEqual(out.signal, "RED")
             self.assertEqual(out.progress_percent, 100)
             db.refresh(on_owned)

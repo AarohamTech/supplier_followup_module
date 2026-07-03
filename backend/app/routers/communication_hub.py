@@ -1150,7 +1150,7 @@ def create_hub_task(
     payload: CommunicationTaskCreate, db: Session = Depends(get_db)
 ) -> dict[str, Any]:
     """Create a communication task. Only writes to communication_tasks table."""
-    _validate_enum("priority", payload.priority or "P2", TASK_PRIORITIES)
+    _validate_enum("priority", payload.priority or "MEDIUM", TASK_PRIORITIES)
     _validate_enum("status", payload.status or "TODO", TASK_STATUSES)
     _validate_enum("signal", payload.signal or "YELLOW", TASK_SIGNALS)
 
@@ -1367,7 +1367,7 @@ def escalate(
         title=f"Escalation: PO #{rec.supplier_po_no} — {rec.material_name}",
         description="Auto-escalation triggered from Communication Hub.",
         task_source="ESCALATION",
-        priority="P0",
+        priority="HIGH",
         status="TODO",
         signal="BLACK",
         assigned_to_user_id=_roles.get("Purchase Head"),

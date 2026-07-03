@@ -60,7 +60,7 @@ export default function TaskCreateForm({
   const [poNo, setPoNo] = useState(seed.supplier_po_no ?? "");
   const [linkedMailId] = useState(seed.linked_mail_id ?? null);
   const [procurementId] = useState(seed.procurement_record_id ?? null);
-  const [priority, setPriority] = useState<TaskPriority>((seed.priority as TaskPriority) ?? "P2");
+  const [priority, setPriority] = useState<TaskPriority>((seed.priority as TaskPriority) ?? "MEDIUM");
   const [status, setStatus] = useState<TaskStatus>((seed.status as TaskStatus) ?? "TODO");
   const [signal, setSignal] = useState<TaskSignal>((seed.signal as TaskSignal) ?? "YELLOW");
   const [assignedToUserId, setAssignedToUserId] = useState<number | null>(seed.assigned_to_user_id ?? null);
@@ -153,7 +153,7 @@ export default function TaskCreateForm({
 
           <Field label="Priority">
             <select value={priority} onChange={(e) => setPriority(e.target.value as TaskPriority)} className="tcf-input">
-              {(["P0", "P1", "P2", "P3"] as TaskPriority[]).map((p) => (
+              {(["LOW", "MEDIUM", "HIGH"] as TaskPriority[]).map((p) => (
                 <option key={p} value={p}>{p}</option>
               ))}
             </select>

@@ -136,10 +136,9 @@ const STATUS_GROUPS: { key: TaskStatus; label: string }[] = [
 ];
 
 const PRIORITY_CHIP: Record<TaskPriority, string> = {
-  P0: "bg-red-100 text-signal-red",
-  P1: "bg-orange-100 text-orange-700",
-  P2: "bg-amber-100 text-amber-700",
-  P3: "bg-subtle text-brand-muted",
+  HIGH: "bg-red-100 text-signal-red",
+  MEDIUM: "bg-amber-100 text-amber-700",
+  LOW: "bg-subtle text-brand-muted",
 };
 
 type QueueFilter = "needs_reply" | "drafts" | "delayed" | "tasks" | "all";

@@ -146,7 +146,7 @@ def create_task_from_mail(
         title=title or (mail.subject or "Customer mail follow-up"),
         description=description or mail.body,
         assigned_to=assigned_to,
-        priority=priority or "P2",
+        priority=priority or "MEDIUM",
         signal="YELLOW",
         status="TODO",
         task_source="CUSTOMER",

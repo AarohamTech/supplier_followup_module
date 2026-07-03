@@ -321,7 +321,7 @@ export type TaskStatus =
   | "WAITING_CUSTOMER"
   | "BLOCKED"
   | "DONE";
-export type TaskPriority = "P0" | "P1" | "P2" | "P3";
+export type TaskPriority = "LOW" | "MEDIUM" | "HIGH";
 export type TaskSignal = "GREEN" | "YELLOW" | "RED" | "BLACK";
 export type TaskSource = "SUPPLIER" | "CUSTOMER" | "INTERNAL" | "ESCALATION";
 

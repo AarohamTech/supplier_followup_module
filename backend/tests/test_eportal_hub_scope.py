@@ -239,11 +239,11 @@ class OwnedPoSucceedsTests(unittest.TestCase):
             self.assertEqual(created["assigned_by"], emp.full_name or emp.username or emp.email)
 
             updated = hub.update_task(
-                created["id"], CommunicationTaskUpdate(status="DONE", priority="P1"),
+                created["id"], CommunicationTaskUpdate(status="DONE", priority="HIGH"),
                 user=emp, db=db,
             )
             self.assertEqual(updated["status"], "DONE")
-            self.assertEqual(updated["priority"], "P1")
+            self.assertEqual(updated["priority"], "HIGH")
             self.assertIsNotNone(updated["closed_at"])
 
     def test_tasks_grouped_on_owned_po(self):

@@ -50,13 +50,12 @@ const SOURCE_OPTIONS: { value: TaskSource | ""; label: string }[] = [
   { value: "ESCALATION", label: "Escalation" },
 ];
 
-const PRIORITY_OPTS = ["P0", "P1", "P2", "P3"];
+const PRIORITY_OPTS = ["LOW", "MEDIUM", "HIGH"];
 
 const PRIORITY_BADGE: Record<string, string> = {
-  P0: "bg-rose-100 text-rose-700",
-  P1: "bg-amber-100 text-amber-700",
-  P2: "bg-blue-100 text-blue-700",
-  P3: "bg-subtle text-brand-muted",
+  HIGH: "bg-rose-100 text-rose-700",
+  MEDIUM: "bg-amber-100 text-amber-700",
+  LOW: "bg-subtle text-brand-muted",
 };
 
 const SOURCE_BADGE: Record<string, string> = {
@@ -235,7 +234,7 @@ export default function PortalTaskWorkspace({
       done: tasks.filter((t) => t.status === "DONE").length,
       overdue: open.filter((t) => isOverdue(t)).length,
       due_today: 0,
-      critical: tasks.filter((t) => t.priority === "P0").length,
+      critical: tasks.filter((t) => t.priority === "HIGH").length,
       supplier_tasks: tasks.filter((t) => (t.task_source || "SUPPLIER") === "SUPPLIER").length,
       customer_tasks: tasks.filter((t) => t.task_source === "CUSTOMER").length,
       internal_tasks: tasks.filter((t) => t.task_source === "INTERNAL").length,
@@ -640,7 +639,7 @@ function PortalTaskDrawer({
   async function escalate() {
     await patch({
       escalation_level: (task.escalation_level ?? 0) + 1,
-      priority: "P0",
+      priority: "HIGH",
       signal: "RED",
     });
   }
@@ -895,7 +894,7 @@ function PortalTaskCreateForm({
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [supplierPoNo, setSupplierPoNo] = useState("");
-  const [priority, setPriority] = useState<CommunicationTask["priority"]>("P2");
+  const [priority, setPriority] = useState<CommunicationTask["priority"]>("MEDIUM");
   const [status, setStatus] = useState<TaskStatus>("TODO");
   const [signal, setSignal] = useState<CommunicationTask["signal"]>("YELLOW");
   const [assignedToUserId, setAssignedToUserId] = useState<number | null>(null);

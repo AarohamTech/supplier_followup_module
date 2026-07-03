@@ -96,7 +96,7 @@ class SupplierEscalateTests(unittest.TestCase):
             task = db.get(CommunicationTask, out["task_id"])
             self.assertEqual(task.task_source, "ESCALATION")
             self.assertEqual(task.assigned_by, "Supplier Portal")
-            self.assertEqual(task.priority, "P0")
+            self.assertEqual(task.priority, "HIGH")
             # Routed to the PO's desk owner (emp_code E1).
             self.assertEqual(task.assigned_to_user_id, emp.id)
 
@@ -145,16 +145,16 @@ class WorkloadReportTests(unittest.TestCase):
             db.add_all([
                 CommunicationTask(
                     title="Chase PO-1", supplier_name="ACME TOOLS",
-                    supplier_po_no="PO-1", status="TODO", priority="P1",
+                    supplier_po_no="PO-1", status="TODO", priority="HIGH",
                     assigned_to_user_id=emp.id, assigned_to="Desk Owner",
                     due_date=now - timedelta(hours=3),
                 ),
                 CommunicationTask(
                     title="Done task", supplier_name="ACME TOOLS",
-                    status="DONE", priority="P2",
+                    status="DONE", priority="MEDIUM",
                     assigned_to_user_id=emp.id, assigned_to="Desk Owner",
                 ),
-                CommunicationTask(title="Orphan", status="TODO", priority="P3"),
+                CommunicationTask(title="Orphan", status="TODO", priority="LOW"),
             ])
             asn_service.create_asn(
                 db, supplier_id=sup.id, supplier_name="ACME TOOLS",
@@ -240,13 +240,13 @@ class WorkloadDetailTests(unittest.TestCase):
         db.add_all([
             CommunicationTask(
                 title="Chase PO-1", supplier_name="ACME TOOLS",
-                supplier_po_no="PO-1", status="TODO", priority="P1",
+                supplier_po_no="PO-1", status="TODO", priority="HIGH",
                 assigned_to_user_id=emp.id, assigned_to="Desk Owner",
                 due_date=now - timedelta(hours=3),
             ),
             CommunicationTask(
                 title="Done task", supplier_name="ACME TOOLS",
-                status="DONE", priority="P2",
+                status="DONE", priority="MEDIUM",
                 assigned_to_user_id=emp.id, assigned_to="Desk Owner",
                 closed_at=now,
             ),
@@ -269,7 +269,7 @@ class WorkloadDetailTests(unittest.TestCase):
             self.assertGreaterEqual(d["pending_pos"][0]["days_overdue"], 1)
             self.assertEqual(len(d["open_tasks"]), 1)
             self.assertEqual(d["by_status"].get("TODO"), 1)
-            self.assertEqual(d["by_priority"].get("P1"), 1)
+            self.assertEqual(d["by_priority"].get("HIGH"), 1)
             self.assertEqual(len(d["throughput"]), 14)
             # One task created + one completed today (last throughput bucket).
             self.assertGreaterEqual(d["throughput"][-1]["created"], 1)

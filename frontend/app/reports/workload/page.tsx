@@ -235,7 +235,8 @@ export default function WorkloadReportPage() {
                   <th className="px-4 py-2 font-semibold">User</th>
                   <th className="px-3 py-2 text-right font-semibold">Pending POs</th>
                   <th className="px-3 py-2 text-right font-semibold">Overdue POs</th>
-                  <th className="px-3 py-2 text-right font-semibold">Red/Black POs</th>
+                  <th className="px-3 py-2 text-right font-semibold">Red POs</th>
+                  <th className="px-3 py-2 text-right font-semibold">Black POs</th>
                   <th className="px-3 py-2 text-right font-semibold">Open tasks</th>
                   <th className="px-3 py-2 text-right font-semibold">Overdue tasks</th>
                   <th className="px-3 py-2 text-right font-semibold">Due today</th>
@@ -261,7 +262,8 @@ export default function WorkloadReportPage() {
                     </td>
                     <td className="px-3 py-2 text-right"><Num v={u.pos.pending} /></td>
                     <td className="px-3 py-2 text-right"><Num v={u.pos.overdue} warn /></td>
-                    <td className="px-3 py-2 text-right"><Num v={u.pos.red + u.pos.black} warn /></td>
+                    <td className="px-3 py-2 text-right"><Num v={u.pos.red} warn /></td>
+                    <td className="px-3 py-2 text-right"><Num v={u.pos.black} warn /></td>
                     <td className="px-3 py-2 text-right"><Num v={u.tasks.open} /></td>
                     <td className="px-3 py-2 text-right"><Num v={u.tasks.overdue} warn /></td>
                     <td className="px-3 py-2 text-right"><Num v={u.tasks.due_today} /></td>
@@ -272,7 +274,7 @@ export default function WorkloadReportPage() {
                 ))}
                 {users.length === 0 && (
                   <tr>
-                    <td colSpan={10} className="px-4 py-8 text-center text-brand-muted">No users match.</td>
+                    <td colSpan={11} className="px-4 py-8 text-center text-brand-muted">No users match.</td>
                   </tr>
                 )}
               </tbody>

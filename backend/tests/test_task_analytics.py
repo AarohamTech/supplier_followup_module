@@ -30,11 +30,11 @@ def _temp_db():
 def _seed(db):
     past = datetime.utcnow() - timedelta(days=2)
     db.add_all([
-        CommunicationTask(title="a", status="TODO", priority="P1", task_source="SUPPLIER",
+        CommunicationTask(title="a", status="TODO", priority="MEDIUM", task_source="SUPPLIER",
                           assigned_to_user_id=1, assigned_to="Alice", due_date=past),
-        CommunicationTask(title="b", status="DONE", priority="P2", task_source="CUSTOMER",
+        CommunicationTask(title="b", status="DONE", priority="LOW", task_source="CUSTOMER",
                           assigned_to_user_id=1, assigned_to="Alice", closed_at=datetime.utcnow()),
-        CommunicationTask(title="c", status="IN_PROGRESS", priority="P0", task_source="INTERNAL",
+        CommunicationTask(title="c", status="IN_PROGRESS", priority="HIGH", task_source="INTERNAL",
                           assigned_to_user_id=2, assigned_to="Bob"),
     ])
     db.commit()
@@ -50,7 +50,7 @@ class AnalyticsTests(unittest.TestCase):
             self.assertEqual(data["totals"]["open"], 2)
             self.assertEqual(data["totals"]["overdue"], 1)
             self.assertEqual(data["by_status"]["TODO"], 1)
-            self.assertEqual(data["by_priority"]["P0"], 1)
+            self.assertEqual(data["by_priority"]["HIGH"], 1)
             self.assertEqual(data["by_source"]["CUSTOMER"], 1)
 
     def test_by_assignee_groups_real_users(self) -> None:

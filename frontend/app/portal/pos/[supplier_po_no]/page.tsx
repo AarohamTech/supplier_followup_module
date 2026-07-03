@@ -24,9 +24,8 @@ function taskStatusBadge(status: string): string {
 
 function taskPriorityBadge(priority: string): string {
   const p = (priority || "").toUpperCase();
-  if (p === "P0") return "bg-red-50 text-signal-red";
-  if (p === "P1") return "bg-amber-50 text-amber-700";
-  if (p === "P2") return "bg-blue-50 text-blue-700";
+  if (p === "HIGH") return "bg-red-50 text-signal-red";
+  if (p === "MEDIUM") return "bg-amber-50 text-amber-700";
   return "bg-subtle text-brand-muted";
 }
 

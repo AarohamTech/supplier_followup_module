@@ -41,7 +41,7 @@ class CustomerMailServiceTests(unittest.TestCase):
                 body="Where is my order",
                 mail_type="CUSTOMER",
                 status="OPEN",
-                priority="P2",
+                priority="MEDIUM",
             )
             db.add(mail)
             db.commit()
@@ -53,7 +53,7 @@ class CustomerMailServiceTests(unittest.TestCase):
                 title="Reply to ABC",
                 description=None,
                 assigned_to="ops@example.com",
-                priority="P1",
+                priority="HIGH",
                 due_date=None,
             )
 
@@ -63,7 +63,7 @@ class CustomerMailServiceTests(unittest.TestCase):
             self.assertEqual(task.customer_mail_id, mail.id)
             self.assertEqual(updated_mail.linked_task_id, task.id)
             self.assertEqual(updated_mail.status, "IN_PROGRESS")
-            self.assertEqual(task.priority, "P1")
+            self.assertEqual(task.priority, "HIGH")
             self.assertEqual(task.assigned_to, "ops@example.com")
 
     def test_resolve_marks_status_and_stores_note(self) -> None:
@@ -74,7 +74,7 @@ class CustomerMailServiceTests(unittest.TestCase):
                 body="Body",
                 mail_type="GENERAL",
                 status="OPEN",
-                priority="P2",
+                priority="MEDIUM",
             )
             db.add(mail)
             db.commit()

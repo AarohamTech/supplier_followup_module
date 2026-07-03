@@ -363,9 +363,11 @@ def _pending_po_rows(db: Session, clause: Any) -> list[dict[str, Any]]:
 
 def _open_task_rows(db: Session, clause: Any) -> list[dict[str, Any]]:
     T = CommunicationTask
+    # Highest priority first (HIGH → MEDIUM → LOW); alphabetical sort would be wrong.
+    prio_rank = case((T.priority == "HIGH", 0), (T.priority == "MEDIUM", 1), else_=2)
     rows = db.scalars(
         select(T).where(clause, T.status != "DONE")
-        .order_by(T.due_date.asc().nullslast(), T.priority.asc())
+        .order_by(T.due_date.asc().nullslast(), prio_rank)
         .limit(_ROW_CAP)
     ).all()
     return [
