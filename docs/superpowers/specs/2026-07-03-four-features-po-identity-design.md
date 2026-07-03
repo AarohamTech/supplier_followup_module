@@ -120,9 +120,15 @@ the by-customer grouping degrades to "(no customer)" bucket rather than breaking
 ## Feature 2 — Compose Mail page (new)
 
 ### Decision
-Real send via the mail engine (logged in mail_history, appears in threads). New top-level
-route `/compose` with a "Compose" nav item. Writer role (admin/manager/user), same as other
-send actions.
+Real send via the mail engine (logged as an OUTGOING message, appears in threads). New
+top-level route `/compose` (staff) gated to **writers (admin/manager/user)** — plus a
+scoped **employee** surface at `/eportal/compose` (own suppliers/POs only, no customer
+audience), per the follow-up requirement "available to admin and our employees only".
+
+**All outgoing mail is delivered in the defined brand HTML format** — the send worker
+(`mail_send_worker._build_email`) already wraps any plain-text body via
+`brand_email.text_email_html`, so compose needs no special handling to satisfy
+"every email should be in the HTML format we have defined".
 
 ### UI (`app/compose/page.tsx` + `components/compose/*`)
 Focused mail-client layout:
