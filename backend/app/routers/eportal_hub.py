@@ -38,6 +38,7 @@ from ..schemas.communication_task import (
     CommunicationTaskCreate,
     CommunicationTaskUpdate,
 )
+from ..services import compose_service
 from ..services import po_followup_service
 from ..services import task_assignment_service as assign
 from . import communication as comm  # shared task logic (one source of truth)
@@ -836,6 +837,110 @@ def run_agent(
         procurement_record_id=payload.procurement_record_id,
     )
     return hub.run_agent(payload=payload, user=user, db=db)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 14. Compose — standalone mail, scoped to the employee's own suppliers / POs
+# ─────────────────────────────────────────────────────────────────────────────
+def _assert_compose_scope(
+    db: Session,
+    emp_code: Optional[str],
+    *,
+    supplier_name: Optional[str],
+    supplier_po_no: Optional[str],
+    procurement_record_id: Optional[int],
+    customer_mail_id: Optional[int],
+) -> None:
+    # Customer threads are not part of the employee surface.
+    if customer_mail_id is not None:
+        raise HTTPException(404, "Customer mail not found")
+    if procurement_record_id is not None or supplier_po_no:
+        _resolve_scoped_po(
+            db, emp_code,
+            supplier_po_no=supplier_po_no,
+            procurement_record_id=procurement_record_id,
+        )
+    elif supplier_name:
+        if supplier_name.strip().upper() not in _owned_supplier_names(db, emp_code):
+            raise HTTPException(404, "Supplier not found for your account")
+
+
+@router.post("/compose")
+def compose_now(
+    payload: hub.HubComposeIn,
+    user: User = Depends(get_current_employee),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Compose + send a standalone mail, restricted to the employee's own
+    suppliers/POs (customer audience is not available to employees)."""
+    _assert_compose_scope(
+        db, user.emp_code,
+        supplier_name=payload.supplier_name,
+        supplier_po_no=payload.supplier_po_no,
+        procurement_record_id=payload.procurement_record_id,
+        customer_mail_id=payload.customer_mail_id,
+    )
+    return compose_service.compose_and_send(
+        db,
+        to_emails=payload.to_emails,
+        cc_emails=payload.cc_emails,
+        bcc_emails=payload.bcc_emails,
+        subject=payload.subject,
+        body=payload.body,
+        supplier_name=payload.supplier_name,
+        supplier_po_no=payload.supplier_po_no,
+        procurement_record_id=payload.procurement_record_id,
+        customer_mail_id=None,
+        send=payload.send,
+    )
+
+
+@router.post("/compose/draft")
+def compose_draft(
+    payload: hub.HubComposeDraftIn,
+    user: User = Depends(get_current_employee),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    if payload.supplier_po_no:
+        _resolve_scoped_po(
+            db, user.emp_code,
+            supplier_po_no=payload.supplier_po_no,
+            procurement_record_id=None,
+        )
+    return compose_service.draft_body(
+        audience="supplier",
+        instruction=payload.instruction,
+        subject=payload.subject,
+        supplier_name=payload.supplier_name,
+        supplier_po_no=payload.supplier_po_no,
+        recipient_name=payload.recipient_name,
+    )
+
+
+@router.get("/supplier-emails")
+def list_supplier_emails(
+    user: User = Depends(get_current_employee),
+    db: Session = Depends(get_db),
+) -> list[dict[str, Any]]:
+    """Email mappings for the employee's OWN suppliers only — powers the compose
+    recipient auto-fill without exposing the full supplier directory."""
+    from ..models.supplier_email import SupplierEmail
+
+    owned = _owned_supplier_names(db, user.emp_code)  # uppercased names
+    if not owned:
+        return []
+    rows = db.scalars(
+        select(SupplierEmail).where(SupplierEmail.is_active.is_(True))
+    ).all()
+    return [
+        {
+            "supplier_name": r.supplier_name,
+            "to_emails": r.to_emails or [],
+            "cc_emails": r.cc_emails or [],
+        }
+        for r in rows
+        if (r.supplier_name or "").strip().upper() in owned
+    ]
 
 
 @router.post("/agent/confirm")

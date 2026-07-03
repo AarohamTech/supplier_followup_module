@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, FileSpreadsheet, Inbox, MessagesSquare, ListChecks, ListFilter, Truck, X } from "lucide-react";
+import { LayoutDashboard, FileSpreadsheet, Inbox, MessagesSquare, ListChecks, ListFilter, Send, Truck, X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
@@ -12,6 +12,7 @@ const items = [
   { href: "/eportal/followups", label: "Black Follow-ups", icon: ListFilter },
   { href: "/eportal/tasks", label: "My Tasks", icon: ListChecks },
   { href: "/eportal/communication", label: "Communication", icon: MessagesSquare },
+  { href: "/eportal/compose", label: "Compose Mail", icon: Send },
   { href: "/eportal/shipments", label: "My Shipments", icon: Truck },
   { href: "/eportal/mails", label: "My Customer Mails", icon: Inbox },
 ];
