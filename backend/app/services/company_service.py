@@ -64,3 +64,21 @@ def get_by_code(db: Session, code: str) -> Company | None:
 
 def get_default(db: Session) -> Company | None:
     return db.scalar(select(Company).where(Company.is_default.is_(True)))
+
+
+def resolve_login_company(db: Session, user, requested_code: str | None) -> Company | None:
+    """Resolve which company an account logs into. Portal accounts (supplier or
+    employee) are pinned to their own company; staff get the requested active
+    company, falling back to the default."""
+    is_portal = getattr(user, "supplier_id", None) is not None or getattr(user, "emp_code", None) is not None
+    if is_portal:
+        if user.company_id is not None:
+            pinned = db.get(Company, user.company_id)
+            if pinned is not None:
+                return pinned
+        return get_default(db)
+    if requested_code:
+        chosen = get_by_code(db, requested_code)
+        if chosen is not None and chosen.is_active:
+            return chosen
+    return get_default(db)
