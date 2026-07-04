@@ -23,6 +23,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from ..core.config import settings
+from ..core.tenant import use_company
 from ..database import SessionLocal
 from ..models.customer_mail import CustomerMail
 from ..services import (
@@ -266,6 +267,50 @@ def _process_one(
     }
 
 
+def _active_companies() -> list[tuple[str, str, bool]]:
+    """(code, schema_name, is_default) for active companies, default first."""
+    from ..services import company_service
+    db: Session = SessionLocal()
+    try:
+        rows = [(c.code, c.schema_name, c.is_default) for c in company_service.list_active(db)]
+    except Exception:  # noqa: BLE001
+        log.exception("attribution: failed to list companies; using default only")
+        rows = []
+    finally:
+        db.close()
+    if not rows:
+        return [("102", "public", True)]
+    return sorted(rows, key=lambda r: (not r[2], r[0]))
+
+
+def _default_schema_from(companies: list[tuple[str, str, bool]]) -> str:
+    for _code, schema, is_default in companies:
+        if is_default:
+            return schema
+    return companies[0][1] if companies else "public"
+
+
+def resolve_company_schema_for_sender(sender_email: str | None) -> str:
+    """Which company owns this sender? Suppliers are disjoint across companies, so
+    the first company whose supplier_master contains the sender wins. Falls back to
+    the default company's schema when unknown."""
+    companies = _active_companies()
+    if sender_email:
+        for _code, schema, _is_default in companies:
+            try:
+                with use_company(schema):
+                    db: Session = SessionLocal()
+                    try:
+                        supplier_id, _name = msg_service.find_supplier_by_email(db, sender_email)
+                    finally:
+                        db.close()
+                if supplier_id is not None:
+                    return schema
+            except Exception:  # noqa: BLE001
+                log.exception("attribution lookup failed for schema %s", schema)
+    return _default_schema_from(companies)
+
+
 def _fetch_imap_messages(
     db: Session,
     client: imaplib.IMAP4,
@@ -292,7 +337,16 @@ def _fetch_imap_messages(
             raw_msg = msg_data[0][1]
             if not isinstance(raw_msg, (bytes, bytearray)):
                 continue
-            result = _process_one(db, raw_uid, bytes(raw_msg))
+            raw_bytes = bytes(raw_msg)
+            sender = parseaddr(_decode(email.message_from_bytes(raw_bytes).get("From")))[1] or None
+            schema = resolve_company_schema_for_sender(sender)
+            with use_company(schema):
+                pdb: Session = SessionLocal()
+                try:
+                    result = _process_one(pdb, raw_uid, raw_bytes)
+                finally:
+                    pdb.close()
+            result["company_schema"] = schema
             processed.append(result)
         except Exception:  # noqa: BLE001
             log.exception("Failed to process IMAP message uid=%s", raw_uid)
@@ -339,7 +393,15 @@ def _fetch_pop3_messages(
             _, lines, _ = client.retr(msg_no)
             raw_uid = uid_map.get(msg_no, str(msg_no).encode())
             raw_msg = b"\r\n".join(lines)
-            result = _process_one(db, raw_uid, raw_msg)
+            sender = parseaddr(_decode(email.message_from_bytes(raw_msg).get("From")))[1] or None
+            schema = resolve_company_schema_for_sender(sender)
+            with use_company(schema):
+                pdb: Session = SessionLocal()
+                try:
+                    result = _process_one(pdb, raw_uid, raw_msg)
+                finally:
+                    pdb.close()
+            result["company_schema"] = schema
             result["mailbox_seq"] = msg_no
             processed.append(result)
         except Exception:  # noqa: BLE001
