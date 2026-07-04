@@ -365,18 +365,20 @@ def ensure_role_accounts(db: Session) -> dict[str, int]:
 
 
 def ensure_company_schemas(db: Session) -> list[str]:
-    """Create the Postgres schema + per-company tables for every non-public
-    company. No-op on SQLite. Requires the public tables to already exist.
-    Returns the schema names for which tables were actually created (empty on
-    SQLite, where `create_company_schema` is a no-op)."""
-    from .database import create_company_schema
+    """Create the Postgres schema + per-company tables for every non-public company,
+    and evolve any columns added to models after the initial copy. No-op on SQLite.
+    Requires the public tables to already exist. Returns schemas that were created
+    or evolved."""
+    from .database import create_company_schema, engine
+    from .core.schema_evolve import ensure_columns_in_schema
     from .services import company_service
 
     done: list[str] = []
     for company in company_service.list_active(db):
         if company.schema_name and company.schema_name != "public":
             created_tables = create_company_schema(company.schema_name)
-            if created_tables:
+            evolved = ensure_columns_in_schema(engine, company.schema_name)
+            if created_tables or evolved:
                 done.append(company.schema_name)
     return done
 

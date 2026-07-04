@@ -44,6 +44,28 @@ class EngineRegistryTests(unittest.TestCase):
         result = {"queued": 4, "skipped": 1, "enabled": True}
         self.assertEqual(engine_registry._extract_counts(result), (4, 0, 0))
 
+    def test_extract_counts_aggregates_per_company_queue_result(self) -> None:
+        # Per-company runners (Task 4) return {code: {...}} instead of a flat
+        # dict. The counter projection must sum across companies.
+        result = {"101": {"queued": 3, "skipped": 1}, "102": {"queued": 2}}
+        processed, success, failed = engine_registry._extract_counts(result)
+        self.assertEqual(processed, 5)
+
+    def test_extract_counts_flat_dict_not_aggregated(self) -> None:
+        # A flat dict (values are not all dicts) must NOT be mistaken for the
+        # per-company shape and must not be accidentally aggregated.
+        result = {"enabled": False, "status": "DISABLED"}
+        self.assertEqual(engine_registry._extract_counts(result), (0, 0, 0))
+
+    def test_extract_counts_aggregates_per_company_results_lists(self) -> None:
+        result = {
+            "101": {"results": [{"status": "SENT"}]},
+            "102": {"results": [{"status": "SENT"}, {"status": "FAILED"}]},
+        }
+        processed, success, failed = engine_registry._extract_counts(result)
+        self.assertEqual(success, 2)
+        self.assertEqual(failed, 1)
+
     def test_run_job_returns_error_for_unknown_job(self) -> None:
         out = engine_registry.run_job("does_not_exist")
         self.assertFalse(out["ok"])

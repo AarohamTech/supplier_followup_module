@@ -62,6 +62,10 @@ def get_by_code(db: Session, code: str) -> Company | None:
     return db.scalar(select(Company).where(Company.code == code))
 
 
+def get_by_schema(db: Session, schema: str) -> Company | None:
+    return db.scalar(select(Company).where(Company.schema_name == schema))
+
+
 def get_default(db: Session) -> Company | None:
     return db.scalar(select(Company).where(Company.is_default.is_(True)))
 

@@ -270,3 +270,25 @@ Opened the system to **external suppliers** (it was internal-staff-only) with th
   completion, provisioning); a hermetic TestClient smoke (29/29) over the real HTTP surface; frontend
   `tsc --noEmit` clean + `next build` (24 routes incl. `/portal`, `/portal/asn`, `/portal/pos`, `/asns`).
   DEBUG seed adds a demo supplier login (`orders@superbtools.example.com` / `Supplier!123`) + mapping + ASNs.
+
+### Phase 8 — Multi-company portal Plan 2: per-company jobs, CRM & attribution _(2026-07-04)_
+Backend so company 101 (Enterprise) runs its own pipeline alongside 102 (Hariom Tech),
+building on Plan 1's tenant foundation (per-request `search_path` via `use_company`).
+- **Per-company CRM config** (`services/crm_config.py`) — env-based (`CRM_<CODE>_*`) so CRM
+  passwords never live in the DB; 102 keeps using the legacy `CRM_*` settings. 101 stays
+  dormant until its `CRM_101_*` creds are set.
+- **Config-driven CRM ingest** — `poll_and_ingest(db, cfg, ...)` + a PER-CONFIG token cache;
+  the bulk upsert now conflicts on `index_elements=[crm_no, supplier_po_no, material_name]`
+  (portable to the `LIKE`-created 101 schema, which doesn't carry the constraint name).
+- **Thread-safe tenant context** — the multi-threaded mail-send worker re-establishes the
+  active schema inside each worker thread (`ContextVar`s don't cross threads).
+- **Per-company scheduler runners** — `crm_ingestion`/`mail_send`/`po_followup`/`auto_reply`/
+  `delay_risk` loop over active companies under `use_company(schema)`, returning `{code: result}`;
+  `engine_registry` aggregates that nested shape for the admin job stats/message.
+- **Shared-inbox reply attribution** — 101 shares 102's mailbox; each fetched reply is routed
+  to the owning company by matching the sender against that company's suppliers (disjoint),
+  falling back to the default company for unknown senders.
+- **Per-schema column evolution** — `ensure_columns_in_schema` evolves each company schema so
+  columns added to models after the initial copy don't drift (Postgres-only; no-op on SQLite).
+- **To activate 101 ingestion (EC2):** set `CRM_101_DESK_ID` / `CRM_101_LOGIN_EMAIL` /
+  `CRM_101_LOGIN_PASSWORD` (+ optional `CRM_101_DEVICE_ID` / `CRM_101_BASE_URL`) in `backend/.env`.

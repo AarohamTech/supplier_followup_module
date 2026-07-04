@@ -118,8 +118,33 @@ def update_job(
     return row
 
 
+def _flatten_result(result: Any) -> Any:
+    """Per-company runners return `{code: subresult}`. Aggregate those into one flat
+    dict (sum numeric fields, concatenate list fields) so the counter/message
+    projection below works. A non-nested (already-flat) result passes through
+    unchanged. Heuristic: a result whose every value is itself a dict is treated as
+    the per-company shape."""
+    if not isinstance(result, dict) or not result:
+        return result
+    values = list(result.values())
+    if not all(isinstance(v, dict) for v in values):
+        return result
+    merged: dict[str, Any] = {}
+    for sub in values:
+        for k, v in sub.items():
+            if isinstance(v, bool):
+                continue
+            if isinstance(v, (int, float)):
+                merged[k] = (merged.get(k) or 0) + v
+            elif isinstance(v, list):
+                existing = merged.get(k)
+                merged[k] = (existing if isinstance(existing, list) else []) + v
+    return merged
+
+
 def _extract_counts(result: Any) -> tuple[int, int, int]:
     """Best-effort projection of a runner's return dict into counters."""
+    result = _flatten_result(result)
     if not isinstance(result, dict):
         return 0, 0, 0
     processed = (
@@ -283,6 +308,7 @@ _NULL_LOCK = _NoLock()
 
 
 def _short_message(result: Any) -> str | None:
+    result = _flatten_result(result)
     if not isinstance(result, dict):
         return None
     if reason := result.get("reason"):

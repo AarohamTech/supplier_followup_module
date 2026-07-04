@@ -17,6 +17,7 @@ from sqlalchemy import select as _select
 from sqlalchemy.orm import Session
 
 from ..core.config import settings
+from ..core.tenant import use_company
 from ..database import SessionLocal
 from ..models.communication_message import CommunicationMessage
 from ..models.engine_job import EngineJob
@@ -32,6 +33,7 @@ from ..services import (
     po_followup_mail_service,
     settings_service,
 )
+from ..services.crm_config import get_crm_config
 from ..services.engine_registry import EngineJobSpec
 from ..workers import mail_fetch_worker, mail_send_worker
 
@@ -43,6 +45,27 @@ _scheduler: BackgroundScheduler | None = None
 # ─────────────────────────────────────────────────────────────────────────────
 # Job bodies (called by the registry wrapper)
 # ─────────────────────────────────────────────────────────────────────────────
+def _list_active_companies():
+    """Read (code, schema_name, is_default) for active companies from the default
+    (public) context. Isolated so tests can patch it."""
+    from ..services import company_service
+    db: Session = SessionLocal()
+    try:
+        return [(c.code, c.schema_name, c.is_default) for c in company_service.list_active(db)]
+    finally:
+        db.close()
+
+
+def _active_companies() -> list[tuple[str, str, bool]]:
+    try:
+        rows = _list_active_companies()
+        if rows:
+            return rows
+    except Exception:  # noqa: BLE001
+        log.exception("Failed to list active companies; falling back to default")
+    return [("102", "public", True)]
+
+
 def mail_fetch_runner() -> dict[str, Any]:
     log.info("[cron] mail_fetch_runner starting")
     result = mail_fetch_worker.fetch_supplier_mails()
@@ -66,108 +89,116 @@ def status_change_runner() -> dict[str, Any]:
 
 
 def auto_reply_runner() -> dict[str, Any]:
-    db: Session = SessionLocal()
-    created = 0
-    try:
-        candidates = db.scalars(
-            select(CommunicationMessage)
-            .where(
-                CommunicationMessage.direction == "INCOMING",
-                CommunicationMessage.status == "RECEIVED",
-                CommunicationMessage.parsed_status.isnot(None),
-                CommunicationMessage.procurement_record_id.isnot(None),
-            )
-            .order_by(CommunicationMessage.created_at.asc())
-            .limit(25)
-        ).all()
+    out: dict[str, Any] = {}
+    for code, schema, _ in _active_companies():
+        with use_company(schema):
+            db: Session = SessionLocal()
+            created = 0
+            try:
+                candidates = db.scalars(
+                    select(CommunicationMessage)
+                    .where(
+                        CommunicationMessage.direction == "INCOMING",
+                        CommunicationMessage.status == "RECEIVED",
+                        CommunicationMessage.parsed_status.isnot(None),
+                        CommunicationMessage.procurement_record_id.isnot(None),
+                    )
+                    .order_by(CommunicationMessage.created_at.asc())
+                    .limit(25)
+                ).all()
 
-        for src in candidates:
-            already = db.scalar(
-                select(CommunicationMessage).where(
-                    CommunicationMessage.in_reply_to == (src.message_uid or ""),
-                    CommunicationMessage.direction == "OUTGOING",
-                )
-            )
-            if already or not src.sender_email:
-                continue
-            subject = f"Re: {src.subject or 'Your update'}"
-            body = (
-                f"Thanks for the update on PO {src.supplier_po_no or ''}. "
-                f"Noted status: {src.parsed_status}. "
-                "We will revert if anything further is needed."
-            )
-            ack = CommunicationMessage(
-                direction="OUTGOING",
-                # DRAFT, not READY: auto-acknowledgements must be reviewed and
-                # approved by a human before the send worker picks them up.
-                status="DRAFT",
-                channel="EMAIL",
-                supplier_id=src.supplier_id,
-                supplier_name=src.supplier_name,
-                procurement_record_id=src.procurement_record_id,
-                supplier_po_no=src.supplier_po_no,
-                subject=subject,
-                body=body,
-                receiver_email=src.sender_email,
-                to_emails=[src.sender_email],
-                mail_type="AUTO_ACK",
-                in_reply_to=src.message_uid,
-            )
-            db.add(ack)
-            created += 1
-        db.commit()
-        return {
-            "ran_at": datetime.utcnow().isoformat(),
-            "drafts_created": created,
-            "queued": created,
-        }
-    except Exception:  # noqa: BLE001
-        log.exception("auto_reply_runner failed")
-        db.rollback()
-        return {
-            "ran_at": datetime.utcnow().isoformat(),
-            "drafts_created": created,
-            "error": True,
-        }
-    finally:
-        db.close()
+                for src in candidates:
+                    already = db.scalar(
+                        select(CommunicationMessage).where(
+                            CommunicationMessage.in_reply_to == (src.message_uid or ""),
+                            CommunicationMessage.direction == "OUTGOING",
+                        )
+                    )
+                    if already or not src.sender_email:
+                        continue
+                    subject = f"Re: {src.subject or 'Your update'}"
+                    body = (
+                        f"Thanks for the update on PO {src.supplier_po_no or ''}. "
+                        f"Noted status: {src.parsed_status}. "
+                        "We will revert if anything further is needed."
+                    )
+                    ack = CommunicationMessage(
+                        direction="OUTGOING",
+                        # DRAFT, not READY: auto-acknowledgements must be reviewed and
+                        # approved by a human before the send worker picks them up.
+                        status="DRAFT",
+                        channel="EMAIL",
+                        supplier_id=src.supplier_id,
+                        supplier_name=src.supplier_name,
+                        procurement_record_id=src.procurement_record_id,
+                        supplier_po_no=src.supplier_po_no,
+                        subject=subject,
+                        body=body,
+                        receiver_email=src.sender_email,
+                        to_emails=[src.sender_email],
+                        mail_type="AUTO_ACK",
+                        in_reply_to=src.message_uid,
+                    )
+                    db.add(ack)
+                    created += 1
+                db.commit()
+                out[code] = {
+                    "ran_at": datetime.utcnow().isoformat(),
+                    "drafts_created": created,
+                    "queued": created,
+                }
+            except Exception:  # noqa: BLE001
+                log.exception("auto_reply_runner failed for %s", code)
+                db.rollback()
+                out[code] = {
+                    "ran_at": datetime.utcnow().isoformat(),
+                    "drafts_created": created,
+                    "error": True,
+                }
+            finally:
+                db.close()
+    return out
 
 
 def mail_send_runner() -> dict[str, Any]:
-    log.info("[cron] mail_send_runner starting")
-    result = mail_send_worker.send_ready_messages()
-    log.info("[cron] mail_send_runner done: %s", result)
-    return result
+    out: dict[str, Any] = {}
+    for code, schema, _ in _active_companies():
+        with use_company(schema):
+            out[code] = mail_send_worker.send_ready_messages(schema=schema)
+    return out
 
 
 def po_followup_mail_runner() -> dict[str, Any]:
-    log.info("[cron] po_followup_mail_runner starting")
-    db: Session = SessionLocal()
-    try:
-        result = po_followup_mail_service.queue_due_po_followups(db)
-        log.info("[cron] po_followup_mail_runner done: %s", result)
-        return result
-    except Exception:  # noqa: BLE001
-        db.rollback()
-        log.exception("po_followup_mail_runner failed")
-        return {"enabled": True, "queued": 0, "skipped": 0, "error": True}
-    finally:
-        db.close()
+    out: dict[str, Any] = {}
+    for code, schema, _ in _active_companies():
+        with use_company(schema):
+            db: Session = SessionLocal()
+            try:
+                out[code] = po_followup_mail_service.queue_due_po_followups(db)
+            except Exception:  # noqa: BLE001
+                db.rollback()
+                log.exception("po_followup_mail_runner failed for %s", code)
+                out[code] = {"enabled": True, "queued": 0, "skipped": 0, "error": True}
+            finally:
+                db.close()
+    return out
 
 
 def delay_risk_runner() -> dict[str, Any]:
-    """Recompute predictive delay-risk scores across all procurement records."""
-    db: Session = SessionLocal()
-    try:
-        result = ai_insights_service.rescore_all(db)
-        log.info("[cron] delay_risk_runner done: %s", result)
-        return result
-    except Exception:  # noqa: BLE001
-        db.rollback()
-        log.exception("delay_risk_runner failed")
-        return {"updated": 0, "error": True}
-    finally:
-        db.close()
+    """Recompute predictive delay-risk scores per company."""
+    out: dict[str, Any] = {}
+    for code, schema, _ in _active_companies():
+        with use_company(schema):
+            db: Session = SessionLocal()
+            try:
+                out[code] = ai_insights_service.rescore_all(db)
+            except Exception:  # noqa: BLE001
+                db.rollback()
+                log.exception("delay_risk_runner failed for %s", code)
+                out[code] = {"updated": 0, "error": True}
+            finally:
+                db.close()
+    return out
 
 
 def knowledge_index_runner() -> dict[str, Any]:
@@ -188,22 +219,28 @@ def knowledge_index_runner() -> dict[str, Any]:
 
 
 def crm_ingestion_runner() -> dict[str, Any]:
-    """Poll the live CRM desk feed and upsert generated POs into procurement_records."""
+    """Poll each active company's CRM desk feed and upsert into its schema."""
     if not getattr(settings, "CRM_INGEST_ENABLED", False):
         return {"enabled": False, "status": "DISABLED"}
-    db: Session = SessionLocal()
-    try:
-        from ..services import crm_ingest_service
+    from ..services import crm_ingest_service
 
-        result = crm_ingest_service.poll_and_ingest(db)
-        log.info("[cron] crm_ingestion_runner done: %s", result)
-        return result
-    except Exception:  # noqa: BLE001
-        db.rollback()
-        log.exception("crm_ingestion_runner failed")
-        return {"ok": False, "status": "ERROR", "error": True}
-    finally:
-        db.close()
+    out: dict[str, Any] = {}
+    for code, schema, is_default in _active_companies():
+        cfg = get_crm_config(code, is_default=is_default)
+        if cfg is None:
+            out[code] = {"status": "SKIPPED", "reason": "no CRM config"}
+            continue
+        with use_company(schema):
+            db: Session = SessionLocal()
+            try:
+                out[code] = crm_ingest_service.poll_and_ingest(db, cfg, desk_label=code)
+            except Exception:  # noqa: BLE001
+                db.rollback()
+                log.exception("crm ingest failed for company %s", code)
+                out[code] = {"ok": False, "status": "ERROR"}
+            finally:
+                db.close()
+    return out
 
 
 def courier_tracking_runner() -> dict[str, Any]:
