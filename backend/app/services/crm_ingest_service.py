@@ -480,8 +480,19 @@ def poll_and_ingest(
     go to whatever schema the ambient tenant context selects (caller wraps this in
     `use_company(...)` for non-default companies)."""
     if cfg is None:
+        # Resolve the CRM config for the CURRENT tenant context (not hard-coded 102),
+        # so a manual sync triggered under a non-default company never fetches the
+        # default company's feed/credentials into the wrong schema.
         from .crm_config import get_crm_config
-        cfg = get_crm_config(str(settings.CRM_DESK_ID or "102"), is_default=True)
+        from ..core.tenant import get_current_schema, DEFAULT_SCHEMA
+        from . import company_service
+        schema = get_current_schema()
+        if schema == DEFAULT_SCHEMA:
+            cfg = get_crm_config(str(settings.CRM_DESK_ID or "102"), is_default=True)
+        else:
+            company = company_service.get_by_schema(db, schema)
+            if company is not None:
+                cfg = get_crm_config(company.code, is_default=company.is_default)
     if not settings.CRM_INGEST_ENABLED or cfg is None:
         reason = "CRM_INGEST_ENABLED is false" if not settings.CRM_INGEST_ENABLED else "no CRM config"
         _log_run(status="DISABLED", trigger=trigger, message=reason)
