@@ -67,6 +67,26 @@ class CrmConfigTests(unittest.TestCase):
              patch.object(mod.settings, "CRM_API_BASE_URL", "http://crm.example:8599"):
             assert get_crm_config("101", is_default=False) is None
 
+    def test_reads_per_company_desk_from_env_file_not_os_environ(self):
+        # Regression: the app loads .env into `settings` (pydantic), NOT into
+        # os.environ. Per-company CRM vars must be read from the .env FILE — else a
+        # box whose .env has CRM_101_DESK_ID would never actually ingest 101.
+        import pathlib
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            envp = pathlib.Path(d) / ".env"
+            envp.write_text("CRM_101_DESK_ID=101\n")
+            with patch.dict(os.environ, {}, clear=False), \
+                 patch.object(mod, "ENV_FILE", envp), \
+                 patch.object(mod.settings, "CRM_LOGIN_EMAIL", "shared@x.com"), \
+                 patch.object(mod.settings, "CRM_LOGIN_PASSWORD", "sharedpw"), \
+                 patch.object(mod.settings, "CRM_API_BASE_URL", "http://crm.example:8599"):
+                os.environ.pop("CRM_101_DESK_ID", None)  # ensure it is NOT a process env var
+                cfg = get_crm_config("101", is_default=False)
+        assert cfg is not None
+        assert cfg.desk_id == "101"                # read from the .env FILE
+        assert cfg.login_email == "shared@x.com"   # inherited from shared settings
+
     def test_default_company_uses_legacy_settings(self):
         with patch.object(mod.settings, "CRM_DESK_ID", "102"), \
              patch.object(mod.settings, "CRM_LOGIN_EMAIL", "e102@x.com"), \

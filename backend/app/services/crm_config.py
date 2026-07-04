@@ -14,7 +14,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
-from ..core.config import settings
+from ..core.config import ENV_FILE, settings
 
 
 @dataclass(frozen=True)
@@ -26,8 +26,27 @@ class CrmConfig:
     device_id: str
 
 
+def _company_env() -> dict:
+    """Per-company CRM vars (``CRM_<CODE>_*``) live in the ``.env`` file. pydantic
+    loads ``.env`` into ``settings`` but NOT into ``os.environ``, and these keys
+    aren't declared settings fields — so read the ``.env`` file directly (matching
+    how the rest of the app is configured). Real process env vars still win
+    (container/systemd overrides)."""
+    values: dict = {}
+    try:
+        from dotenv import dotenv_values
+
+        for key, value in dotenv_values(ENV_FILE).items():
+            if value is not None:
+                values[key] = value
+    except Exception:  # noqa: BLE001
+        pass
+    values.update(os.environ)
+    return values
+
+
 def _env(code: str, name: str) -> str:
-    return (os.environ.get(f"CRM_{code}_{name}") or "").strip()
+    return (_company_env().get(f"CRM_{code}_{name}") or "").strip()
 
 
 def get_crm_config(code: str, *, is_default: bool) -> CrmConfig | None:
