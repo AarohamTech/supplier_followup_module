@@ -37,6 +37,7 @@ class AutoMailQueueTests(unittest.TestCase):
             subject="Follow-up",
             body="Body",
             body_html=None,
+            sender_email=None,
             receiver_email="ops@example.com",
             to_emails=["ops@example.com"],
             cc_emails=["buyer@example.com"],

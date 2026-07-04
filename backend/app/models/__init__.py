@@ -21,6 +21,7 @@ from .supplier_email_audit import SupplierEmailAudit
 from .supplier_material_commitment import SupplierMaterialCommitment
 from .task_collaboration import TaskActivityLog, TaskComment
 from .user import User
+from .user_mail_identity import UserMailIdentity
 
 __all__ = [
     "AgentSubscription",
@@ -50,4 +51,5 @@ __all__ = [
     "TaskActivityLog",
     "TaskComment",
     "User",
+    "UserMailIdentity",
 ]

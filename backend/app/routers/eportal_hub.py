@@ -891,6 +891,7 @@ def compose_now(
         supplier_po_no=payload.supplier_po_no,
         procurement_record_id=payload.procurement_record_id,
         customer_mail_id=None,
+        sender_email=user.email,
         send=payload.send,
     )
 

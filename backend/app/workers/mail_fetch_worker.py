@@ -23,16 +23,18 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from ..core.config import settings
-from ..core.tenant import use_company
+from ..core.tenant import get_current_schema, use_company
 from ..database import SessionLocal
 from ..models.customer_mail import CustomerMail
 from ..services import (
     ai_insights_service,
     communication_message_service as msg_service,
     knowledge_indexer,
+    mail_config_service,
     mail_parser_service,
     status_change_service,
 )
+from ..services.mail_config_service import ImapConfig
 
 log = logging.getLogger(__name__)
 
@@ -104,16 +106,16 @@ def _classify_customer_mail(subject: str | None, body: str | None) -> str:
     return "GENERAL"
 
 
-def _connect_imap() -> imaplib.IMAP4:
-    if settings.MAIL_INBOX_USE_SSL:
-        return imaplib.IMAP4_SSL(settings.IMAP_HOST, settings.IMAP_PORT)
-    return imaplib.IMAP4(settings.IMAP_HOST, settings.IMAP_PORT)
+def _connect_imap(cfg: ImapConfig) -> imaplib.IMAP4:
+    if cfg.use_ssl:
+        return imaplib.IMAP4_SSL(cfg.host, cfg.port)
+    return imaplib.IMAP4(cfg.host, cfg.port)
 
 
-def _connect_pop3() -> poplib.POP3:
-    if settings.MAIL_INBOX_USE_SSL:
-        return poplib.POP3_SSL(settings.IMAP_HOST, settings.IMAP_PORT, timeout=30)
-    return poplib.POP3(settings.IMAP_HOST, settings.IMAP_PORT, timeout=30)
+def _connect_pop3(cfg: ImapConfig) -> poplib.POP3:
+    if cfg.use_ssl:
+        return poplib.POP3_SSL(cfg.host, cfg.port, timeout=30)
+    return poplib.POP3(cfg.host, cfg.port, timeout=30)
 
 
 def _process_one(
@@ -311,13 +313,29 @@ def resolve_company_schema_for_sender(sender_email: str | None) -> str:
     return _default_schema_from(companies)
 
 
+def _process_in_schema(raw_uid, raw_bytes, sender: str | None, attribute: bool) -> dict[str, Any]:
+    """Persist one fetched message. In per-company mode the mailbox belongs to the
+    active company, so it is processed in the current schema. In legacy/global mode
+    (`attribute=True`) it is routed to the company that owns the sender."""
+    schema = resolve_company_schema_for_sender(sender) if attribute else get_current_schema()
+    with use_company(schema):
+        pdb: Session = SessionLocal()
+        try:
+            result = _process_one(pdb, raw_uid, raw_bytes)
+        finally:
+            pdb.close()
+    result["company_schema"] = schema
+    return result
+
+
 def _fetch_imap_messages(
-    db: Session,
     client: imaplib.IMAP4,
     limit: int,
+    cfg: ImapConfig,
+    attribute: bool,
 ) -> dict[str, Any]:
-    client.login(settings.IMAP_USER, settings.IMAP_PASSWORD)
-    client.select(settings.IMAP_FOLDER or "INBOX")
+    client.login(cfg.user, cfg.password)
+    client.select(cfg.folder or "INBOX")
 
     typ, data = client.search(None, "UNSEEN")
     if typ != "OK":
@@ -339,15 +357,7 @@ def _fetch_imap_messages(
                 continue
             raw_bytes = bytes(raw_msg)
             sender = parseaddr(_decode(email.message_from_bytes(raw_bytes).get("From")))[1] or None
-            schema = resolve_company_schema_for_sender(sender)
-            with use_company(schema):
-                pdb: Session = SessionLocal()
-                try:
-                    result = _process_one(pdb, raw_uid, raw_bytes)
-                finally:
-                    pdb.close()
-            result["company_schema"] = schema
-            processed.append(result)
+            processed.append(_process_in_schema(raw_uid, raw_bytes, sender, attribute))
         except Exception:  # noqa: BLE001
             log.exception("Failed to process IMAP message uid=%s", raw_uid)
 
@@ -360,12 +370,13 @@ def _fetch_imap_messages(
 
 
 def _fetch_pop3_messages(
-    db: Session,
     client: poplib.POP3,
     limit: int,
+    cfg: ImapConfig,
+    attribute: bool,
 ) -> dict[str, Any]:
-    client.user(settings.IMAP_USER)
-    client.pass_(settings.IMAP_PASSWORD)
+    client.user(cfg.user)
+    client.pass_(cfg.password)
 
     message_count, _ = client.stat()
     if message_count <= 0:
@@ -394,14 +405,7 @@ def _fetch_pop3_messages(
             raw_uid = uid_map.get(msg_no, str(msg_no).encode())
             raw_msg = b"\r\n".join(lines)
             sender = parseaddr(_decode(email.message_from_bytes(raw_msg).get("From")))[1] or None
-            schema = resolve_company_schema_for_sender(sender)
-            with use_company(schema):
-                pdb: Session = SessionLocal()
-                try:
-                    result = _process_one(pdb, raw_uid, raw_msg)
-                finally:
-                    pdb.close()
-            result["company_schema"] = schema
+            result = _process_in_schema(raw_uid, raw_msg, sender, attribute)
             result["mailbox_seq"] = msg_no
             processed.append(result)
         except Exception:  # noqa: BLE001
@@ -415,37 +419,45 @@ def _fetch_pop3_messages(
     }
 
 
-def fetch_supplier_mails(limit: int = 50) -> dict[str, Any]:
-    """Connect to the configured mailbox, fetch mails, persist + parse them.
+def fetch_supplier_mails(cfg: ImapConfig | None = None, limit: int = 50) -> dict[str, Any]:
+    """Connect to a mailbox, fetch mails, persist + parse them.
+
+    With no `cfg` this uses the env mailbox and attributes each message to the
+    company that owns its sender (legacy single-mailbox behavior). When the
+    per-company runner passes `cfg`, the mailbox belongs to the active company and
+    messages are processed in the current schema.
 
     Returns a structured summary. Never raises if disabled/misconfigured —
     caller can treat that as a no-op.
     """
-    ready, reason = _config_ready()
+    # attribute=True only in legacy/global mode; per-company fetch owns its mailbox.
+    attribute = cfg is None
+    cfg = cfg or mail_config_service.env_imap_config()
+
+    ready, reason = cfg.ready()
     if not ready:
         log.info("Mail fetch worker disabled: %s", reason)
         return {
             "enabled": False,
             "reason": reason,
-            "protocol": settings.MAIL_FETCH_PROTOCOL,
+            "protocol": cfg.protocol,
             "fetched": 0,
             "processed": [],
         }
 
-    db: Session = SessionLocal()
     client: imaplib.IMAP4 | poplib.POP3 | None = None
     try:
-        if settings.MAIL_FETCH_PROTOCOL == "POP3":
-            client = _connect_pop3()
-            return _fetch_pop3_messages(db, client, limit)
+        if cfg.protocol == "POP3":
+            client = _connect_pop3(cfg)
+            return _fetch_pop3_messages(client, limit, cfg, attribute)
 
-        client = _connect_imap()
-        return _fetch_imap_messages(db, client, limit)
+        client = _connect_imap(cfg)
+        return _fetch_imap_messages(client, limit, cfg, attribute)
     except Exception as exc:  # noqa: BLE001
         log.exception("Mail fetch worker error")
         return {
             "enabled": True,
-            "protocol": settings.MAIL_FETCH_PROTOCOL,
+            "protocol": cfg.protocol,
             "fetched": 0,
             "processed": [],
             "error": str(exc),
@@ -459,54 +471,56 @@ def fetch_supplier_mails(limit: int = 50) -> dict[str, Any]:
                     client.logout()
             except Exception:  # noqa: BLE001
                 pass
-        db.close()
 
 
-def test_inbox_connection() -> dict[str, Any]:
-    """Quick connectivity + auth check for the configured inbox."""
-    ready, reason = _config_ready()
+def test_inbox_connection(cfg: ImapConfig | None = None) -> dict[str, Any]:
+    """Quick connectivity + auth check for a mailbox. With no `cfg`, tests the env
+    mailbox (legacy); the settings API passes the effective per-company config, or
+    a draft to test before saving."""
+    cfg = cfg or mail_config_service.env_imap_config()
+    ready, reason = cfg.ready()
     if not ready:
         return {
             "enabled": False,
             "ok": False,
-            "protocol": settings.MAIL_FETCH_PROTOCOL,
+            "protocol": cfg.protocol,
             "reason": reason,
         }
 
     client: imaplib.IMAP4 | poplib.POP3 | None = None
     try:
-        if settings.MAIL_FETCH_PROTOCOL == "POP3":
-            client = _connect_pop3()
-            client.user(settings.IMAP_USER)
-            client.pass_(settings.IMAP_PASSWORD)
+        if cfg.protocol == "POP3":
+            client = _connect_pop3(cfg)
+            client.user(cfg.user)
+            client.pass_(cfg.password)
             count, _ = client.stat()
             return {
                 "enabled": True,
                 "ok": True,
                 "protocol": "POP3",
-                "host": settings.IMAP_HOST,
-                "port": int(settings.IMAP_PORT or 0),
+                "host": cfg.host,
+                "port": int(cfg.port or 0),
                 "mailbox_count": int(count),
             }
-        client = _connect_imap()
-        client.login(settings.IMAP_USER, settings.IMAP_PASSWORD)
-        client.select(settings.IMAP_FOLDER or "INBOX")
+        client = _connect_imap(cfg)
+        client.login(cfg.user, cfg.password)
+        client.select(cfg.folder or "INBOX")
         return {
             "enabled": True,
             "ok": True,
             "protocol": "IMAP",
-            "host": settings.IMAP_HOST,
-            "port": int(settings.IMAP_PORT or 0),
-            "folder": settings.IMAP_FOLDER or "INBOX",
+            "host": cfg.host,
+            "port": int(cfg.port or 0),
+            "folder": cfg.folder or "INBOX",
         }
     except Exception as exc:  # noqa: BLE001
         log.exception("Inbox connection test failed")
         return {
             "enabled": True,
             "ok": False,
-            "protocol": settings.MAIL_FETCH_PROTOCOL,
-            "host": settings.IMAP_HOST,
-            "port": int(settings.IMAP_PORT or 0),
+            "protocol": cfg.protocol,
+            "host": cfg.host,
+            "port": int(cfg.port or 0),
             "error": str(exc),
         }
     finally:

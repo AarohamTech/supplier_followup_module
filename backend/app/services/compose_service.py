@@ -37,6 +37,7 @@ def compose_and_send(
     supplier_po_no: str | None = None,
     procurement_record_id: int | None = None,
     customer_mail_id: int | None = None,
+    sender_email: str | None = None,
     send: bool = True,
 ) -> dict[str, Any]:
     subject = (subject or "").strip()
@@ -65,6 +66,7 @@ def compose_and_send(
         customer_mail_id=customer_mail_id,
         subject=subject,
         body=body,
+        sender_email=(sender_email or "").strip() or None,
         to_emails=to,
         cc_emails=cc,
         bcc_emails=bcc,
