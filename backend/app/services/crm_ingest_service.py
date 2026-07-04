@@ -31,6 +31,7 @@ from ..models.crm_ingest_log import CrmIngestLog
 from ..models.procurement import ProcurementRecord
 from ..models.supplier import SupplierMaster
 from ..schemas.procurement import ProcurementCreate
+from .crm_config import CrmConfig
 from .followup_engine import get_followup_rule
 from .procurement_sync_service import normalize_procurement_row
 
@@ -39,7 +40,7 @@ log = logging.getLogger(__name__)
 _TOKEN_LEEWAY_SECONDS = 300
 
 _lock = threading.Lock()
-_token_cache: dict[str, Any] = {"token": None, "exp": 0.0}
+_token_caches: dict[tuple[str, str], dict[str, Any]] = {}
 _login_keys_logged = False
 
 
@@ -85,19 +86,13 @@ def _token_exp(token: str) -> float:
         return 0.0
 
 
-def _login() -> str:
+def _login(cfg: CrmConfig) -> str:
     global _login_keys_logged
-    base = settings.CRM_API_BASE_URL.rstrip("/")
-    body = {
-        "Email": settings.CRM_LOGIN_EMAIL,
-        "Password": settings.CRM_LOGIN_PASSWORD,
-        "DeviceId": settings.CRM_DEVICE_ID,
-    }
+    base = cfg.base_url.rstrip("/")
+    body = {"Email": cfg.login_email, "Password": cfg.login_password, "DeviceId": cfg.device_id}
     resp = requests.post(
-        f"{base}/api/login",
-        json=body,
-        timeout=settings.CRM_HTTP_TIMEOUT_SECONDS,
-        headers={"Accept": "application/json"},
+        f"{base}/api/login", json=body,
+        timeout=settings.CRM_HTTP_TIMEOUT_SECONDS, headers={"Accept": "application/json"},
     )
     resp.raise_for_status()
     try:
@@ -114,26 +109,28 @@ def _login() -> str:
     return token
 
 
-def get_token(*, force_refresh: bool = False) -> str:
-    """Return a valid bearer token, logging in / refreshing as needed."""
+def get_token(cfg: CrmConfig, *, force_refresh: bool = False) -> str:
+    """Return a valid bearer token for `cfg`, logging in / refreshing as needed.
+    Tokens are cached PER config (base_url + login email) so each company's desk
+    keeps its own session."""
+    key = (cfg.base_url, cfg.login_email)
     with _lock:
         now = time.time()
-        cached = _token_cache["token"]
-        exp = _token_cache["exp"]
+        cache = _token_caches.get(key) or {"token": None, "exp": 0.0}
+        cached = cache["token"]
+        exp = cache["exp"]
         fresh_enough = cached and (exp == 0.0 or now < exp - _TOKEN_LEEWAY_SECONDS)
         if cached and fresh_enough and not force_refresh:
             return cached
-        token = _login()
-        _token_cache["token"] = token
-        _token_cache["exp"] = _token_exp(token)
+        token = _login(cfg)
+        _token_caches[key] = {"token": token, "exp": _token_exp(token)}
         return token
 
 
 # ── fetch + map ─────────────────────────────────────────────────────────────
-def fetch_desk(desk_id: str | None = None) -> list[dict[str, Any]]:
-    desk = str(desk_id or settings.CRM_DESK_ID)
-    base = settings.CRM_API_BASE_URL.rstrip("/")
-    url = f"{base}/api/crm/GetPendingUserDesk/{desk}"
+def fetch_desk(cfg: CrmConfig) -> list[dict[str, Any]]:
+    base = cfg.base_url.rstrip("/")
+    url = f"{base}/api/crm/GetPendingUserDesk/{cfg.desk_id}"
 
     def _call(token: str) -> requests.Response:
         return requests.get(
@@ -142,13 +139,12 @@ def fetch_desk(desk_id: str | None = None) -> list[dict[str, Any]]:
             timeout=settings.CRM_HTTP_TIMEOUT_SECONDS,
         )
 
-    resp = _call(get_token())
-    if resp.status_code == 401:  # token rejected — force a fresh login and retry once
-        resp = _call(get_token(force_refresh=True))
+    resp = _call(get_token(cfg))
+    if resp.status_code == 401:
+        resp = _call(get_token(cfg, force_refresh=True))
     resp.raise_for_status()
     data = resp.json()
     if isinstance(data, dict):
-        # Some endpoints wrap the array, e.g. {"success":..,"data":[...]}.
         for key in ("data", "Data", "result", "Result", "items", "Items"):
             if isinstance(data.get(key), list):
                 return data[key]
@@ -366,7 +362,7 @@ def _bulk_upsert(db: Session, raw_rows: list[dict[str, Any]]) -> tuple[int, int,
         stmt = pg_insert(tbl).values(part)
         sig = stmt.excluded.signal
         stmt = stmt.on_conflict_do_update(
-            constraint="uq_procurement_match_latest",
+            index_elements=["crm_no", "supplier_po_no", "material_name"],
             set_={
                 "uom": stmt.excluded.uom,
                 "lead_time": stmt.excluded.lead_time,
@@ -470,19 +466,31 @@ def _auto_send_after_ingest(db: Session) -> None:
             log.exception("[crm] auto follow-up send failed (ignored)")
 
 
-def poll_and_ingest(db: Session, trigger: str = "auto") -> dict[str, Any]:
-    """Fetch the desk feed, keep generated POs, and bulk-upsert them. Failure-safe.
+def poll_and_ingest(
+    db: Session,
+    cfg: CrmConfig | None = None,
+    *,
+    desk_label: str | None = None,
+    trigger: str = "auto",
+) -> dict[str, Any]:
+    """Fetch a desk feed, keep generated POs, and bulk-upsert them. Failure-safe.
 
-    Records a CRM fetch-history row each run (admin-visible) with added/changed
-    counts. On error the existing data is left untouched and an ERROR row logged.
-    """
-    if not settings.CRM_INGEST_ENABLED:
-        _log_run(status="DISABLED", trigger=trigger, message="CRM_INGEST_ENABLED is false")
-        return {"ok": True, "status": "DISABLED", "message": "CRM_INGEST_ENABLED is false"}
+    `cfg` selects which CRM desk/credentials to use; when None, the legacy 102
+    config (from CRM_* settings) is used so existing callers keep working. Writes
+    go to whatever schema the ambient tenant context selects (caller wraps this in
+    `use_company(...)` for non-default companies)."""
+    if cfg is None:
+        from .crm_config import get_crm_config
+        cfg = get_crm_config(str(settings.CRM_DESK_ID or "102"), is_default=True)
+    if not settings.CRM_INGEST_ENABLED or cfg is None:
+        reason = "CRM_INGEST_ENABLED is false" if not settings.CRM_INGEST_ENABLED else "no CRM config"
+        _log_run(status="DISABLED", trigger=trigger, message=reason)
+        return {"ok": True, "status": "DISABLED", "message": reason}
 
+    label = desk_label or cfg.desk_id
     t0 = time.time()
     try:
-        feed = fetch_desk()
+        feed = fetch_desk(cfg)
         generated = [r for r in feed if _is_generated(r)]
         rows = [map_row(r) for r in generated]
         created, updated, skipped = _bulk_upsert(db, rows)
@@ -491,44 +499,26 @@ def poll_and_ingest(db: Session, trigger: str = "auto") -> dict[str, Any]:
             db.rollback()
         except Exception:  # noqa: BLE001
             pass
-        _log_run(
-            status="ERROR", trigger=trigger, desk=str(settings.CRM_DESK_ID),
-            duration_ms=int((time.time() - t0) * 1000), message=str(exc)[:1000],
-        )
+        _log_run(status="ERROR", trigger=trigger, desk=str(label),
+                 duration_ms=int((time.time() - t0) * 1000), message=str(exc)[:1000])
         raise
 
     duration_ms = int((time.time() - t0) * 1000)
-    _log_run(
-        status="OK", trigger=trigger, desk=str(settings.CRM_DESK_ID),
-        fetched=len(feed), generated=len(generated),
-        created=created, updated=updated, skipped=skipped, errors=0,
-        duration_ms=duration_ms,
-    )
-
-    # Contact suppliers as soon as their data lands: queue + send the signal-based
-    # follow-ups for the POs that just changed, rather than waiting for the
-    # separate follow-up cron. Best-effort — never breaks the ingest.
+    _log_run(status="OK", trigger=trigger, desk=str(label),
+             fetched=len(feed), generated=len(generated),
+             created=created, updated=updated, skipped=skipped, errors=0,
+             duration_ms=duration_ms)
     if created or updated:
         _auto_send_after_ingest(db)
 
     result = {
-        "ok": True,
-        "status": "OK",
-        "desk": str(settings.CRM_DESK_ID),
-        "fetched": len(feed),
-        "generated": len(generated),
-        "created": created,
-        "updated": updated,
-        "skipped": skipped,
-        "errors": 0,
+        "ok": True, "status": "OK", "desk": str(label),
+        "fetched": len(feed), "generated": len(generated),
+        "created": created, "updated": updated, "skipped": skipped, "errors": 0,
         "duration_ms": duration_ms,
         "records_processed": created + updated + skipped,
-        "records_success": created + updated,
-        "records_failed": 0,
+        "records_success": created + updated, "records_failed": 0,
     }
-    log.info(
-        "[crm] ingest desk=%s fetched=%d generated=%d created=%d updated=%d skipped=%d in %dms",
-        result["desk"], result["fetched"], result["generated"],
-        result["created"], result["updated"], result["skipped"], duration_ms,
-    )
+    log.info("[crm] ingest desk=%s fetched=%d generated=%d created=%d updated=%d skipped=%d in %dms",
+             label, len(feed), len(generated), created, updated, skipped, duration_ms)
     return result
