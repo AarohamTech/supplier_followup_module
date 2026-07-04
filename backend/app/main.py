@@ -16,7 +16,8 @@ from .core.deps import (
 )
 from .core.logging import setup_logging
 from .core.schema_evolve import ensure_columns
-from .database import Base, engine, ensure_schema
+from .core.tenant_middleware import TenantMiddleware
+from .database import Base, engine, ensure_schema, SessionLocal
 from .routers import (
     ai,
     ai_insights,
@@ -45,6 +46,7 @@ from .routers import (
     settings as settings_router,
 )
 from .scheduler import register_all_specs, start_scheduler, stop_scheduler
+from .services import company_service
 from . import seed as seed_module
 
 log = logging.getLogger(__name__)
@@ -80,6 +82,12 @@ async def lifespan(app: FastAPI):
             log.info("Seed result: %s", result)
         except Exception:  # noqa: BLE001
             log.exception("Seed failed (continuing)")
+        try:
+            with SessionLocal() as _cdb:
+                company_service.seed_companies(_cdb)
+                company_service.refresh_cache(_cdb)
+        except Exception:  # noqa: BLE001
+            log.exception("Company registry seed/cache failed (continuing)")
     else:
         log.info("RUN_STARTUP_INIT=false — skipping schema/seed bootstrap")
     try:
@@ -105,6 +113,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Resolve the active company (schema) per request from the JWT company claim.
+app.add_middleware(TenantMiddleware)
 
 # Open routers (no auth): login + machine-to-machine webhooks.
 app.include_router(auth.router)
