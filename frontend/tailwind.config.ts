@@ -27,6 +27,19 @@ export default {
           red: v("--signal-red"),
           black: v("--signal-black"),
         },
+        red: {
+          50: v("--red-50"),
+          100: v("--red-100"),
+          200: v("--red-200"),
+          300: v("--red-300"),
+          400: v("--red-400"),
+          500: v("--red-500"),
+          600: v("--red-600"),
+          700: v("--red-700"),
+          800: v("--red-800"),
+          900: v("--red-900"),
+          950: v("--red-950"),
+        },
         // Theme-aware surfaces for the hardcoded-color sweep.
         card: v("--card"),       // elevated/card background (replaces bg-white)
         subtle: v("--subtle"),   // subtle/hover background (replaces bg-gray-50/100)
