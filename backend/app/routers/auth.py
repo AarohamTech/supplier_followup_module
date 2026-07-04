@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from ..core.config import settings
@@ -74,3 +75,31 @@ def change_password(
     # (e.g. a supplier completing the first-login change).
     user_service.set_password(db, user, payload.new_password, must_change=False)
     return {"ok": True}
+
+
+class SwitchCompanyRequest(BaseModel):
+    company: str
+
+
+@router.post("/switch-company", response_model=Token)
+def switch_company(
+    payload: SwitchCompanyRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> Token:
+    # Portal accounts are pinned to their own company — no switching.
+    if user.supplier_id is not None or user.emp_code is not None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                            detail="Portal accounts cannot switch company")
+    target = company_service.get_by_code(db, payload.company)
+    if target is None or not target.is_active:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="Unknown or inactive company")
+    token = create_access_token(subject=user.id, role=user.role, email=user.email,
+                                extra={"company": target.code})
+    return Token(
+        access_token=token,
+        expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        user=user_out(db, user),
+        company=CompanyBrief.model_validate(target),
+    )
