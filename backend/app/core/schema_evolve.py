@@ -88,3 +88,43 @@ def ensure_columns(engine: Engine, tables: Iterable | None = None) -> list[str]:
             except Exception:  # noqa: BLE001
                 log.exception("Schema evolve failed for %s.%s", table.name, col.name)
     return changes
+
+
+def ensure_columns_in_schema(engine: Engine, schema: str) -> list[str]:
+    """Like `ensure_columns`, but inspects/alters tables inside `schema`.
+    Postgres only; no-op on SQLite. Never drops/renames — only ADDs missing
+    columns declared on the models to the per-company copy of each table."""
+    backend = engine.url.get_backend_name()
+    if not backend.startswith("postgresql"):
+        return []
+    import re as _re
+    if not _re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", schema):
+        raise ValueError(f"invalid schema name: {schema!r}")
+
+    from ..database import Base, SHARED_TABLES
+
+    inspector = inspect(engine)
+    existing_tables = set(inspector.get_table_names(schema=schema))
+    changes: list[str] = []
+    for table in Base.metadata.sorted_tables:
+        if table.name in SHARED_TABLES or table.name not in existing_tables:
+            continue
+        existing_cols = {c["name"] for c in inspector.get_columns(table.name, schema=schema)}
+        for col in table.columns:
+            if col.name in existing_cols:
+                continue
+            ddl_type = _column_ddl_type(col, engine)
+            default = _default_clause(col, engine)
+            not_null = " NOT NULL" if (not col.nullable and default) else ""
+            stmt = (
+                f'ALTER TABLE "{schema}"."{table.name}" ADD COLUMN {col.name} {ddl_type}'
+                f"{default}{not_null}"
+            )
+            try:
+                with engine.begin() as conn:
+                    conn.execute(text(stmt))
+                changes.append(f"{schema}.{table.name}.{col.name}")
+                log.info("Schema evolve: added %s.%s.%s", schema, table.name, col.name)
+            except Exception:  # noqa: BLE001
+                log.exception("Schema evolve failed for %s.%s.%s", schema, table.name, col.name)
+    return changes
