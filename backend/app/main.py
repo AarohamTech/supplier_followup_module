@@ -88,6 +88,13 @@ async def lifespan(app: FastAPI):
                 company_service.refresh_cache(_cdb)
         except Exception:  # noqa: BLE001
             log.exception("Company registry seed/cache failed (continuing)")
+        try:
+            with SessionLocal() as _sdb:
+                created = seed_module.ensure_company_schemas(_sdb)
+                if created:
+                    log.info("Ensured company schemas: %s", ", ".join(created))
+        except Exception:  # noqa: BLE001
+            log.exception("Company schema creation failed (continuing)")
     else:
         log.info("RUN_STARTUP_INIT=false — skipping schema/seed bootstrap")
     try:
