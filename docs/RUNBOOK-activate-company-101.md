@@ -36,25 +36,37 @@ UI **light-blue** (empty data). If you see that, the backend + frontend are live
 
 ---
 
-## 1. Add the desk-101 CRM credentials
+## 1. Add 101's CRM desk
+
+101 uses the **same CRM account/token as 102** — only the desk id in the request differs.
 ```bash
 cd ~/supplier_followup_module/backend
 cp .env .env.bak.$(date +%Y%m%d-%H%M%S)     # backup first
 nano .env
 ```
-Append (or fill) these keys — CODE `101` matches `companies.code`:
+
+**If the box is running commit `fb7e71e` or later** (non-default companies inherit the shared
+login), you only need ONE line:
 ```
 CRM_101_DESK_ID=101
-CRM_101_LOGIN_EMAIL=<desk-101 login email>
-CRM_101_LOGIN_PASSWORD=<desk-101 password>
-# optional (defaults shown):
-# CRM_101_DEVICE_ID=101                       # defaults to CRM_101_DESK_ID
-# CRM_101_BASE_URL=                           # defaults to the shared CRM_API_BASE_URL
 ```
+
+**If the box is still on the earlier code** (which required a full per-company login), set all
+three — copy 102's own credentials so 101 uses the same login/token:
+```
+CRM_101_DESK_ID=101
+CRM_101_LOGIN_EMAIL=<same value as CRM_LOGIN_EMAIL in this .env>
+CRM_101_LOGIN_PASSWORD=<same value as CRM_LOGIN_PASSWORD in this .env>
+```
+
 Notes:
-- `CRM_INGEST_ENABLED=true` is already set globally (102 uses it) — you do **not** add a new
-  enable flag. The per-company loop picks up 101 automatically once `CRM_101_*` resolves.
-- If any of desk-id / email / password is missing, 101 ingestion simply stays skipped (safe).
+- `CRM_INGEST_ENABLED=true` is already set globally (102 uses it) — no new enable flag; the
+  per-company loop picks up 101 automatically once `CRM_101_DESK_ID` resolves.
+- Because the login email matches 102's, 101 shares 102's cached token (no extra CRM login).
+- If the desk id is missing, 101 ingestion simply stays skipped (safe).
+- ⚠️ This assumes the CRM account (102's login) actually has permission to fetch **desk 101**.
+  If desk 101 returns 401/empty, that's a CRM-side permission/desk issue — check the ERRORS
+  column on the CRM Ingestion page or `journalctl`.
 
 ---
 
