@@ -69,6 +69,7 @@ import type {
   AiFeedbackInput,
   AuthUser,
   LoginResponse,
+  CompanyBrief,
   UserCreatePayload,
   UserUpdatePayload,
   SupplierLogin,
@@ -686,16 +687,25 @@ export const api = {
   taskAnalyticsExportUrl: () => `/api/communication/analytics/export`,
 
   // ─── Auth ─────────────────────────────────────────────────────────────
-  login: (identifier: string, password: string) => {
+  login: (identifier: string, password: string, company?: string) => {
     // Staff/suppliers sign in by email; employees by username (no '@').
-    const body = identifier.includes("@")
+    const base = identifier.includes("@")
       ? { email: identifier, password }
       : { username: identifier, password };
+    const body = company ? { ...base, company } : base;
     return http<LoginResponse>("/api/auth/login", {
       method: "POST",
       body: JSON.stringify(body),
     });
   },
+
+  listCompanies: () => http<CompanyBrief[]>("/api/auth/companies"),
+
+  switchCompany: (company: string) =>
+    http<LoginResponse>("/api/auth/switch-company", {
+      method: "POST",
+      body: JSON.stringify({ company }),
+    }),
 
   me: () => http<AuthUser>("/api/auth/me"),
 

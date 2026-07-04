@@ -980,11 +980,20 @@ export interface AuthUser {
   updated_at: string;
 }
 
+export interface CompanyBrief {
+  code: string;
+  display_name: string;
+  theme: string;      // "red" (Hariom) | "blue" (Enterprise)
+  brand_name: string;
+  logo_url?: string | null;
+}
+
 export interface LoginResponse {
   access_token: string;
   token_type: string;
   expires_in: number;
   user: AuthUser;
+  company?: CompanyBrief | null;
 }
 
 export interface UserCreatePayload {
