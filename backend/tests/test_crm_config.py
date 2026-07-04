@@ -2,6 +2,7 @@ import os
 import unittest
 from unittest.mock import patch
 
+from app.services import crm_config as mod
 from app.services.crm_config import CrmConfig, get_crm_config
 
 
@@ -22,12 +23,51 @@ class CrmConfigTests(unittest.TestCase):
         assert cfg.base_url == "http://crm.example:8599"
         assert cfg.device_id == "101"
 
-    def test_incomplete_config_returns_none(self):
-        with patch.dict(os.environ, {"CRM_101_DESK_ID": "101"}, clear=False):
+    def test_non_default_inherits_shared_login_needs_only_desk_id(self):
+        # Same CRM account as 102 (shared login/token), different desk. Only
+        # CRM_<CODE>_DESK_ID is required; email/password/base inherit from settings.
+        env = {
+            "CRM_101_DESK_ID": "101",
+            "CRM_101_LOGIN_EMAIL": "",
+            "CRM_101_LOGIN_PASSWORD": "",
+            "CRM_101_BASE_URL": "",
+            "CRM_101_DEVICE_ID": "",
+        }
+        with patch.dict(os.environ, env, clear=False), \
+             patch.object(mod.settings, "CRM_LOGIN_EMAIL", "shared@x.com"), \
+             patch.object(mod.settings, "CRM_LOGIN_PASSWORD", "sharedpw"), \
+             patch.object(mod.settings, "CRM_API_BASE_URL", "http://crm.example:8599"):
+            cfg = get_crm_config("101", is_default=False)
+        assert cfg is not None
+        assert cfg.desk_id == "101"                       # its own desk
+        assert cfg.login_email == "shared@x.com"          # inherited from 102
+        assert cfg.login_password == "sharedpw"           # inherited from 102
+        assert cfg.base_url == "http://crm.example:8599"  # inherited
+        assert cfg.device_id == "101"                     # defaults to desk id
+
+    def test_returns_none_without_desk_id(self):
+        # Desk id is the one thing a non-default company must supply.
+        env = {
+            "CRM_101_DESK_ID": "",
+            "CRM_101_LOGIN_EMAIL": "",
+            "CRM_101_LOGIN_PASSWORD": "",
+            "CRM_101_BASE_URL": "",
+        }
+        with patch.dict(os.environ, env, clear=False), \
+             patch.object(mod.settings, "CRM_LOGIN_EMAIL", "shared@x.com"), \
+             patch.object(mod.settings, "CRM_LOGIN_PASSWORD", "sharedpw"), \
+             patch.object(mod.settings, "CRM_API_BASE_URL", "http://crm.example:8599"):
+            assert get_crm_config("101", is_default=False) is None
+
+    def test_returns_none_when_no_login_anywhere(self):
+        env = {"CRM_101_DESK_ID": "101", "CRM_101_LOGIN_EMAIL": "", "CRM_101_LOGIN_PASSWORD": ""}
+        with patch.dict(os.environ, env, clear=False), \
+             patch.object(mod.settings, "CRM_LOGIN_EMAIL", ""), \
+             patch.object(mod.settings, "CRM_LOGIN_PASSWORD", ""), \
+             patch.object(mod.settings, "CRM_API_BASE_URL", "http://crm.example:8599"):
             assert get_crm_config("101", is_default=False) is None
 
     def test_default_company_uses_legacy_settings(self):
-        from app.services import crm_config as mod
         with patch.object(mod.settings, "CRM_DESK_ID", "102"), \
              patch.object(mod.settings, "CRM_LOGIN_EMAIL", "e102@x.com"), \
              patch.object(mod.settings, "CRM_LOGIN_PASSWORD", "secret102"), \
