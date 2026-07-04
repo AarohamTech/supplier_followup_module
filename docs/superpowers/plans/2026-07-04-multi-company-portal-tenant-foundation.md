@@ -11,7 +11,11 @@
 ## Global Constraints
 
 - **Run backend tooling via the project venv:** `backend/.venv/Scripts/python.exe` (conda Python 3.13). Run all `pytest`/`python` from `backend/`.
-- **Tests use in-memory SQLite** (see `backend/tests/conftest.py`); Postgres-only behavior (schema switching, `LIKE`) MUST be guarded so SQLite tests never hit it, and verified separately on Postgres.
+- **TESTING CONVENTION (authoritative — the code snippets in each task use pytest fixtures as shorthand; DO NOT copy them verbatim):** this repo has **no `conftest.py` and no `db_session`/`client` fixtures.** Tests are `unittest.TestCase` classes. Follow the existing patterns exactly:
+  - **Service/model tests** → copy the top-of-file setup from `backend/tests/test_supplier_portal.py`: `os.environ.setdefault("DATABASE_URL", "sqlite:///./_test_<name>.sqlite")` **before** importing `app.*`, then a `@contextmanager def _temp_db()` that does `create_engine("sqlite:///:memory:")` + `Base.metadata.create_all(bind=engine)` + a `sessionmaker` session, used as `with _temp_db() as db:`.
+  - **HTTP tests** → copy the pattern from `backend/tests/test_task_ai_summary.py`: build `TestClient(main.app)` with `app.dependency_overrides[get_db] = _get_db` (and override `get_current_user`/`get_current_staff` where a logged-in actor is needed). Keep the same DB session across the override and assertions.
+  - Take each task's **assertions and behaviors** from its snippet, but express them as `unittest.TestCase` methods with the conventions above. The production (non-test) code in each task is authoritative and should be transcribed as written.
+- **Tests use in-memory SQLite**; Postgres-only behavior (schema switching, `LIKE`) MUST be guarded so SQLite tests never hit it, and verified separately on Postgres.
 - **No new Python dependencies.**
 - **Never migrate or drop 102's live data.** 102 stays in `public`. 101 is new, empty tables only.
 - **`search_path` is always `"<schema>", public`** — never a bare schema — so the shared `users`/`companies` tables resolve from any company schema.
