@@ -88,6 +88,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch {
       setToken(null);
       setUser(null);
+      // Clear the active company too, so a dropped session doesn't leave a stale
+      // company theme (e.g. blue) applied on the login screen.
+      setCompany(null);
+      persistCompany(null);
+      applyCompany(null);
     } finally {
       setLoading(false);
     }
