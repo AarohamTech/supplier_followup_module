@@ -11,5 +11,10 @@ out/
 
 sfa.db
 
+# Throwaway SQLite files created by the test suite (see backend/tests/conftest.py)
+_test_*.sqlite
+backend/_test_*.sqlite
+.superpowers/
+
 # Employee PII (DOB, mobile) — never commit
 docs/Hariom Employee details.xlsx

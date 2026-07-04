@@ -364,5 +364,22 @@ def ensure_role_accounts(db: Session) -> dict[str, int]:
     return mapping
 
 
+def ensure_company_schemas(db: Session) -> list[str]:
+    """Create the Postgres schema + per-company tables for every non-public
+    company. No-op on SQLite. Requires the public tables to already exist.
+    Returns the schema names for which tables were actually created (empty on
+    SQLite, where `create_company_schema` is a no-op)."""
+    from .database import create_company_schema
+    from .services import company_service
+
+    done: list[str] = []
+    for company in company_service.list_active(db):
+        if company.schema_name and company.schema_name != "public":
+            created_tables = create_company_schema(company.schema_name)
+            if created_tables:
+                done.append(company.schema_name)
+    return done
+
+
 if __name__ == "__main__":
     print(run())

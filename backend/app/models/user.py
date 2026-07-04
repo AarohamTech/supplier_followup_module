@@ -38,6 +38,12 @@ class User(Base):
     # Set → employee portal account scoped to POs where owner_emp_code == this.
     # NULL → staff or supplier account. See core/roles.py (Role.EMPLOYEE).
     emp_code: Mapped[str | None] = mapped_column(String(32), index=True, nullable=True)
+    # Company (tenant) this account is pinned to. NULL → staff account resolved to
+    # the default company (102). Set → portal account scoped to that company only.
+    # Both `users` and `companies` live in `public`, so this FK is same-schema.
+    company_id: Mapped[int | None] = mapped_column(
+        ForeignKey("companies.id"), index=True, nullable=True
+    )
     # Forces a password change on next login (temp/admin-reset credentials).
     must_change_password: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 

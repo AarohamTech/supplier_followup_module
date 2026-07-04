@@ -6,6 +6,7 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
 from ..core.roles import ALL_ROLES, DEFAULT_ROLE, normalize_role
+from .company import CompanyBrief
 
 
 def _validate_role(value: str | None) -> str | None:
@@ -48,6 +49,9 @@ class LoginRequest(BaseModel):
     email: EmailStr | None = None
     username: str | None = None
     password: str = Field(min_length=1)
+    # Company code chosen at login (staff only; portal accounts are pinned). When
+    # omitted, the default company (102) is used.
+    company: str | None = None
 
     @model_validator(mode="after")
     def _one_identifier(self) -> "LoginRequest":
@@ -61,6 +65,7 @@ class Token(BaseModel):
     token_type: str = "bearer"
     expires_in: int  # seconds
     user: UserOut
+    company: CompanyBrief | None = None
 
 
 class ChangePasswordRequest(BaseModel):
