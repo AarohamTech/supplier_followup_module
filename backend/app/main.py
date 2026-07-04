@@ -97,6 +97,17 @@ async def lifespan(app: FastAPI):
             log.exception("Company schema creation failed (continuing)")
     else:
         log.info("RUN_STARTUP_INIT=false — skipping schema/seed bootstrap")
+    # Load the company registry cache UNCONDITIONALLY so the tenant middleware can
+    # resolve company→schema even when the heavy bootstrap is skipped (serverless,
+    # RUN_STARTUP_INIT=false). Without this, an empty cache would silently resolve
+    # every company to the default schema (a cross-tenant read/write hole).
+    # Read-only + fail-safe; requires companies to have been seeded once (above, or
+    # out-of-band on serverless).
+    try:
+        with SessionLocal() as _rcdb:
+            company_service.refresh_cache(_rcdb)
+    except Exception:  # noqa: BLE001
+        log.exception("Company registry cache load failed (continuing)")
     try:
         register_all_specs()
     except Exception:  # noqa: BLE001

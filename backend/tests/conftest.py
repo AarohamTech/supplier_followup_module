@@ -20,3 +20,17 @@ os.environ["DATABASE_URL"] = "sqlite:///./_test_app.sqlite"
 # Never let a schema pin (used for multi-company Postgres isolation) leak into
 # the SQLite test engine.
 os.environ["DB_SCHEMA"] = ""
+
+# Disable every external-I/O integration during tests. `backend/.env` enables
+# real LLM/RAG/SMTP/CRM in production; without this, a full-suite run makes live
+# API calls to OpenAI/NVIDIA/SMTP/the CRM — slow, costly, and flaky (an LLM
+# timeout under load intermittently fails otherwise-isolated tests). Tests that
+# exercise these paths patch/mock them explicitly, so forcing the defaults OFF
+# here is safe and makes the suite hermetic, fast, and deterministic.
+for _flag in (
+    "LLM_ENABLED", "OPENAI_ENABLED", "RAG_ENABLED",
+    "AI_TRIAGE_ENABLED", "AI_PO_FOLLOWUP_ENABLED",
+    "SCHEDULER_ENABLED", "MAIL_INBOX_ENABLED", "SMTP_ENABLED",
+    "CRM_INGEST_ENABLED", "COURIER_API_ENABLED",
+):
+    os.environ[_flag] = "false"
