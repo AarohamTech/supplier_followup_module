@@ -18,8 +18,14 @@ router = APIRouter(
 
 
 @router.get("/pos")
-def list_pos(db: Session = Depends(get_db)) -> dict:
-    return {"items": po_view_service.list_groups(db)}
+def list_pos(
+    db: Session = Depends(get_db),
+    search: str | None = Query(default=None),
+    page: int = Query(default=1, ge=1),
+    size: int = Query(default=50, ge=1, le=200),
+) -> dict:
+    items, total = po_view_service.grouped_pos(db, search=search, page=page, size=size)
+    return {"items": items, "total": total, "page": page, "size": size}
 
 
 @router.get("/pos/{supplier_po_no}/detail")

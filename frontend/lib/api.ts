@@ -189,8 +189,16 @@ export const api = {
     http<SupplierMaster>(`/api/suppliers/${id}`, { method: "PUT", body: JSON.stringify(body) }),
 
   // Supplier -> people assignment
-  listSupplierAssignments: () =>
-    http<{ suppliers: SupplierAssignmentRow[] }>("/api/supplier-assignments"),
+  listSupplierAssignments: (params: { search?: string; page?: number; size?: number } = {}) => {
+    const q = new URLSearchParams();
+    if (params.search) q.set("search", params.search);
+    if (params.page) q.set("page", String(params.page));
+    if (params.size) q.set("size", String(params.size));
+    const qs = q.toString();
+    return http<{ suppliers: SupplierAssignmentRow[]; total: number; page: number; size: number }>(
+      `/api/supplier-assignments${qs ? `?${qs}` : ""}`,
+    );
+  },
   assignableUsers: () =>
     http<{ users: AssignableUser[] }>("/api/supplier-assignments/assignable-users"),
   setSupplierAssignees: (supplierId: number, user_ids: number[]) =>
@@ -200,7 +208,16 @@ export const api = {
     }),
 
   // Admin Purchase Orders view (all POs + detail + whole-PO cancel)
-  poViewList: () => http<{ items: EmployeePo[] }>("/api/po-view/pos"),
+  poViewList: (params: { search?: string; page?: number; size?: number } = {}) => {
+    const q = new URLSearchParams();
+    if (params.search) q.set("search", params.search);
+    if (params.page) q.set("page", String(params.page));
+    if (params.size) q.set("size", String(params.size));
+    const qs = q.toString();
+    return http<{ items: EmployeePo[]; total: number; page: number; size: number }>(
+      `/api/po-view/pos${qs ? `?${qs}` : ""}`,
+    );
+  },
   poViewDetail: (supplierPoNo: string, supplierName?: string) =>
     http<PoDetail>(
       `/api/po-view/pos/${encodeURIComponent(supplierPoNo)}/detail${

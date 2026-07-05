@@ -6,7 +6,7 @@ staff write-guard in main.py).
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -26,8 +26,14 @@ class AssigneesPayload(BaseModel):
 
 
 @router.get("")
-def list_assignments(db: Session = Depends(get_db)) -> dict:
-    return {"suppliers": svc.list_all(db)}
+def list_assignments(
+    db: Session = Depends(get_db),
+    search: str | None = Query(default=None),
+    page: int = Query(default=1, ge=1),
+    size: int = Query(default=50, ge=1, le=200),
+) -> dict:
+    suppliers, total = svc.list_page(db, search=search, page=page, size=size)
+    return {"suppliers": suppliers, "total": total, "page": page, "size": size}
 
 
 @router.get("/assignable-users")

@@ -52,6 +52,21 @@ class ServiceTests(unittest.TestCase):
             scoped = pv.list_groups(db, owner_emp_code="E1")
             self.assertEqual({g["supplier_po_no"] for g in scoped}, {"PO1"})
 
+    def test_pagination_and_search(self):
+        with _temp_db() as db:
+            for i in range(1, 8):  # PO1..PO7, one line each
+                _po_line(db, crm=f"C{i}", po=f"PO{i}", supplier="Acme")
+
+            items, total = pv.grouped_pos(db, page=1, size=3)
+            self.assertEqual(total, 7)
+            self.assertEqual(len(items), 3)
+            last, _ = pv.grouped_pos(db, page=3, size=3)
+            self.assertEqual(len(last), 1)  # 7 groups → 3 + 3 + 1
+
+            found, ftotal = pv.grouped_pos(db, search="PO5")
+            self.assertEqual(ftotal, 1)
+            self.assertEqual(found[0]["supplier_po_no"], "PO5")
+
     def test_po_detail_materials_and_messages(self):
         with _temp_db() as db:
             _po_line(db, crm="C1", po="PO1", supplier="Acme", owner="E1")

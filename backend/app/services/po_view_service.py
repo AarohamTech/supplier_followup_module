@@ -9,22 +9,14 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import case, desc, func, or_, select
 from sqlalchemy.orm import Session
 
 from ..models.communication_message import CommunicationMessage
 from ..models.procurement import ProcurementRecord
 
-_SIGNAL_RANK = {"GREEN": 1, "YELLOW": 2, "RED": 3, "BLACK": 4}
-
-
-def _worst_signal(signals: list[str | None]) -> str | None:
-    worst, worst_rank = None, 0
-    for sig in signals:
-        r = _SIGNAL_RANK.get((sig or "").upper(), 0)
-        if r > worst_rank:
-            worst_rank, worst = r, (sig or "").upper()
-    return worst
+_SIGNAL_LABEL = {4: "BLACK", 3: "RED", 2: "YELLOW", 1: "GREEN", 0: None}
+_CANCEL_LABEL = {2: "CANCELLED", 1: "PENDING", 0: None}
 
 
 def _as_dt(d: Any) -> datetime | None:
@@ -45,41 +37,89 @@ def _po_cancel(records: list[ProcurementRecord]) -> str | None:
     return result
 
 
-def list_groups(db: Session, *, owner_emp_code: str | None = None) -> list[dict[str, Any]]:
-    """Every PO (grouped by supplier+PO). Scope to one employee with owner_emp_code."""
-    stmt = select(ProcurementRecord)
-    if owner_emp_code:
-        stmt = stmt.where(ProcurementRecord.owner_emp_code == owner_emp_code)
-    records = list(db.scalars(stmt).all())
+def grouped_pos(
+    db: Session,
+    *,
+    owner_emp_code: str | None = None,
+    search: str | None = None,
+    page: int | None = None,
+    size: int | None = None,
+) -> tuple[list[dict[str, Any]], int]:
+    """POs grouped by (supplier, PO), aggregated in SQL so we never load every row.
 
-    groups: dict[tuple[str, str], dict] = {}
-    for r in records:
-        po = r.supplier_po_no
-        if not po:
-            continue
-        key = ((r.supplier_name or "").strip().upper(), po)
-        g = groups.setdefault(key, {
-            "supplier_po_no": po,
+    Returns (items, total_groups). Pass page+size to get one page; omit both for all.
+    A supplier's PO matches `search` if any of its lines match po/vendor/CRM.
+    """
+    R = ProcurementRecord
+    sig_rank = case(
+        (func.upper(R.signal) == "BLACK", 4),
+        (func.upper(R.signal) == "RED", 3),
+        (func.upper(R.signal) == "YELLOW", 2),
+        (func.upper(R.signal) == "GREEN", 1),
+        else_=0,
+    )
+    cancel_rank = case(
+        (func.upper(R.cancellation_status) == "CANCELLED", 2),
+        (func.upper(R.cancellation_status) == "PENDING", 1),
+        else_=0,
+    )
+    escalated = func.max(
+        case((func.upper(func.coalesce(R.escalation_level, "NONE")) != "NONE", 1), else_=0)
+    ).label("escalated")
+    signal_c = func.max(sig_rank).label("signal_rank")
+    cancel_c = func.max(cancel_rank).label("cancel_rank")
+    name_key = func.upper(func.coalesce(R.supplier_name, ""))
+
+    base = select(
+        R.supplier_po_no.label("po"),
+        func.max(R.supplier_name).label("supplier_name"),
+        func.max(R.crm_no).label("crm_no"),
+        func.count(R.id).label("material_count"),
+        signal_c,
+        escalated,
+        cancel_c,
+        func.min(R.shipment_date).label("earliest"),
+        func.max(R.po_status).label("po_status"),
+    ).where(R.supplier_po_no.isnot(None))
+    if owner_emp_code:
+        base = base.where(R.owner_emp_code == owner_emp_code)
+    if search and search.strip():
+        like = f"%{search.strip()}%"
+        base = base.where(or_(
+            R.supplier_po_no.ilike(like),
+            R.supplier_name.ilike(like),
+            R.crm_no.ilike(like),
+        ))
+    grouped = base.group_by(name_key, R.supplier_po_no)
+
+    total = db.scalar(select(func.count()).select_from(grouped.subquery())) or 0
+
+    ordered = grouped.order_by(desc("escalated"), desc("signal_rank"), R.supplier_po_no.asc())
+    if page and size:
+        ordered = ordered.limit(size).offset((page - 1) * size)
+    rows = db.execute(ordered).all()
+
+    items: list[dict[str, Any]] = []
+    keys: list[tuple[str, str]] = []
+    for r in rows:
+        items.append({
+            "supplier_po_no": r.po,
             "crm_no": r.crm_no,
             "supplier_name": r.supplier_name,
-            "signals": [],
+            "material_count": int(r.material_count or 0),
+            "overall_signal": _SIGNAL_LABEL.get(int(r.signal_rank or 0)),
             "po_status": r.po_status,
-            "records": [],
-            "earliest": None,
-            "escalated": False,
+            "cancellation_status": _CANCEL_LABEL.get(int(r.cancel_rank or 0)),
+            "earliest_shipment_date": _as_dt(r.earliest),
+            "escalated": bool(r.escalated),
+            "unread_inbound": 0,
         })
-        g["signals"].append(r.signal)
-        g["records"].append(r)
-        if (r.escalation_level or "NONE").upper() != "NONE":
-            g["escalated"] = True
-        sd = _as_dt(r.shipment_date)
-        if sd and (g["earliest"] is None or sd < g["earliest"]):
-            g["earliest"] = sd
+        keys.append(((r.supplier_name or "").strip().upper(), r.po))
 
-    # Unread INCOMING supplier replies per (supplier, PO).
-    unread: dict[tuple[str, str], int] = {}
-    po_nos = [g["supplier_po_no"] for g in groups.values()]
+    # Unread INCOMING supplier replies — only for the POs on this page.
+    po_nos = [k[1] for k in keys]
     if po_nos:
+        unread: dict[tuple[str, str], int] = {}
         for sup_name, po_no, cnt in db.execute(
             select(
                 CommunicationMessage.supplier_name,
@@ -95,26 +135,15 @@ def list_groups(db: Session, *, owner_emp_code: str | None = None) -> list[dict[
         ).all():
             if po_no:
                 unread[((sup_name or "").strip().upper(), po_no)] = int(cnt or 0)
+        for item, key in zip(items, keys):
+            item["unread_inbound"] = unread.get(key, 0)
 
-    items: list[dict[str, Any]] = []
-    for key, g in groups.items():
-        items.append({
-            "supplier_po_no": g["supplier_po_no"],
-            "crm_no": g["crm_no"],
-            "supplier_name": g["supplier_name"],
-            "material_count": len(g["records"]),
-            "overall_signal": _worst_signal(g["signals"]),
-            "po_status": g["po_status"],
-            "cancellation_status": _po_cancel(g["records"]),
-            "earliest_shipment_date": g["earliest"],
-            "escalated": g["escalated"],
-            "unread_inbound": unread.get(key, 0),
-        })
-    items.sort(key=lambda p: (
-        0 if p["escalated"] else 1,
-        -_SIGNAL_RANK.get((p["overall_signal"] or "").upper(), 0),
-        p["supplier_po_no"],
-    ))
+    return items, int(total)
+
+
+def list_groups(db: Session, *, owner_emp_code: str | None = None) -> list[dict[str, Any]]:
+    """All POs (grouped), unpaginated. Used by the employee portal (small, own POs)."""
+    items, _ = grouped_pos(db, owner_emp_code=owner_emp_code)
     return items
 
 

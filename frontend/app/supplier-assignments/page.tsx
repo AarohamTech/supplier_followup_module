@@ -7,6 +7,9 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import type { AssignableUser, SupplierAssignmentRow } from "@/lib/types";
 import PageHeader from "@/components/layout/PageHeader";
+import Pager from "@/components/ui/Pager";
+
+const PAGE_SIZE = 50;
 
 // Emails here are placeholders, so never show them — use name (or username / id)
 // and a small role/emp-code hint instead.
@@ -22,36 +25,48 @@ export default function SupplierAssignmentsPage() {
   const canEdit = hasRole("manager");
 
   const [rows, setRows] = useState<SupplierAssignmentRow[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
   const [users, setUsers] = useState<AssignableUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [note, setNote] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [debounced, setDebounced] = useState("");
   const [editing, setEditing] = useState<SupplierAssignmentRow | null>(null);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [userSearch, setUserSearch] = useState("");
   const [saving, setSaving] = useState(false);
 
+  // Assignable users load once (bounded internal-user list; the modal filters them).
+  useEffect(() => {
+    api.assignableUsers().then((u) => setUsers(u.users || [])).catch((e) => setNote((e as Error).message));
+  }, []);
+
+  // Debounce the supplier search; reset to page 1 whenever the query changes.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setDebounced(search.trim());
+      setPage(1);
+    }, 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [a, u] = await Promise.all([api.listSupplierAssignments(), api.assignableUsers()]);
+      const a = await api.listSupplierAssignments({ search: debounced || undefined, page, size: PAGE_SIZE });
       setRows(a.suppliers || []);
-      setUsers(u.users || []);
+      setTotal(a.total);
     } catch (e) {
       setNote((e as Error).message);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [debounced, page]);
 
   useEffect(() => {
     void load();
   }, [load]);
-
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return q ? rows.filter((r) => r.supplier_name.toLowerCase().includes(q)) : rows;
-  }, [rows, search]);
 
   function openEditor(row: SupplierAssignmentRow) {
     setEditing(row);
@@ -129,10 +144,10 @@ export default function SupplierAssignmentsPage() {
                 <Loader2 className="inline animate-spin" size={16} /> Loading…
               </td></tr>
             )}
-            {!loading && filtered.length === 0 && (
+            {!loading && rows.length === 0 && (
               <tr><td colSpan={canEdit ? 3 : 2} className="px-4 py-6 text-center text-brand-muted">No suppliers.</td></tr>
             )}
-            {filtered.map((row) => (
+            {rows.map((row) => (
               <tr key={row.supplier_id} className="border-t border-brand-border/60 align-top">
                 <td className="px-4 py-2 font-medium">{row.supplier_name}</td>
                 <td className="px-4 py-2">
@@ -162,6 +177,8 @@ export default function SupplierAssignmentsPage() {
           </tbody>
         </table>
       </div>
+
+      {!loading && <Pager page={page} size={PAGE_SIZE} total={total} onPage={setPage} unit="suppliers" />}
 
       {/* Editor modal */}
       {editing && (

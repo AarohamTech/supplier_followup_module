@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ClipboardList } from "lucide-react";
 
 import { api } from "@/lib/api";
@@ -8,39 +8,48 @@ import { useAuth } from "@/lib/auth";
 import type { EmployeePo } from "@/lib/types";
 import PageHeader from "@/components/layout/PageHeader";
 import PoExpandableTable from "@/components/po/PoExpandableTable";
+import Pager from "@/components/ui/Pager";
+
+const SIZE = 50;
 
 export default function PurchaseOrdersPage() {
   const { hasRole } = useAuth();
   const isAdmin = hasRole("admin");
 
   const [pos, setPos] = useState<EmployeePo[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [debounced, setDebounced] = useState("");
+
+  // Debounce the search box; reset to page 1 whenever the query changes.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setDebounced(search.trim());
+      setPage(1);
+    }, 300);
+    return () => clearTimeout(t);
+  }, [search]);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const r = await api.poViewList();
+      const r = await api.poViewList({ search: debounced || undefined, page, size: SIZE });
       setPos(r.items);
+      setTotal(r.total);
     } catch (e) {
       setError((e as Error).message);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [debounced, page]);
 
   useEffect(() => {
     if (isAdmin) void load();
     else setLoading(false);
   }, [isAdmin, load]);
-
-  const filtered = useMemo(() => {
-    const s = search.trim().toLowerCase();
-    return s
-      ? pos.filter((p) => `${p.supplier_po_no} ${p.supplier_name || ""} ${p.crm_no || ""}`.toLowerCase().includes(s))
-      : pos;
-  }, [pos, search]);
 
   if (!isAdmin) {
     return (
@@ -70,11 +79,14 @@ export default function PurchaseOrdersPage() {
       {loading ? (
         <div className="card p-6 text-center text-sm text-brand-muted">Loading…</div>
       ) : (
-        <PoExpandableTable
-          pos={filtered}
-          loadDetail={(p) => api.poViewDetail(p.supplier_po_no, p.supplier_name || undefined)}
-          requestCancel={(p) => api.poViewRequestCancel(p.supplier_po_no, p.supplier_name || undefined).then(() => {})}
-        />
+        <>
+          <PoExpandableTable
+            pos={pos}
+            loadDetail={(p) => api.poViewDetail(p.supplier_po_no, p.supplier_name || undefined)}
+            requestCancel={(p) => api.poViewRequestCancel(p.supplier_po_no, p.supplier_name || undefined).then(() => {})}
+          />
+          <Pager page={page} size={SIZE} total={total} onPage={setPage} unit="POs" />
+        </>
       )}
     </div>
   );

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from ..models.supplier import SupplierMaster
@@ -81,27 +81,48 @@ def set_assignees(db: Session, supplier_id: int, user_ids: list[int]) -> list[in
     return valid
 
 
-def list_all(db: Session) -> list[dict[str, Any]]:
-    """Every supplier with its assignees (for the mapping page)."""
-    suppliers = list(
-        db.scalars(select(SupplierMaster).order_by(SupplierMaster.supplier_name)).all()
-    )
-    users = {u.id: u for u in db.scalars(select(User)).all()}
-    by_supplier: dict[int, list[int]] = {}
-    for supplier_id, user_id in db.execute(
-        select(SupplierAssignment.supplier_id, SupplierAssignment.user_id)
-    ).all():
-        by_supplier.setdefault(supplier_id, []).append(user_id)
+def list_page(
+    db: Session, *, search: str | None = None, page: int | None = None, size: int | None = None
+) -> tuple[list[dict[str, Any]], int]:
+    """One page of suppliers with their assignees. Returns (rows, total). Omit
+    page+size for all suppliers."""
+    stmt = select(SupplierMaster)
+    if search and search.strip():
+        stmt = stmt.where(SupplierMaster.supplier_name.ilike(f"%{search.strip()}%"))
+    total = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
 
-    out: list[dict[str, Any]] = []
+    stmt = stmt.order_by(SupplierMaster.supplier_name)
+    if page and size:
+        stmt = stmt.limit(size).offset((page - 1) * size)
+    suppliers = list(db.scalars(stmt).all())
+
+    sids = [s.id for s in suppliers]
+    by_supplier: dict[int, list[int]] = {}
+    if sids:
+        for supplier_id, user_id in db.execute(
+            select(SupplierAssignment.supplier_id, SupplierAssignment.user_id)
+            .where(SupplierAssignment.supplier_id.in_(sids))
+        ).all():
+            by_supplier.setdefault(supplier_id, []).append(user_id)
+
+    uids = {uid for ids in by_supplier.values() for uid in ids}
+    users = {u.id: u for u in db.scalars(select(User).where(User.id.in_(uids))).all()} if uids else {}
+
+    rows: list[dict[str, Any]] = []
     for s in suppliers:
         ids = by_supplier.get(s.id, [])
-        out.append({
+        rows.append({
             "supplier_id": s.id,
             "supplier_name": s.supplier_name,
             "assignees": [user_brief(users[uid]) for uid in ids if uid in users],
         })
-    return out
+    return rows, int(total)
+
+
+def list_all(db: Session) -> list[dict[str, Any]]:
+    """Every supplier with its assignees (unpaginated)."""
+    rows, _ = list_page(db)
+    return rows
 
 
 def assignees_detail(db: Session, user_ids: list[int]) -> list[dict[str, Any]]:
