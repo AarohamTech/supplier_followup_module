@@ -10,6 +10,9 @@ import PageHeader from "@/components/layout/PageHeader";
 import { AsnCards } from "@/components/portal/PortalCards";
 import AsnTable from "@/components/portal/AsnTable";
 import AsnDrawer from "@/components/portal/AsnDrawer";
+import Pager from "@/components/ui/Pager";
+
+const SIZE = 50;
 
 const TABS = [
   { key: "active", label: "Active" },
@@ -25,6 +28,7 @@ export default function StaffAsnsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<Asn | null>(null);
 
   const loadSummary = useCallback(async () => {
@@ -56,6 +60,10 @@ export default function StaffAsnsPage() {
     const t = setTimeout(() => void loadList(), 150);
     return () => clearTimeout(t);
   }, [loadList]);
+
+  // Reset to page 1 whenever the tab or search changes.
+  useEffect(() => setPage(1), [tab, search]);
+  const paged = items.slice((page - 1) * SIZE, page * SIZE);
 
   const onUpdated = (asn: Asn) => {
     setSelected(asn);
@@ -100,7 +108,8 @@ export default function StaffAsnsPage() {
         </div>
         <div className="p-3">
           {error && <div className="mb-3 rounded-md bg-red-50 px-3 py-2 text-xs text-signal-red">{error}</div>}
-          <AsnTable items={items} loading={loading} onOpen={setSelected} showSupplier emptyLabel="No shipments found." />
+          <AsnTable items={paged} loading={loading} onOpen={setSelected} showSupplier emptyLabel="No shipments found." />
+          {!loading && <Pager page={page} size={SIZE} total={items.length} onPage={setPage} unit="shipments" />}
         </div>
       </div>
 

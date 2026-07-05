@@ -1,13 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Loader2, Plus, RotateCcw, Trash2, ShieldCheck } from "lucide-react";
 
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import type { AuthUser, Role } from "@/lib/types";
 import PageHeader from "@/components/layout/PageHeader";
+import Pager from "@/components/ui/Pager";
 
+const SIZE = 50;
 const ALL_ROLES: Role[] = ["viewer", "user", "manager", "admin"];
 
 const ROLE_BADGE: Record<Role, string> = {
@@ -23,6 +25,8 @@ export default function UsersAdminPage() {
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
 
   // create form
   const [email, setEmail] = useState("");
@@ -52,6 +56,14 @@ export default function UsersAdminPage() {
     const t = setTimeout(() => setToast(null), 2500);
     return () => clearTimeout(t);
   }, [toast]);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return users;
+    return users.filter((u) => `${u.full_name ?? ""} ${u.email} ${u.role}`.toLowerCase().includes(q));
+  }, [users, search]);
+  useEffect(() => setPage(1), [search]);
+  const paged = useMemo(() => filtered.slice((page - 1) * SIZE, page * SIZE), [filtered, page]);
 
   if (!hasRole("admin")) {
     return (
@@ -128,7 +140,17 @@ export default function UsersAdminPage() {
         title="User Management"
         description="Create users, assign roles and manage account access."
         icon={ShieldCheck}
-        actions={toast && <span className="rounded-md bg-ink px-3 py-1.5 text-xs text-white">{toast}</span>}
+        actions={
+          <div className="flex items-center gap-2">
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search users…"
+              className="input max-w-xs"
+            />
+            {toast && <span className="rounded-md bg-ink px-3 py-1.5 text-xs text-white">{toast}</span>}
+          </div>
+        }
       />
 
       {error && (
@@ -190,10 +212,10 @@ export default function UsersAdminPage() {
           <tbody className="divide-y divide-brand-border">
             {loading ? (
               <tr><td colSpan={5} className="px-4 py-8 text-center text-brand-muted">Loading…</td></tr>
-            ) : users.length === 0 ? (
+            ) : filtered.length === 0 ? (
               <tr><td colSpan={5} className="px-4 py-8 text-center text-brand-muted">No users.</td></tr>
             ) : (
-              users.map((u) => {
+              paged.map((u) => {
                 const isSelf = u.id === me?.id;
                 return (
                   <tr key={u.id} className="hover:bg-subtle">
@@ -251,6 +273,7 @@ export default function UsersAdminPage() {
           </tbody>
         </table>
       </div>
+      {!loading && <Pager page={page} size={SIZE} total={filtered.length} onPage={setPage} unit="users" />}
     </div>
   );
 }

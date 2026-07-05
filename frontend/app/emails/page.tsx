@@ -1,6 +1,6 @@
 "use client";
 
-import { forwardRef, useImperativeHandle, useRef, useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { useStore } from "@/lib/store";
 import { useAuth } from "@/lib/auth";
 import api from "@/lib/api";
@@ -9,6 +9,9 @@ import { Mail, Pencil, Trash2, Plus, X, Save, KeyRound, History } from "lucide-r
 import PageHeader from "@/components/layout/PageHeader";
 import SupplierLoginsModal from "@/components/emails/SupplierLoginsModal";
 import EmailAuditModal from "@/components/emails/EmailAuditModal";
+import Pager from "@/components/ui/Pager";
+
+const SIZE = 50;
 
 const EMPTY: Partial<SupplierEmail> = {
   supplier_id: undefined,
@@ -36,6 +39,8 @@ export default function Page() {
   const [error, setError] = useState<string | null>(null);
   const [provisioning, setProvisioning] = useState<LoginProvisioningSummary | null>(null);
   const [loginsFor, setLoginsFor] = useState<SupplierEmail | null>(null);
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
   // Refs so Save can flush a typed-but-not-yet-added email from each tag box.
   const toRef = useRef<TagsHandle>(null);
   const ccRef = useRef<TagsHandle>(null);
@@ -102,6 +107,16 @@ export default function Page() {
     });
   };
 
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return mappings;
+    return mappings.filter((m) =>
+      `${m.supplier_name} ${(m.to_emails ?? []).join(" ")} ${m.contact_person ?? ""}`.toLowerCase().includes(q),
+    );
+  }, [mappings, search]);
+  useEffect(() => setPage(1), [search]);
+  const paged = useMemo(() => filtered.slice((page - 1) * SIZE, page * SIZE), [filtered, page]);
+
   return (
     <div className="page-stack">
       <PageHeader
@@ -110,6 +125,12 @@ export default function Page() {
         icon={Mail}
         actions={
           <div className="flex items-center gap-2">
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search supplier / email…"
+              className="input max-w-xs"
+            />
             {isAdmin && (
               <button onClick={() => setShowAudit(true)} className="btn-ghost" title="View who changed what">
                 <History size={14} /> Change Log
@@ -189,12 +210,14 @@ export default function Page() {
             </tr>
           </thead>
           <tbody>
-            {mappings.length === 0 && (
+            {filtered.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-4 py-10 text-center text-brand-muted">No mappings yet.</td>
+                <td colSpan={7} className="px-4 py-10 text-center text-brand-muted">
+                  {mappings.length === 0 ? "No mappings yet." : "No mappings match your search."}
+                </td>
               </tr>
             )}
-            {mappings.map((mapping) => (
+            {paged.map((mapping) => (
               <tr key={mapping.id} className="border-t border-brand-border hover:bg-subtle">
                 <td className="px-4 py-3 font-medium">{mapping.supplier_name}</td>
                 <td className="px-4 py-3 text-xs">{joinEmails(mapping.to_emails)}</td>
@@ -230,6 +253,7 @@ export default function Page() {
           </tbody>
         </table>
       </div>
+      <Pager page={page} size={SIZE} total={filtered.length} onPage={setPage} unit="mappings" />
 
       {editing && (
         <div className="fixed inset-0 z-50 bg-black/40 grid place-items-center p-4" onClick={() => setEditing(null)}>

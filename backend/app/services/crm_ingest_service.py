@@ -14,6 +14,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import re
 import threading
 import time
 from datetime import datetime, timedelta
@@ -204,6 +205,38 @@ def _first(row: dict[str, Any], keys: tuple[str, ...]) -> Any:
     return None
 
 
+# Customer-token detection for the fuzzy fallback below.
+_CUSTOMER_TOKENS = ("customer", "party", "buyer", "client")
+# Keys that carry a customer token but are NOT the customer *name* (codes, PO refs,
+# dates, addresses, contacts, …). Excluded so we don't mistake e.g. CustomerPoNo or
+# CustomerGstNo for the name.
+_NAME_EXCLUDE = (
+    "po", "date", "order", "ref", "code", "id", "no", "gst", "addr", "state",
+    "city", "email", "phone", "mobile", "contact", "amount", "qty", "rate", "type", "pin",
+)
+
+
+def _norm_key(k: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", k.lower())
+
+
+def _customer_name(row: dict[str, Any]) -> Any:
+    """Best-effort end-customer name. Tries the known candidate keys, then falls
+    back to any row key that carries a customer token and looks like a name (so a
+    differently-cased/spaced CRM field like 'Customer Name' still populates the
+    By-customer view). PO/date/code fields are excluded."""
+    v = _first(row, _CUSTOMER_NAME_KEYS)
+    if v not in (None, ""):
+        return v
+    for k, val in row.items():
+        if val in (None, "") or not isinstance(k, str):
+            continue
+        nk = _norm_key(k)
+        if any(t in nk for t in _CUSTOMER_TOKENS) and not any(x in nk for x in _NAME_EXCLUDE):
+            return val
+    return None
+
+
 def map_row(row: dict[str, Any]) -> dict[str, Any]:
     """CRM record → a dict keyed for procurement_sync_service.normalize_procurement_row."""
     return {
@@ -226,8 +259,8 @@ def map_row(row: dict[str, Any]) -> dict[str, Any]:
         # matches the employee master's EMPLOYEE_ID. NOT `EmpCode` (the indenter/
         # requester — a company-wide code that rarely maps to a portal user).
         "owner_emp_code": _emp_code(row.get("UserId")),
-        # End-customer fields (candidate keys — see note above).
-        "customer_name": _first(row, _CUSTOMER_NAME_KEYS),
+        # End-customer fields (known keys, then a fuzzy fallback for the name).
+        "customer_name": _customer_name(row),
         "customer_po_no": _first(row, _CUSTOMER_PO_KEYS),
         "po_date": _first(row, _CUSTOMER_PO_DATE_KEYS),
     }
