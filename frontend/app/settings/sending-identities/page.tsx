@@ -185,61 +185,78 @@ export default function SendingIdentitiesPage() {
         </table>
       </div>
 
-      {/* Editor */}
+      {/* Editor (modal) */}
       {editing && form && (
-        <div className="card p-5 space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="font-semibold text-sm">
-              Personal mailbox — {editing.full_name || editing.email}
+        <div
+          className="fixed inset-0 z-50 bg-black/40 grid place-items-center p-4"
+          onClick={() => { setEditing(null); setForm(null); }}
+        >
+          <div
+            className="bg-card rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+          >
+            <div className="flex items-center justify-between border-b border-brand-border px-5 py-3">
+              <div className="font-semibold text-sm">
+                Personal mailbox — {editing.full_name || editing.email}
+              </div>
+              <button
+                type="button"
+                onClick={() => { setEditing(null); setForm(null); }}
+                className="p-1 rounded hover:bg-subtle"
+                aria-label="Close"
+              >
+                <X size={18} />
+              </button>
             </div>
-            <button type="button" onClick={() => { setEditing(null); setForm(null); }} className="btn-outline text-xs inline-flex items-center gap-1">
-              <X size={13} /> Close
-            </button>
-          </div>
 
-          <div className="flex flex-wrap items-center gap-4">
-            <label className="flex items-center gap-2 text-sm">
-              <input type="checkbox" checked={form.enabled} onChange={(e) => setForm((f) => f && { ...f, enabled: e.target.checked })} />
-              <span>Enabled (send this user’s mail as them)</span>
-            </label>
-            <label className="flex items-center gap-2 text-sm">
-              <input type="checkbox" checked={form.use_ssl} onChange={(e) => setForm((f) => f && { ...f, use_ssl: e.target.checked })} />
-              <span>Use SSL (port 465)</span>
-            </label>
-          </div>
+            <div className="overflow-y-auto p-5 space-y-3">
+              <div className="flex flex-wrap items-center gap-4">
+                <label className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" checked={form.enabled} onChange={(e) => setForm((f) => f && { ...f, enabled: e.target.checked })} />
+                  <span>Enabled (send this user’s mail as them)</span>
+                </label>
+                <label className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" checked={form.use_ssl} onChange={(e) => setForm((f) => f && { ...f, use_ssl: e.target.checked })} />
+                  <span>Use SSL (port 465)</span>
+                </label>
+              </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <label className="text-sm flex flex-col gap-1 sm:col-span-2">
-              <span className="text-xs text-brand-muted">SMTP host</span>
-              <input className={field} value={form.smtp_host}
-                onChange={(e) => setForm((f) => f && { ...f, smtp_host: e.target.value })} placeholder="smtp.gmail.com" />
-            </label>
-            <label className="text-sm flex flex-col gap-1">
-              <span className="text-xs text-brand-muted">Port</span>
-              <input type="number" className={field} value={form.smtp_port}
-                onChange={(e) => setForm((f) => f && { ...f, smtp_port: Number(e.target.value) })} />
-            </label>
-            <label className="text-sm flex flex-col gap-1">
-              <span className="text-xs text-brand-muted">From address</span>
-              <input className={field} value={form.from_email}
-                onChange={(e) => setForm((f) => f && { ...f, from_email: e.target.value })} placeholder={editing.email} />
-            </label>
-            <label className="text-sm flex flex-col gap-1">
-              <span className="text-xs text-brand-muted">SMTP username</span>
-              <input className={field} value={form.smtp_user}
-                onChange={(e) => setForm((f) => f && { ...f, smtp_user: e.target.value })} />
-            </label>
-            <label className="text-sm flex flex-col gap-1">
-              <span className="text-xs text-brand-muted">Password</span>
-              <input type="password" className={field} value={form.password}
-                onChange={(e) => setForm((f) => f && { ...f, password: e.target.value })}
-                placeholder={editing.identity?.password_set ? "•••••••• (leave blank to keep)" : "App password / SMTP password"} />
-            </label>
-          </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <label className="text-sm flex flex-col gap-1 sm:col-span-2">
+                  <span className="text-xs text-brand-muted">SMTP host</span>
+                  <input className={field} value={form.smtp_host}
+                    onChange={(e) => setForm((f) => f && { ...f, smtp_host: e.target.value })} placeholder="smtp.gmail.com" />
+                </label>
+                <label className="text-sm flex flex-col gap-1">
+                  <span className="text-xs text-brand-muted">Port</span>
+                  <input type="number" className={field} value={form.smtp_port}
+                    onChange={(e) => setForm((f) => f && { ...f, smtp_port: Number(e.target.value) })} />
+                </label>
+                <label className="text-sm flex flex-col gap-1">
+                  <span className="text-xs text-brand-muted">From address</span>
+                  <input className={field} value={form.from_email}
+                    onChange={(e) => setForm((f) => f && { ...f, from_email: e.target.value })} placeholder={editing.email} />
+                </label>
+                <label className="text-sm flex flex-col gap-1">
+                  <span className="text-xs text-brand-muted">SMTP username</span>
+                  <input className={field} value={form.smtp_user}
+                    onChange={(e) => setForm((f) => f && { ...f, smtp_user: e.target.value })} />
+                </label>
+                <label className="text-sm flex flex-col gap-1">
+                  <span className="text-xs text-brand-muted">Password</span>
+                  <input type="password" className={field} value={form.password}
+                    onChange={(e) => setForm((f) => f && { ...f, password: e.target.value })}
+                    placeholder={editing.identity?.password_set ? "•••••••• (leave blank to keep)" : "App password / SMTP password"} />
+                </label>
+              </div>
 
-          <button type="button" disabled={busy === "save"} onClick={save} className="btn-dark">
-            {busy === "save" ? "Saving…" : "Save identity"}
-          </button>
+              <button type="button" disabled={busy === "save"} onClick={save} className="btn-dark">
+                {busy === "save" ? "Saving…" : "Save identity"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
