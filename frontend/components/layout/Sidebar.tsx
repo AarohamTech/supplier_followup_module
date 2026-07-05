@@ -4,7 +4,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   Activity,
-  AtSign,
   BarChart3,
   Database,
   FileSpreadsheet,
@@ -23,6 +22,7 @@ import {
   Sparkles,
   Truck,
   Users,
+  UserCheck,
   UserCog,
   Wand2,
   X,
@@ -76,7 +76,7 @@ const groups: { label: string; items: NavItem[] }[] = [
       { href: "/reports/workload", label: "Workload Report", icon: PieChart, minRole: "admin" },
       { href: "/ai-prompts", label: "HI Prompts", icon: Wand2, minRole: "manager" },
       { href: "/settings", label: "Settings", icon: Settings, minRole: "manager" },
-      { href: "/settings/sending-identities", label: "Sending Identities", icon: AtSign, minRole: "admin" },
+      { href: "/supplier-assignments", label: "Supplier Assignments", icon: UserCheck, minRole: "manager" },
       { href: "/admin/users", label: "Users", icon: ShieldCheck, minRole: "admin" },
       { href: "/employees", label: "Employee Logins", icon: UserCog, minRole: "admin" },
       { href: "/crm-ingestion", label: "CRM Ingestion", icon: Database, minRole: "admin" },

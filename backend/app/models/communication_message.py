@@ -64,6 +64,8 @@ class CommunicationMessage(Base):
 
     # Workflow
     status: Mapped[str] = mapped_column(String(32), default="DRAFT", index=True)
+    # App-user ids an incoming supplier mail was routed to (supplier→people mapping).
+    assigned_user_ids: Mapped[list | None] = mapped_column(JSON, default=list)
 
     # DEPRECATED — the "Supplier Inbox" feature was removed; this column is no
     # longer read or written. Kept (nullable) only because online schema-evolve

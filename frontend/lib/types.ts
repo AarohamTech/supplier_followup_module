@@ -148,6 +148,20 @@ export interface SupplierMaster {
   updated_at: string;
 }
 
+// Supplier -> people assignment (a supplier's mail is routed to these users).
+export interface AssignableUser {
+  user_id: number;
+  full_name: string | null;
+  email: string;
+  role: string;
+}
+
+export interface SupplierAssignmentRow {
+  supplier_id: number;
+  supplier_name: string;
+  assignees: AssignableUser[];
+}
+
 export interface MailDraft {
   history_id: number;
   procurement_record_id: number;
@@ -800,84 +814,6 @@ export interface MailEngineSnapshot {
   };
   auto_po_followup_enabled: boolean;
   scheduler_enabled: boolean;
-}
-
-// Main mailbox credentials (effective per-company config; passwords masked).
-export interface MailConfig {
-  smtp: {
-    enabled: boolean;
-    host: string;
-    port: number;
-    user: string;
-    from: string;
-    password_masked: string;
-    password_set: boolean;
-  };
-  imap: {
-    enabled: boolean;
-    protocol: string;
-    use_ssl: boolean;
-    host: string;
-    port: number;
-    user: string;
-    folder: string;
-    password_masked: string;
-    password_set: boolean;
-  };
-}
-
-export interface SmtpConfigInput {
-  enabled: boolean;
-  host: string;
-  port: number;
-  user: string;
-  from: string;
-  password?: string; // blank/omitted keeps the stored password
-}
-
-export interface ImapConfigInput {
-  enabled: boolean;
-  protocol: string;
-  use_ssl: boolean;
-  host: string;
-  port: number;
-  user: string;
-  folder: string;
-  password?: string;
-}
-
-// Per-user "send as" SMTP identity (admin-managed).
-export interface MailIdentity {
-  enabled: boolean;
-  smtp_host: string;
-  smtp_port: number;
-  smtp_user: string;
-  from_email: string;
-  use_ssl: boolean;
-  password_masked: string;
-  password_set: boolean;
-  updated_at: string | null;
-}
-
-export interface MailIdentityUser {
-  user_id: number;
-  email: string;
-  username: string | null;
-  full_name: string | null;
-  role: string;
-  emp_code: string | null;
-  is_active: boolean;
-  identity: MailIdentity | null;
-}
-
-export interface MailIdentityInput {
-  enabled: boolean;
-  smtp_host: string;
-  smtp_port: number;
-  smtp_user: string;
-  from_email: string;
-  use_ssl: boolean;
-  password?: string;
 }
 
 export interface DraftRule {

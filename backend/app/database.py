@@ -54,7 +54,7 @@ def get_db():
 # ── Multi-company tenancy ─────────────────────────────────────────────────────
 # Tables shared across all companies (live in `public`); every other mapped
 # table is per-company (copied into each company schema).
-SHARED_TABLES: set[str] = {"users", "companies", "user_mail_identity"}
+SHARED_TABLES: set[str] = {"users", "companies"}
 
 _SCHEMA_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 

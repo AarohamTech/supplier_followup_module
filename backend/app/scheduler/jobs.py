@@ -29,7 +29,6 @@ from ..services import (
     engine_registry,
     hi_agent_tools,
     knowledge_indexer,
-    mail_config_service,
     notification_service as notif,
     po_followup_mail_service,
     settings_service,
@@ -68,24 +67,10 @@ def _active_companies() -> list[tuple[str, str, bool]]:
 
 
 def mail_fetch_runner() -> dict[str, Any]:
-    """Poll each active company's own mailbox. A company with no configured mailbox
-    (and no env fallback — that only applies to the default schema) is skipped."""
     log.info("[cron] mail_fetch_runner starting")
-    out: dict[str, Any] = {}
-    for code, schema, _ in _active_companies():
-        with use_company(schema):
-            db: Session = SessionLocal()
-            try:
-                cfg = mail_config_service.get_imap_config(db)
-            finally:
-                db.close()
-            ready, reason = cfg.ready()
-            if not ready:
-                out[code] = {"enabled": False, "reason": reason, "fetched": 0, "processed": []}
-                continue
-            out[code] = mail_fetch_worker.fetch_supplier_mails(cfg)
-    log.info("[cron] mail_fetch_runner done: %s", out)
-    return out
+    result = mail_fetch_worker.fetch_supplier_mails()
+    log.info("[cron] mail_fetch_runner done: %s", result)
+    return result
 
 
 def status_change_runner() -> dict[str, Any]:

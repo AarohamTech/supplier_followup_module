@@ -33,10 +33,8 @@ from app.database import SHARED_TABLES, create_company_schema  # noqa: E402
 
 
 class TestSharedTables(unittest.TestCase):
-    def test_shared_tables(self):
-        # `user_mail_identity` is shared (in `public`, like `users`) because a
-        # user belongs to exactly one company — its personal SMTP identity is global.
-        self.assertEqual(SHARED_TABLES, {"users", "companies", "user_mail_identity"})
+    def test_shared_tables_are_users_and_companies(self):
+        self.assertEqual(SHARED_TABLES, {"users", "companies"})
 
 
 class TestCreateCompanySchema(unittest.TestCase):

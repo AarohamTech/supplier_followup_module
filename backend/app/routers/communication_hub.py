@@ -1611,19 +1611,13 @@ class HubComposeIn(BaseModel):
     send: bool = True  # True → SMTP send now; False → save as DRAFT
 
 
-@router.post("/compose")
-def compose_now(
-    payload: HubComposeIn,
-    user: User = Depends(require_writer),
-    db: Session = Depends(get_db),
-) -> dict[str, Any]:
+@router.post("/compose", dependencies=[Depends(require_writer)])
+def compose_now(payload: HubComposeIn, db: Session = Depends(get_db)) -> dict[str, Any]:
     """Compose and (optionally) send a standalone mail via the mail engine.
 
     Unlike /reply this is not tied to an existing thread — recipients are chosen
     freely. It is logged as an OUTGOING CommunicationMessage (so it appears in the
     hub) and delivered over SMTP when `send` is true; otherwise it is a DRAFT.
-    Stamped with the composing user's email so it can be sent as them when they
-    have a personal sending identity mapped.
     """
     return compose_service.compose_and_send(
         db,
@@ -1636,7 +1630,6 @@ def compose_now(
         supplier_po_no=payload.supplier_po_no,
         procurement_record_id=payload.procurement_record_id,
         customer_mail_id=payload.customer_mail_id,
-        sender_email=user.email,
         send=payload.send,
     )
 

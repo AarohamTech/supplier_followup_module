@@ -3,7 +3,7 @@
 ## Host
 
 Production: https://h-connect.harmonytech.in
-Local: http://localhost:8000
+
 
 All endpoints are under /api, so the full URL is {host}/api/...
 

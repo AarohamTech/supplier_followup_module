@@ -6,6 +6,8 @@ import type {
   ProcurementListResponse,
   DashboardKpis,
   SupplierMaster,
+  SupplierAssignmentRow,
+  AssignableUser,
   SupplierEmail,
   SupplierEmailAudit,
   MailDraft,
@@ -44,11 +46,6 @@ import type {
   SupplierMaterialCommitment,
   MailEngineSnapshot,
   MailEngineHealth,
-  MailConfig,
-  SmtpConfigInput,
-  ImapConfigInput,
-  MailIdentityUser,
-  MailIdentityInput,
   DraftRule,
   CronJobRow,
   CronJobLog,
@@ -188,6 +185,17 @@ export const api = {
   getSupplier: (id: number) => http<SupplierMaster>(`/api/suppliers/${id}`),
   updateSupplier: (id: number, body: Partial<SupplierMaster>) =>
     http<SupplierMaster>(`/api/suppliers/${id}`, { method: "PUT", body: JSON.stringify(body) }),
+
+  // Supplier -> people assignment
+  listSupplierAssignments: () =>
+    http<{ suppliers: SupplierAssignmentRow[] }>("/api/supplier-assignments"),
+  assignableUsers: () =>
+    http<{ users: AssignableUser[] }>("/api/supplier-assignments/assignable-users"),
+  setSupplierAssignees: (supplierId: number, user_ids: number[]) =>
+    http<SupplierAssignmentRow>(`/api/supplier-assignments/${supplierId}`, {
+      method: "PUT",
+      body: JSON.stringify({ user_ids }),
+    }),
 
   listSupplierEmails: () => http<SupplierEmail[]>("/api/supplier-emails"),
   createSupplierEmail: (body: Partial<SupplierEmail>) =>
@@ -517,43 +525,6 @@ export const api = {
 
   testImap: () =>
     http<MailEngineHealth["imap"]>(`/api/settings/test-imap`, { method: "POST" }),
-
-  // ─── Main mailbox credentials (admin-only edit; per company) ─────────────
-  getMailConfig: () =>
-    http<MailConfig>(`/api/settings/mail-config`),
-
-  putSmtpConfig: (body: SmtpConfigInput) =>
-    http<{ smtp: MailConfig["smtp"] }>(`/api/settings/mail-config/smtp`, {
-      method: "PUT",
-      body: JSON.stringify(body),
-    }),
-
-  putImapConfig: (body: ImapConfigInput) =>
-    http<{ imap: MailConfig["imap"] }>(`/api/settings/mail-config/imap`, {
-      method: "PUT",
-      body: JSON.stringify(body),
-    }),
-
-  // ─── Per-user "send as" SMTP identities (admin-only) ─────────────────────
-  listMailIdentities: () =>
-    http<{ users: MailIdentityUser[] }>(`/api/mail-identities`),
-
-  putMailIdentity: (userId: number, body: MailIdentityInput) =>
-    http<MailIdentityUser>(`/api/mail-identities/${userId}`, {
-      method: "PUT",
-      body: JSON.stringify(body),
-    }),
-
-  deleteMailIdentity: (userId: number) =>
-    http<{ ok: boolean; user_id: number }>(`/api/mail-identities/${userId}`, {
-      method: "DELETE",
-    }),
-
-  testMailIdentity: (userId: number) =>
-    http<{ ok?: boolean; enabled?: boolean; host?: string; error?: string; reason?: string }>(
-      `/api/mail-identities/${userId}/test`,
-      { method: "POST" },
-    ),
 
   listCronJobs: () =>
     http<{ jobs: CronJobRow[] }>(`/api/settings/cron-jobs`),

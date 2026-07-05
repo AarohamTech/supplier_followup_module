@@ -26,23 +26,21 @@ Exposes:
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..core.deps import get_current_user, require_admin, require_manager
+from ..core.deps import get_current_user, require_manager
 from ..database import get_db
 from ..models.mail_template import MailTemplate
 from ..scheduler import apply_scheduler_settings
-from ..services import admin_digest_service, mail_config_service, mail_engine_service, settings_service
+from ..services import admin_digest_service, mail_engine_service, settings_service
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
 # Reads are available to any authenticated user; every write/control action
 # below is gated to manager+ via this dependency list.
 _MGR = [Depends(require_manager)]
-# Editing the mailbox credentials themselves is admin-only.
-_ADMIN = [Depends(require_admin)]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -217,71 +215,6 @@ def test_smtp() -> dict:
 @router.post("/test-imap")
 def test_imap() -> dict:
     return mail_engine_service.test_imap()
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Main mailbox credentials (per-company; admin-only edit)
-# ─────────────────────────────────────────────────────────────────────────────
-class SmtpConfigPayload(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
-    enabled: bool = False
-    host: str = ""
-    port: int = Field(default=587, ge=0)
-    user: str = ""
-    from_addr: str = Field(default="", alias="from")
-    # Blank/omitted keeps the stored password.
-    password: str | None = None
-
-
-class ImapConfigPayload(BaseModel):
-    enabled: bool = False
-    protocol: str = "IMAP"
-    use_ssl: bool = False
-    host: str = ""
-    port: int = Field(default=0, ge=0)
-    user: str = ""
-    folder: str = "INBOX"
-    password: str | None = None
-
-
-@router.get("/mail-config")
-def get_mail_config(db: Session = Depends(get_db)) -> dict:
-    """Effective mail credentials for the current company (passwords masked)."""
-    return {
-        "smtp": mail_config_service.smtp_masked(db),
-        "imap": mail_config_service.imap_masked(db),
-    }
-
-
-@router.put("/mail-config/smtp", dependencies=_ADMIN)
-def put_smtp_config(payload: SmtpConfigPayload, db: Session = Depends(get_db)) -> dict:
-    mail_config_service.set_smtp_config(
-        db,
-        enabled=payload.enabled,
-        host=payload.host,
-        port=payload.port,
-        user=payload.user,
-        from_addr=payload.from_addr,
-        password=payload.password,
-    )
-    return {"smtp": mail_config_service.smtp_masked(db)}
-
-
-@router.put("/mail-config/imap", dependencies=_ADMIN)
-def put_imap_config(payload: ImapConfigPayload, db: Session = Depends(get_db)) -> dict:
-    mail_config_service.set_imap_config(
-        db,
-        enabled=payload.enabled,
-        protocol=payload.protocol,
-        use_ssl=payload.use_ssl,
-        host=payload.host,
-        port=payload.port,
-        user=payload.user,
-        folder=payload.folder,
-        password=payload.password,
-    )
-    return {"imap": mail_config_service.imap_masked(db)}
 
 
 # ─────────────────────────────────────────────────────────────────────────────

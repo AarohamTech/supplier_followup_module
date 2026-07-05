@@ -20,54 +20,61 @@ from ..scheduler import (
     start_scheduler,
     stop_scheduler,
 )
-from ..services import engine_registry, mail_config_service
+from ..services import engine_registry
 from ..workers import mail_fetch_worker, mail_send_worker
 
 log = logging.getLogger(__name__)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Config snapshots (effective per-company config; passwords masked)
+# Config snapshots (passwords masked)
 # ─────────────────────────────────────────────────────────────────────────────
+def _mask(value: str | None) -> str:
+    if not value:
+        return ""
+    if len(value) <= 2:
+        return "*" * len(value)
+    return value[0] + "*" * (len(value) - 2) + value[-1]
+
+
 def smtp_snapshot() -> dict[str, Any]:
-    db: Session = SessionLocal()
-    try:
-        return mail_config_service.smtp_masked(db)
-    finally:
-        db.close()
+    return {
+        "enabled": bool(getattr(settings, "SMTP_ENABLED", False)),
+        "host": settings.SMTP_HOST,
+        "port": int(settings.SMTP_PORT or 0),
+        "user": settings.SMTP_USER,
+        "password_masked": _mask(settings.SMTP_PASSWORD),
+        "from": settings.SMTP_FROM,
+    }
 
 
 def imap_snapshot() -> dict[str, Any]:
-    db: Session = SessionLocal()
-    try:
-        return mail_config_service.imap_masked(db)
-    finally:
-        db.close()
+    return {
+        "enabled": bool(getattr(settings, "MAIL_INBOX_ENABLED", False)),
+        "protocol": settings.MAIL_FETCH_PROTOCOL,
+        "use_ssl": bool(settings.MAIL_INBOX_USE_SSL),
+        "host": settings.IMAP_HOST,
+        "port": int(settings.IMAP_PORT or 0),
+        "user": settings.IMAP_USER,
+        "password_masked": _mask(settings.IMAP_PASSWORD),
+        "folder": settings.IMAP_FOLDER,
+    }
 
 
 def mail_engine_snapshot() -> dict[str, Any]:
-    db: Session = SessionLocal()
-    try:
-        return {
-            "smtp": mail_config_service.smtp_masked(db),
-            "imap": mail_config_service.imap_masked(db),
-            "auto_po_followup_enabled": bool(getattr(settings, "AUTO_PO_FOLLOWUP_ENABLED", False)),
-            "scheduler_enabled": bool(getattr(settings, "SCHEDULER_ENABLED", False)),
-        }
-    finally:
-        db.close()
+    return {
+        "smtp": smtp_snapshot(),
+        "imap": imap_snapshot(),
+        "auto_po_followup_enabled": bool(getattr(settings, "AUTO_PO_FOLLOWUP_ENABLED", False)),
+        "scheduler_enabled": bool(getattr(settings, "SCHEDULER_ENABLED", False)),
+    }
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Live tests (against the effective per-company config)
+# Live tests
 # ─────────────────────────────────────────────────────────────────────────────
 def test_smtp() -> dict[str, Any]:
-    db: Session = SessionLocal()
-    try:
-        cfg = mail_config_service.get_smtp_config(db)
-    finally:
-        db.close()
-    result = mail_send_worker.test_smtp_connection(cfg)
+    result = mail_send_worker.test_smtp_connection()
     # If SMTP just came online, immediately drain any READY messages so the
     # user doesn't have to wait for the next scheduler tick.
     if result.get("ok"):
@@ -83,12 +90,7 @@ def test_smtp() -> dict[str, Any]:
 
 
 def test_imap() -> dict[str, Any]:
-    db: Session = SessionLocal()
-    try:
-        cfg = mail_config_service.get_imap_config(db)
-    finally:
-        db.close()
-    return mail_fetch_worker.test_inbox_connection(cfg)
+    return mail_fetch_worker.test_inbox_connection()
 
 
 # ─────────────────────────────────────────────────────────────────────────────

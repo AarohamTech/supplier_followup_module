@@ -16,12 +16,12 @@ from .notification import Notification
 from .procurement import ProcurementRecord
 from .status_change_log import StatusChangeLog
 from .supplier import SupplierMaster
+from .supplier_assignment import SupplierAssignment
 from .supplier_email import SupplierEmail
 from .supplier_email_audit import SupplierEmailAudit
 from .supplier_material_commitment import SupplierMaterialCommitment
 from .task_collaboration import TaskActivityLog, TaskComment
 from .user import User
-from .user_mail_identity import UserMailIdentity
 
 __all__ = [
     "AgentSubscription",
@@ -44,6 +44,7 @@ __all__ = [
     "Notification",
     "ProcurementRecord",
     "StatusChangeLog",
+    "SupplierAssignment",
     "SupplierEmail",
     "SupplierEmailAudit",
     "SupplierMaster",
@@ -51,5 +52,4 @@ __all__ = [
     "TaskActivityLog",
     "TaskComment",
     "User",
-    "UserMailIdentity",
 ]
