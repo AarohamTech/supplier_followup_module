@@ -75,6 +75,12 @@ class ProcurementRecord(Base):
     risk_reason: Mapped[str | None] = mapped_column(String(500))
     risk_scored_at: Mapped[datetime | None] = mapped_column(DateTime)
 
+    # PO cancellation request lifecycle. NULL = not requested; "PENDING" = a cancel
+    # was raised and is awaiting external (CRM) confirmation; "CANCELLED" = confirmed.
+    cancellation_status: Mapped[str | None] = mapped_column(String(32), index=True)
+    cancel_requested_by: Mapped[str | None] = mapped_column(String(64))
+    cancel_requested_at: Mapped[datetime | None] = mapped_column(DateTime)
+
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
 

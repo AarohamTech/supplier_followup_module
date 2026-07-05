@@ -27,6 +27,8 @@ class EmployeePo(BaseModel):
     material_count: int = 0
     overall_signal: Optional[str] = None
     po_status: Optional[str] = None
+    # NULL / "PENDING" (cancel requested, awaiting confirmation) / "CANCELLED".
+    cancellation_status: Optional[str] = None
     earliest_shipment_date: Optional[datetime] = None
     escalated: bool = False
     # Unread supplier replies (INCOMING, not yet read) on this PO.

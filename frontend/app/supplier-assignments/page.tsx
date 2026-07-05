@@ -19,6 +19,7 @@ export default function SupplierAssignmentsPage() {
   const [search, setSearch] = useState("");
   const [editing, setEditing] = useState<SupplierAssignmentRow | null>(null);
   const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [userSearch, setUserSearch] = useState("");
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
@@ -46,8 +47,17 @@ export default function SupplierAssignmentsPage() {
   function openEditor(row: SupplierAssignmentRow) {
     setEditing(row);
     setSelected(new Set(row.assignees.map((a) => a.user_id)));
+    setUserSearch("");
     setNote(null);
   }
+
+  const visibleUsers = useMemo(() => {
+    const q = userSearch.trim().toLowerCase();
+    if (!q) return users;
+    return users.filter((u) =>
+      `${u.full_name || ""} ${u.email} ${u.role}`.toLowerCase().includes(q),
+    );
+  }, [users, userSearch]);
 
   function toggle(id: number) {
     setSelected((prev) => {
@@ -158,9 +168,21 @@ export default function SupplierAssignmentsPage() {
               </button>
             </div>
 
-            <div className="overflow-y-auto p-5 space-y-1">
+            <div className="px-5 pt-4">
+              <input
+                className="border border-brand-border rounded px-3 py-2 text-sm w-full"
+                placeholder="Search people…"
+                value={userSearch}
+                onChange={(e) => setUserSearch(e.target.value)}
+                autoFocus
+              />
+            </div>
+            <div className="overflow-y-auto px-5 pb-2 pt-2 space-y-1">
               {users.length === 0 && <div className="text-xs text-brand-muted">No assignable users.</div>}
-              {users.map((u) => (
+              {users.length > 0 && visibleUsers.length === 0 && (
+                <div className="text-xs text-brand-muted py-2">No people match “{userSearch}”.</div>
+              )}
+              {visibleUsers.map((u) => (
                 <label key={u.user_id} className="flex items-center gap-2 text-sm py-1 cursor-pointer">
                   <input type="checkbox" checked={selected.has(u.user_id)} onChange={() => toggle(u.user_id)} />
                   <span>{u.full_name || u.email}</span>

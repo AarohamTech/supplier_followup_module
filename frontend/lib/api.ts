@@ -1030,6 +1030,13 @@ export const api = {
         supplierName ? `?supplier_name=${encodeURIComponent(supplierName)}` : ""
       }`,
     ),
+  eportalRequestPoCancel: (supplierPoNo: string, supplierName?: string) =>
+    http<{ supplier_po_no: string; cancellation_status: string; records_updated: number }>(
+      `/api/eportal/pos/${encodeURIComponent(supplierPoNo)}/request-cancel${
+        supplierName ? `?supplier_name=${encodeURIComponent(supplierName)}` : ""
+      }`,
+      { method: "POST" },
+    ),
   eportalPoMessages: (supplierPoNo: string) =>
     http<PortalMessage[]>(`/api/eportal/pos/${encodeURIComponent(supplierPoNo)}/messages`),
   eportalSendMessage: (supplierPoNo: string, body: string, subject?: string) =>

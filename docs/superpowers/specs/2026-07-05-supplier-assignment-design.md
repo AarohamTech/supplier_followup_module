@@ -69,9 +69,22 @@ pattern so a routing hiccup never breaks ingestion.
 - `set_assignees(db, supplier_id, user_ids)` → replace the set (dedupe, ignore unknown)
 - `assignable_users(db)` → active **staff** users (admin/manager/user/viewer)
 
-Assignees are **staff** users: they can open the supplier mail in the Communication
-Hub, so the notification link works. (Assigning to employee-portal accounts would need
-a dedicated eportal view — out of scope; can be added later.)
+Assignees are **all active internal users** (staff + employees); only external
+supplier-portal logins are excluded. (Update 2026-07-05: originally staff-only; widened
+on request. Employees are notified even though a dedicated "assigned supplier mail"
+eportal view is not built yet.) The assign modal has a people search box.
+
+## Addendum — Employee PO cancellation request (2026-07-05)
+
+Separate ask, built alongside: an employee can raise a cancellation for one of their own
+POs. New `ProcurementRecord` columns `cancellation_status` (NULL / `PENDING` /
+`CANCELLED`), `cancel_requested_by`, `cancel_requested_at`. `po_cancel_service`
+sets the PO's lines to `PENDING` and calls `_raise_external_cancel` — a **stub** until
+the external CRM cancel API format is provided; a confirmation step then calls
+`confirm_cancellation` to flip `PENDING`→`CANCELLED`. Endpoint
+`POST /api/eportal/pos/{supplier_po_no}/request-cancel` (scoped to the caller's owned
+POs). The eportal PO table shows a "Request cancel" button with a confirmation dialog,
+and a "Pending cancellation" badge once requested.
 
 ### API — router `/api/supplier-assignments` (manager+ for writes)
 

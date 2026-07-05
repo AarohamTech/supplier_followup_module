@@ -39,6 +39,7 @@ from ..schemas.procurement import DashboardKpis, ProcurementListOut, Procurement
 from ..services import communication_message_service as msg_service
 from ..services import procurement_breakdown_service as breakdown_service
 from ..services import notification_service as notif
+from ..services import po_cancel_service
 from ..services import po_followup_mail_service
 from ..services import task_assignment_service as assign
 from . import ai_insights  # reuse the admin Black-Follow-ups aggregation + command schema
@@ -144,12 +145,19 @@ def list_pos(
             "supplier_name": r.supplier_name,
             "signals": [],
             "po_status": r.po_status,
+            "cancellation_status": None,
             "earliest": None,
             "count": 0,
             "escalated": False,
         })
         g["count"] += 1
         g["signals"].append(r.signal)
+        # PO-level cancellation: CANCELLED wins over PENDING wins over none.
+        cs = (r.cancellation_status or "").upper()
+        if cs == "CANCELLED":
+            g["cancellation_status"] = "CANCELLED"
+        elif cs == "PENDING" and g["cancellation_status"] != "CANCELLED":
+            g["cancellation_status"] = "PENDING"
         if (r.escalation_level or "NONE").upper() != "NONE":
             g["escalated"] = True
         sd = _as_dt(r.shipment_date)
@@ -184,6 +192,7 @@ def list_pos(
             material_count=g["count"],
             overall_signal=_worst_signal(g["signals"]),
             po_status=g["po_status"],
+            cancellation_status=g["cancellation_status"],
             earliest_shipment_date=g["earliest"],
             escalated=g["escalated"],
             unread_inbound=unread_counts.get(key_, 0),
@@ -235,6 +244,28 @@ def po_materials(
         )
         for r in rows
     ]
+
+
+@router.post("/pos/{supplier_po_no}/request-cancel")
+def request_po_cancel(
+    supplier_po_no: str,
+    supplier_name: Optional[str] = None,
+    user: User = Depends(get_current_employee),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Raise a cancellation for one of the employee's own POs. Sets the PO to
+    'Pending cancellation' and calls the external cancel API (a no-op stub until the
+    CRM cancel format is wired). Scoped to the caller's owned POs."""
+    result = po_cancel_service.request_cancellation(
+        db,
+        supplier_po_no=supplier_po_no,
+        supplier_name=supplier_name,
+        owner_emp_code=user.emp_code,
+        requested_by=user.emp_code or user.email,
+    )
+    if result is None:
+        raise HTTPException(404, "PO not found among your assigned POs")
+    return result
 
 
 # ── PO Follow-ups (staff /api/procurement mirrors, scoped to owned records) ─────

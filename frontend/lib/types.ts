@@ -1402,6 +1402,7 @@ export interface EmployeePo {
   material_count: number;
   overall_signal?: string | null;
   po_status?: string | null;
+  cancellation_status?: string | null;
   earliest_shipment_date?: string | null;
   unread_inbound?: number;
   escalated: boolean;

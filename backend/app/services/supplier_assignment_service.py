@@ -27,14 +27,14 @@ def user_brief(user: User) -> dict[str, Any]:
 
 
 def assignable_users(db: Session) -> list[User]:
-    """Active internal staff users (portal accounts excluded)."""
+    """Every active internal account (staff + employees). Only external supplier
+    portal logins are excluded — a supplier can't be assigned its own mail."""
     return list(
         db.scalars(
             select(User)
             .where(
                 User.is_active.is_(True),
                 User.supplier_id.is_(None),
-                User.emp_code.is_(None),
             )
             .order_by(User.full_name, User.email)
         ).all()

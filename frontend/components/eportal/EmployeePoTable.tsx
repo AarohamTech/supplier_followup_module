@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useState } from "react";
-import { ChevronDown, ChevronRight, Loader2 } from "lucide-react";
+import { Ban, ChevronDown, ChevronRight, Loader2 } from "lucide-react";
 
 import { api } from "@/lib/api";
 import { overdueDays } from "@/lib/format";
@@ -40,6 +40,29 @@ export default function EmployeePoTable({ pos }: { pos: EmployeePo[] }) {
   const [open, setOpen] = useState<string | null>(null);
   const [materials, setMaterials] = useState<Record<string, EmployeePoMaterial[]>>({});
   const [loading, setLoading] = useState<string | null>(null);
+  // Local overrides so a just-requested PO flips to Pending without a full refetch.
+  const [cancelOverride, setCancelOverride] = useState<Record<string, string>>({});
+  const [confirmPo, setConfirmPo] = useState<EmployeePo | null>(null);
+  const [requesting, setRequesting] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
+
+  const cancelStatusOf = (p: EmployeePo): string =>
+    (cancelOverride[poKey(p)] ?? p.cancellation_status ?? "").toUpperCase();
+
+  async function confirmCancel() {
+    if (!confirmPo) return;
+    setRequesting(true);
+    setCancelError(null);
+    try {
+      await api.eportalRequestPoCancel(confirmPo.supplier_po_no, confirmPo.supplier_name || undefined);
+      setCancelOverride((cur) => ({ ...cur, [poKey(confirmPo)]: "PENDING" }));
+      setConfirmPo(null);
+    } catch (e) {
+      setCancelError((e as Error).message);
+    } finally {
+      setRequesting(false);
+    }
+  }
 
   const toggle = async (p: EmployeePo) => {
     const key = poKey(p);
@@ -66,6 +89,7 @@ export default function EmployeePoTable({ pos }: { pos: EmployeePo[] }) {
   }
 
   return (
+    <>
     <div className="card overflow-x-auto">
       <table className="w-full min-w-[720px] text-sm">
         <thead className="bg-subtle text-left text-[11px] uppercase tracking-wider text-brand-muted">
@@ -77,6 +101,7 @@ export default function EmployeePoTable({ pos }: { pos: EmployeePo[] }) {
             <th className="px-3 py-2">Materials</th>
             <th className="px-3 py-2">Earliest Ship</th>
             <th className="px-3 py-2">Status</th>
+            <th className="px-3 py-2 text-right">Cancel</th>
           </tr>
         </thead>
         <tbody>
@@ -106,10 +131,29 @@ export default function EmployeePoTable({ pos }: { pos: EmployeePo[] }) {
                   <td className="px-3 py-2">{p.material_count}</td>
                   <td className="px-3 py-2">{fmtDate(p.earliest_shipment_date)}</td>
                   <td className="px-3 py-2">{p.po_status || "—"}</td>
+                  <td className="px-3 py-2 text-right" onClick={(e) => e.stopPropagation()}>
+                    {cancelStatusOf(p) === "CANCELLED" ? (
+                      <span className="inline-flex rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-semibold uppercase text-signal-red ring-1 ring-inset ring-red-100">
+                        Cancelled
+                      </span>
+                    ) : cancelStatusOf(p) === "PENDING" ? (
+                      <span className="inline-flex rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold uppercase text-amber-700 ring-1 ring-inset ring-amber-100">
+                        Pending cancellation
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => { setConfirmPo(p); setCancelError(null); }}
+                        className="inline-flex items-center gap-1 rounded-md border border-brand-border px-2 py-1 text-[11px] font-medium text-signal-red hover:bg-red-50"
+                      >
+                        <Ban size={12} /> Request cancel
+                      </button>
+                    )}
+                  </td>
                 </tr>
                 {isOpen && (
                   <tr className="bg-subtle/60">
-                    <td colSpan={7} className="px-3 py-3">
+                    <td colSpan={8} className="px-3 py-3">
                       {loading === key ? (
                         <div className="flex items-center gap-2 text-xs text-brand-muted">
                           <Loader2 size={14} className="animate-spin" /> Loading materials…
@@ -159,5 +203,38 @@ export default function EmployeePoTable({ pos }: { pos: EmployeePo[] }) {
         </tbody>
       </table>
     </div>
+
+    {confirmPo && (
+      <div className="fixed inset-0 z-50 bg-black/40 grid place-items-center p-4" onClick={() => !requesting && setConfirmPo(null)}>
+        <div className="bg-card rounded-lg shadow-xl w-full max-w-sm" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
+          <div className="border-b border-brand-border px-5 py-3 font-semibold text-sm">Request PO cancellation</div>
+          <div className="px-5 py-4 space-y-2 text-sm">
+            <p>
+              Raise a cancellation for PO <span className="font-semibold">{confirmPo.supplier_po_no}</span>
+              {confirmPo.supplier_name ? <> ({confirmPo.supplier_name})</> : null}?
+            </p>
+            <p className="text-xs text-brand-muted">
+              The PO will be marked <span className="font-medium">Pending cancellation</span> until it is confirmed.
+            </p>
+            {cancelError && <p className="text-xs text-signal-red">{cancelError}</p>}
+          </div>
+          <div className="border-t border-brand-border px-5 py-3 flex items-center justify-end gap-2">
+            <button type="button" disabled={requesting} onClick={() => setConfirmPo(null)} className="btn-outline text-xs">
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={requesting}
+              onClick={confirmCancel}
+              className="inline-flex items-center gap-1 rounded-md bg-signal-red px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-60"
+            >
+              {requesting ? <Loader2 size={13} className="animate-spin" /> : <Ban size={13} />}
+              {requesting ? "Requesting…" : "Yes, request cancellation"}
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   );
 }

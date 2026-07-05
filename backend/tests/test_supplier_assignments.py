@@ -44,14 +44,15 @@ def _staff(db, email, role="user", name=None):
 
 
 class ServiceTests(unittest.TestCase):
-    def test_assignable_excludes_portal_accounts(self):
+    def test_assignable_includes_staff_and_employees_excludes_suppliers(self):
         with _temp_db() as db:
             _staff(db, "a@c.test")
             db.add(User(email="emp@c.test", hashed_password="x", role="employee", emp_code="E1"))
             db.add(User(email="sup@x.com", hashed_password="x", role="supplier", supplier_id=1))
             db.commit()
             emails = {u.email for u in svc.assignable_users(db)}
-            self.assertEqual(emails, {"a@c.test"})
+            # staff + employees are assignable; only the external supplier login is not
+            self.assertEqual(emails, {"a@c.test", "emp@c.test"})
 
     def test_set_replace_dedupe_and_filter(self):
         with _temp_db() as db:
