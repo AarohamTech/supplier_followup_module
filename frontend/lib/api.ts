@@ -44,6 +44,11 @@ import type {
   SupplierMaterialCommitment,
   MailEngineSnapshot,
   MailEngineHealth,
+  MailConfig,
+  SmtpConfigInput,
+  ImapConfigInput,
+  MailIdentityUser,
+  MailIdentityInput,
   DraftRule,
   CronJobRow,
   CronJobLog,
@@ -512,6 +517,43 @@ export const api = {
 
   testImap: () =>
     http<MailEngineHealth["imap"]>(`/api/settings/test-imap`, { method: "POST" }),
+
+  // ─── Main mailbox credentials (admin-only edit; per company) ─────────────
+  getMailConfig: () =>
+    http<MailConfig>(`/api/settings/mail-config`),
+
+  putSmtpConfig: (body: SmtpConfigInput) =>
+    http<{ smtp: MailConfig["smtp"] }>(`/api/settings/mail-config/smtp`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
+
+  putImapConfig: (body: ImapConfigInput) =>
+    http<{ imap: MailConfig["imap"] }>(`/api/settings/mail-config/imap`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
+
+  // ─── Per-user "send as" SMTP identities (admin-only) ─────────────────────
+  listMailIdentities: () =>
+    http<{ users: MailIdentityUser[] }>(`/api/mail-identities`),
+
+  putMailIdentity: (userId: number, body: MailIdentityInput) =>
+    http<MailIdentityUser>(`/api/mail-identities/${userId}`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
+
+  deleteMailIdentity: (userId: number) =>
+    http<{ ok: boolean; user_id: number }>(`/api/mail-identities/${userId}`, {
+      method: "DELETE",
+    }),
+
+  testMailIdentity: (userId: number) =>
+    http<{ ok?: boolean; enabled?: boolean; host?: string; error?: string; reason?: string }>(
+      `/api/mail-identities/${userId}/test`,
+      { method: "POST" },
+    ),
 
   listCronJobs: () =>
     http<{ jobs: CronJobRow[] }>(`/api/settings/cron-jobs`),
