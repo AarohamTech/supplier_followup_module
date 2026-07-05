@@ -88,8 +88,10 @@ import type {
   PortalMessage,
   PortalMe,
   EmployeeSummary,
+  EmployeePo,
   EmployeePoListResponse,
   EmployeePoMaterial,
+  PoDetail,
   EmployeeProvisionResult,
   EmployeeCreatePayload,
   CrmIngestLog,
@@ -196,6 +198,22 @@ export const api = {
       method: "PUT",
       body: JSON.stringify({ user_ids }),
     }),
+
+  // Admin Purchase Orders view (all POs + detail + whole-PO cancel)
+  poViewList: () => http<{ items: EmployeePo[] }>("/api/po-view/pos"),
+  poViewDetail: (supplierPoNo: string, supplierName?: string) =>
+    http<PoDetail>(
+      `/api/po-view/pos/${encodeURIComponent(supplierPoNo)}/detail${
+        supplierName ? `?supplier_name=${encodeURIComponent(supplierName)}` : ""
+      }`,
+    ),
+  poViewRequestCancel: (supplierPoNo: string, supplierName?: string) =>
+    http<{ supplier_po_no: string; cancellation_status: string; records_updated: number }>(
+      `/api/po-view/pos/${encodeURIComponent(supplierPoNo)}/request-cancel${
+        supplierName ? `?supplier_name=${encodeURIComponent(supplierName)}` : ""
+      }`,
+      { method: "POST" },
+    ),
 
   listSupplierEmails: () => http<SupplierEmail[]>("/api/supplier-emails"),
   createSupplierEmail: (body: Partial<SupplierEmail>) =>
@@ -1027,6 +1045,12 @@ export const api = {
   eportalPoMaterials: (supplierPoNo: string, supplierName?: string) =>
     http<EmployeePoMaterial[]>(
       `/api/eportal/pos/${encodeURIComponent(supplierPoNo)}/materials${
+        supplierName ? `?supplier_name=${encodeURIComponent(supplierName)}` : ""
+      }`,
+    ),
+  eportalPoDetail: (supplierPoNo: string, supplierName?: string) =>
+    http<PoDetail>(
+      `/api/eportal/pos/${encodeURIComponent(supplierPoNo)}/detail${
         supplierName ? `?supplier_name=${encodeURIComponent(supplierName)}` : ""
       }`,
     ),

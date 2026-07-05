@@ -8,7 +8,7 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useStore } from "@/lib/store";
 import type { EmployeePo, PortalTaskDashboard } from "@/lib/types";
-import EmployeePoTable from "@/components/eportal/EmployeePoTable";
+import PoExpandableTable from "@/components/po/PoExpandableTable";
 import KpiStrip from "@/components/dashboard/KpiStrip";
 import StatusDonut from "@/components/dashboard/StatusDonut";
 import OverdueDonut from "@/components/dashboard/OverdueDonut";
@@ -96,7 +96,11 @@ export default function EmployeeDashboard() {
               View all →
             </Link>
           </div>
-          <EmployeePoTable pos={pos.slice(0, 10)} />
+          <PoExpandableTable
+            pos={pos.slice(0, 10)}
+            loadDetail={(p) => api.eportalPoDetail(p.supplier_po_no, p.supplier_name || undefined)}
+            requestCancel={(p) => api.eportalRequestPoCancel(p.supplier_po_no, p.supplier_name || undefined).then(() => {})}
+          />
         </div>
         <div className="space-y-4">
           <AIInsights />

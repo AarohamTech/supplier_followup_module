@@ -23,6 +23,8 @@ def user_brief(user: User) -> dict[str, Any]:
         "full_name": user.full_name,
         "email": user.email,
         "role": user.role,
+        "username": user.username,
+        "emp_code": user.emp_code,
     }
 
 

@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 
 import { api } from "@/lib/api";
 import type { EmployeePo } from "@/lib/types";
-import EmployeePoTable from "@/components/eportal/EmployeePoTable";
+import PoExpandableTable from "@/components/po/PoExpandableTable";
 
 export default function EmployeePosPage() {
   const [pos, setPos] = useState<EmployeePo[]>([]);
@@ -50,7 +50,13 @@ export default function EmployeePosPage() {
         />
       </div>
       {error && <div className="rounded-md bg-red-50 px-3 py-2 text-xs text-signal-red">{error}</div>}
-      {!loading && <EmployeePoTable pos={filtered} />}
+      {!loading && (
+        <PoExpandableTable
+          pos={filtered}
+          loadDetail={(p) => api.eportalPoDetail(p.supplier_po_no, p.supplier_name || undefined)}
+          requestCancel={(p) => api.eportalRequestPoCancel(p.supplier_po_no, p.supplier_name || undefined).then(() => {})}
+        />
+      )}
     </div>
   );
 }

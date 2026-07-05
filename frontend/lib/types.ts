@@ -154,6 +154,8 @@ export interface AssignableUser {
   full_name: string | null;
   email: string;
   role: string;
+  username?: string | null;
+  emp_code?: string | null;
 }
 
 export interface SupplierAssignmentRow {
@@ -1411,6 +1413,30 @@ export interface EmployeePo {
 export interface EmployeePoListResponse {
   count: number;
   items: EmployeePo[];
+}
+
+// One communication message on a PO (for the PO detail view).
+export interface PoMessage {
+  id: number;
+  direction: string;
+  subject?: string | null;
+  snippet?: string | null;
+  sender_email?: string | null;
+  receiver_email?: string | null;
+  status?: string | null;
+  mail_type?: string | null;
+  created_at?: string | null;
+  received_at?: string | null;
+  sent_at?: string | null;
+}
+
+// Expanded PO detail: materials + full communication history.
+export interface PoDetail {
+  supplier_po_no: string;
+  supplier_name?: string | null;
+  cancellation_status?: string | null;
+  materials: EmployeePoMaterial[];
+  messages: PoMessage[];
 }
 
 export interface EmployeePoMaterial {

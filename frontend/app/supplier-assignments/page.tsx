@@ -8,6 +8,15 @@ import { useAuth } from "@/lib/auth";
 import type { AssignableUser, SupplierAssignmentRow } from "@/lib/types";
 import PageHeader from "@/components/layout/PageHeader";
 
+// Emails here are placeholders, so never show them — use name (or username / id)
+// and a small role/emp-code hint instead.
+function personLabel(u: AssignableUser): string {
+  return u.full_name || u.username || `User #${u.user_id}`;
+}
+function personMeta(u: AssignableUser): string {
+  return [u.role, u.emp_code].filter(Boolean).join(" · ");
+}
+
 export default function SupplierAssignmentsPage() {
   const { hasRole } = useAuth();
   const canEdit = hasRole("manager");
@@ -55,7 +64,9 @@ export default function SupplierAssignmentsPage() {
     const q = userSearch.trim().toLowerCase();
     if (!q) return users;
     return users.filter((u) =>
-      `${u.full_name || ""} ${u.email} ${u.role}`.toLowerCase().includes(q),
+      `${u.full_name || ""} ${u.username || ""} ${u.emp_code || ""} ${u.role}`
+        .toLowerCase()
+        .includes(q),
     );
   }, [users, userSearch]);
 
@@ -131,7 +142,7 @@ export default function SupplierAssignmentsPage() {
                     <div className="flex flex-wrap gap-1">
                       {row.assignees.map((a) => (
                         <span key={a.user_id} className="px-2 py-0.5 rounded text-xs bg-subtle text-brand-dark">
-                          {a.full_name || a.email}
+                          {personLabel(a)}
                         </span>
                       ))}
                     </div>
@@ -185,8 +196,8 @@ export default function SupplierAssignmentsPage() {
               {visibleUsers.map((u) => (
                 <label key={u.user_id} className="flex items-center gap-2 text-sm py-1 cursor-pointer">
                   <input type="checkbox" checked={selected.has(u.user_id)} onChange={() => toggle(u.user_id)} />
-                  <span>{u.full_name || u.email}</span>
-                  <span className="text-xs text-brand-muted">{u.email} · {u.role}</span>
+                  <span>{personLabel(u)}</span>
+                  {personMeta(u) && <span className="text-xs text-brand-muted">{personMeta(u)}</span>}
                 </label>
               ))}
             </div>

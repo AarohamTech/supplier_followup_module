@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import {
   Activity,
   BarChart3,
+  ClipboardList,
   Database,
   FileSpreadsheet,
   Gauge,
@@ -52,6 +53,7 @@ const groups: { label: string; items: NavItem[] }[] = [
     label: "Procurement",
     items: [
       { href: "/black-followups", label: "Black Follow-ups", icon: ShieldAlert },
+      { href: "/purchase-orders", label: "Purchase Orders", icon: ClipboardList, minRole: "admin" },
       { href: "/po-followups", label: "PO Follow-ups", icon: FileSpreadsheet },
       { href: "/suppliers", label: "Supplier Master", icon: Users },
       { href: "/emails", label: "Email Master", icon: Mail },

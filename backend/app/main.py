@@ -44,6 +44,7 @@ from .routers import (
     supplier_accounts,
     employee_accounts,
     supplier_assignments,
+    po_view,
     settings as settings_router,
 )
 from .scheduler import register_all_specs, start_scheduler, stop_scheduler
@@ -146,6 +147,8 @@ app.include_router(users.router)
 app.include_router(supplier_accounts.router)
 # Admin-only employee-login management (guards itself at the router level).
 app.include_router(employee_accounts.router)
+# Admin-only Purchase Orders view (all POs + detail + cancel; guards itself).
+app.include_router(po_view.router)
 
 # All business routers: reads open to any logged-in user; writes require user+
 # (viewer is read-only). Send/approve-style endpoints add require_manager on the

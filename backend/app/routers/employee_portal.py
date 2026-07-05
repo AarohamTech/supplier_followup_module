@@ -41,6 +41,7 @@ from ..services import procurement_breakdown_service as breakdown_service
 from ..services import notification_service as notif
 from ..services import po_cancel_service
 from ..services import po_followup_mail_service
+from ..services import po_view_service
 from ..services import task_assignment_service as assign
 from . import ai_insights  # reuse the admin Black-Follow-ups aggregation + command schema
 from . import communication as comm  # reuse the staff task logic (one source of truth)
@@ -129,84 +130,10 @@ def summary(
 def list_pos(
     user: User = Depends(get_current_employee), db: Session = Depends(get_db)
 ) -> EmployeePoListResponse:
-    records = _emp_records(db, user.emp_code)
-    # CRM PoNo is recycled across suppliers, so a bare PO number can belong to
-    # two different suppliers for the same employee. Group by (supplier, PO) so
-    # each supplier's PO is its own row instead of being merged/duplicated.
-    groups: dict[tuple[str, str], dict] = {}
-    for r in records:
-        po = r.supplier_po_no
-        if not po:
-            continue
-        key = ((r.supplier_name or "").strip().upper(), po)
-        g = groups.setdefault(key, {
-            "supplier_po_no": po,
-            "crm_no": r.crm_no,
-            "supplier_name": r.supplier_name,
-            "signals": [],
-            "po_status": r.po_status,
-            "cancellation_status": None,
-            "earliest": None,
-            "count": 0,
-            "escalated": False,
-        })
-        g["count"] += 1
-        g["signals"].append(r.signal)
-        # PO-level cancellation: CANCELLED wins over PENDING wins over none.
-        cs = (r.cancellation_status or "").upper()
-        if cs == "CANCELLED":
-            g["cancellation_status"] = "CANCELLED"
-        elif cs == "PENDING" and g["cancellation_status"] != "CANCELLED":
-            g["cancellation_status"] = "PENDING"
-        if (r.escalation_level or "NONE").upper() != "NONE":
-            g["escalated"] = True
-        sd = _as_dt(r.shipment_date)
-        if sd and (g["earliest"] is None or sd < g["earliest"]):
-            g["earliest"] = sd
-
-    # Unread supplier replies (INCOMING, not yet read) per (supplier, PO).
-    unread_counts: dict[tuple[str, str], int] = {}
-    po_nos = [g["supplier_po_no"] for g in groups.values()]
-    if po_nos:
-        for sup_name, po_no, cnt in db.execute(
-            select(
-                CommunicationMessage.supplier_name,
-                CommunicationMessage.supplier_po_no,
-                func.count(CommunicationMessage.id),
-            )
-            .where(
-                CommunicationMessage.direction == "INCOMING",
-                CommunicationMessage.read_at.is_(None),
-                CommunicationMessage.supplier_po_no.in_(po_nos),
-            )
-            .group_by(CommunicationMessage.supplier_name, CommunicationMessage.supplier_po_no)
-        ).all():
-            if po_no:
-                unread_counts[((sup_name or "").strip().upper(), po_no)] = int(cnt or 0)
-
-    items = [
-        EmployeePo(
-            supplier_po_no=g["supplier_po_no"],
-            crm_no=g["crm_no"],
-            supplier_name=g["supplier_name"],
-            material_count=g["count"],
-            overall_signal=_worst_signal(g["signals"]),
-            po_status=g["po_status"],
-            cancellation_status=g["cancellation_status"],
-            earliest_shipment_date=g["earliest"],
-            escalated=g["escalated"],
-            unread_inbound=unread_counts.get(key_, 0),
-        )
-        for key_, g in groups.items()
-    ]
-    items.sort(
-        key=lambda p: (
-            0 if p.escalated else 1,
-            -_SIGNAL_RANK.get((p.overall_signal or "").upper(), 0),
-            p.supplier_po_no,
-        )
-    )
-    return EmployeePoListResponse(count=len(items), items=items)
+    # Grouped by (supplier, PO) — shared with the admin Purchase Orders view — but
+    # scoped to POs this employee owns.
+    groups = po_view_service.list_groups(db, owner_emp_code=user.emp_code)
+    return EmployeePoListResponse(count=len(groups), items=[EmployeePo(**g) for g in groups])
 
 
 @router.get("/pos/{supplier_po_no}/materials", response_model=list[EmployeePoMaterial])
@@ -244,6 +171,22 @@ def po_materials(
         )
         for r in rows
     ]
+
+
+@router.get("/pos/{supplier_po_no}/detail")
+def po_detail(
+    supplier_po_no: str,
+    supplier_name: Optional[str] = None,
+    user: User = Depends(get_current_employee),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Materials + full communication history for one of the employee's own POs."""
+    detail = po_view_service.po_detail(
+        db, supplier_po_no=supplier_po_no, supplier_name=supplier_name, owner_emp_code=user.emp_code
+    )
+    if detail is None:
+        raise HTTPException(404, "PO not found among your assigned POs")
+    return detail
 
 
 @router.post("/pos/{supplier_po_no}/request-cancel")
