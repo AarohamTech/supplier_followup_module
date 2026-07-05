@@ -12,14 +12,81 @@ Endpoints for removing a purchase order (PO) from the system. Source router:
 ## Conventions
 
 - **Base path:** all endpoints are under `/api`, same-origin (the frontend proxies
-  `/api/*` to the backend). Example: `https://<host>/api/procurement/po`.
-- **Auth:** send `Authorization: Bearer <token>`. A token is obtained from
-  `POST /api/auth/login`.
+  `/api/*` to the backend — see `frontend/next.config.mjs`). Example:
+  `https://h-connect.harmonytech.in/api/procurement/po`.
+- **Auth:** send `Authorization: Bearer <token>`. Get a token from
+  `POST /api/auth/login` — see [Getting a token](#getting-a-token) below.
 - **Tenant (multi-company):** the operation runs inside the company (Postgres schema)
   resolved from the token's `company` claim — it only affects that company's data.
 - **Identity of a PO:** a PO is identified by **(`supplier_name`, `supplier_po_no`)**,
   not by PO number alone. The CRM `PoNo` counter is recycled across suppliers, so the
   supplier name is required to disambiguate.
+
+## Hosts
+
+| Environment | Base URL | Notes |
+|-------------|----------|-------|
+| **Production** | `https://h-connect.harmonytech.in` | Public app URL (from `APP_BASE_URL`). `/api/*` is proxied to the backend on AWS Mumbai EC2. Confirm this matches your actual deployment domain. |
+| **Local (via frontend)** | `http://localhost:3000` | `npm run dev`; `/api/*` proxies to the backend at `NEXT_PUBLIC_API_BASE` (default `http://localhost:8000`). |
+| **Local (backend direct)** | `http://localhost:8000` | Call the FastAPI backend directly, bypassing the frontend proxy. |
+
+So the full URL is `{base}/api/procurement/po`, e.g.
+`https://h-connect.harmonytech.in/api/procurement/po`.
+
+## Getting a token
+
+Obtain a bearer token from the login endpoint, then send it as
+`Authorization: Bearer <access_token>` on every request.
+
+| | |
+|---|---|
+| **Method / Path** | `POST /api/auth/login` |
+| **Auth** | None (public) |
+| **Handler** | `login` — [`auth.py:32`](../backend/app/routers/auth.py#L32) |
+
+### Request body
+
+| Field | Type | Required | Description |
+|-------|------|:--------:|-------------|
+| `email` | string | ✅¹ | Staff/supplier login. Use **either** `email` **or** `username`. |
+| `username` | string | ✅¹ | Internal-employee login id (for accounts without an email). |
+| `password` | string | ✅ | Account password. |
+| `company` | string | ❌ | Company code (e.g. `"102"`, `"101"`). Omitted → the default company (`102`). |
+
+¹ Provide exactly one of `email` or `username`.
+
+### Response `200 OK`
+
+```json
+{
+  "access_token": "eyJhbGciOi...",
+  "token_type": "bearer",
+  "expires_in": 43200,
+  "user": { "id": 1, "email": "admin@example.com", "role": "admin", "...": "..." },
+  "company": { "code": "102", "display_name": "Hariom Tech", "...": "..." }
+}
+```
+
+Use `access_token` as the bearer token. `expires_in` is the lifetime in **seconds**;
+re-login when it expires (a `401` from any endpoint means the token is missing/expired).
+
+> **Admin required.** The PO delete/cancel endpoints below require the `admin` role, so
+> log in with an admin account.
+
+### Example
+
+```bash
+# 1) get a token (admin account)
+TOKEN=$(curl -s -X POST "https://h-connect.harmonytech.in/api/auth/login" \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@example.com","password":"YOUR_PASSWORD"}' \
+  | python -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+
+# 2) use it
+curl -X DELETE \
+  "https://h-connect.harmonytech.in/api/procurement/po?supplier_po_no=000449&supplier_name=Vedant%20Tools%20Pvt%20Ltd" \
+  -H "Authorization: Bearer $TOKEN"
+```
 
 ---
 
@@ -83,7 +150,7 @@ that PO's active supplier commitments so they stop surfacing.
 
 ```bash
 curl -X DELETE \
-  "https://<host>/api/procurement/po?supplier_po_no=000449&supplier_name=Vedant%20Tools%20Pvt%20Ltd" \
+  "https://h-connect.harmonytech.in/api/procurement/po?supplier_po_no=000449&supplier_name=Vedant%20Tools%20Pvt%20Ltd" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
@@ -131,7 +198,7 @@ Deletes one procurement material line by its numeric record id.
 ### Example
 
 ```bash
-curl -X DELETE "https://<host>/api/procurement/1234" \
+curl -X DELETE "https://h-connect.harmonytech.in/api/procurement/1234" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
