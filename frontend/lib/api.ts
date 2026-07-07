@@ -46,6 +46,9 @@ import type {
   SupplierMaterialCommitment,
   MailEngineSnapshot,
   MailEngineHealth,
+  MailConfig,
+  SmtpConfigInput,
+  ImapConfigInput,
   DraftRule,
   CronJobRow,
   CronJobLog,
@@ -560,6 +563,19 @@ export const api = {
 
   testImap: () =>
     http<MailEngineHealth["imap"]>(`/api/settings/test-imap`, { method: "POST" }),
+
+  // ─── Main mailbox credentials (admin-only edit) ──────────────────────────
+  getMailConfig: () => http<MailConfig>(`/api/settings/mail-config`),
+  putSmtpConfig: (body: SmtpConfigInput) =>
+    http<{ smtp: MailConfig["smtp"] }>(`/api/settings/mail-config/smtp`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
+  putImapConfig: (body: ImapConfigInput) =>
+    http<{ imap: MailConfig["imap"] }>(`/api/settings/mail-config/imap`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
 
   listCronJobs: () =>
     http<{ jobs: CronJobRow[] }>(`/api/settings/cron-jobs`),

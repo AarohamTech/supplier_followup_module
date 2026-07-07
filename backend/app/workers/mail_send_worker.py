@@ -27,6 +27,8 @@ from ..models.mail_history import MailHistory
 from ..models.procurement import ProcurementRecord
 from ..services import brand_email
 from ..services import communication_message_service as msg_service
+from ..services import mail_config_service
+from ..services.mail_config_service import SmtpConfig
 
 log = logging.getLogger(__name__)
 
@@ -55,11 +57,12 @@ def _config_ready() -> tuple[bool, str]:
     return True, ""
 
 
-def _open_client() -> smtplib.SMTP:
-    host = settings.SMTP_HOST
-    port = int(settings.SMTP_PORT or 587)
-    user = settings.SMTP_USER
-    password = settings.SMTP_PASSWORD
+def _open_client(cfg: SmtpConfig | None = None) -> smtplib.SMTP:
+    cfg = cfg or mail_config_service.env_smtp_config()
+    host = cfg.host
+    port = int(cfg.port or 587)
+    user = cfg.user
+    password = cfg.password
 
     if port == 465:
         client = smtplib.SMTP_SSL(host, port, timeout=30)
@@ -79,9 +82,9 @@ def _open_client() -> smtplib.SMTP:
     return client
 
 
-def _from_domain() -> str:
-    """Domain to stamp generated Message-IDs with, derived from SMTP_FROM."""
-    _, addr = parseaddr(settings.SMTP_FROM or "")
+def _from_domain(from_addr: str | None = None) -> str:
+    """Domain to stamp generated Message-IDs with, derived from the From address."""
+    _, addr = parseaddr(from_addr or settings.SMTP_FROM or "")
     domain = addr.split("@", 1)[1].strip() if "@" in addr else ""
     return domain or "localhost"
 
@@ -91,9 +94,10 @@ def _is_message_id(value: str | None) -> bool:
     return bool(value) and "@" in value
 
 
-def _build_email(msg: CommunicationMessage) -> EmailMessage:
+def _build_email(msg: CommunicationMessage, from_addr: str | None = None) -> EmailMessage:
+    from_addr = from_addr or settings.SMTP_FROM
     em = EmailMessage()
-    em["From"] = settings.SMTP_FROM
+    em["From"] = from_addr
     em["To"] = ", ".join(msg.to_emails or ([msg.receiver_email] if msg.receiver_email else []))
     if msg.cc_emails:
         em["Cc"] = ", ".join(msg.cc_emails)
@@ -104,7 +108,7 @@ def _build_email(msg: CommunicationMessage) -> EmailMessage:
     # Always stamp a Message-ID so recipients (and our own future ingests) can
     # thread on it. When this is a reply, point In-Reply-To / References at the
     # original message so Gmail/Outlook nest it under the existing conversation.
-    em["Message-ID"] = make_msgid(domain=_from_domain())
+    em["Message-ID"] = make_msgid(domain=_from_domain(from_addr))
     in_reply_to = getattr(msg, "in_reply_to", None)
     if _is_message_id(in_reply_to):
         em["In-Reply-To"] = in_reply_to
@@ -125,8 +129,8 @@ def _build_email(msg: CommunicationMessage) -> EmailMessage:
     return em
 
 
-def _send_one(em: EmailMessage) -> None:
-    with _open_client() as client:
+def _send_one(em: EmailMessage, cfg: SmtpConfig | None = None) -> None:
+    with _open_client(cfg) as client:
         client.send_message(em)
 
 
@@ -236,31 +240,27 @@ def _sync_delivery_state(
                 rec.followup_count = (rec.followup_count or 0) + 1
 
 
-def test_smtp_connection() -> dict[str, Any]:
-    ready, reason = _config_ready()
+def test_smtp_connection(cfg: SmtpConfig | None = None) -> dict[str, Any]:
+    """Probe SMTP connectivity. With no `cfg`, tests the env config (legacy). The
+    settings API passes the effective per-company config (DB override or env)."""
+    if cfg is None:
+        ready, reason = _config_ready()
+        host, port, user = settings.SMTP_HOST, int(settings.SMTP_PORT or 587), bool(settings.SMTP_USER)
+    else:
+        ready, reason = cfg.ready()
+        host, port, user = cfg.host, int(cfg.port or 587), bool(cfg.user)
+
     if not ready:
         log.info("SMTP connection test skipped: %s", reason)
         return {"enabled": False, "ok": False, "reason": reason}
 
     try:
-        with _open_client():
-            return {
-                "enabled": True,
-                "ok": True,
-                "host": settings.SMTP_HOST,
-                "port": int(settings.SMTP_PORT or 587),
-                "authenticated": bool(settings.SMTP_USER),
-            }
+        with _open_client(cfg):
+            return {"enabled": True, "ok": True, "host": host, "port": port, "authenticated": user}
     except Exception as exc:  # noqa: BLE001
         log.exception("SMTP connection test failed")
-        return {
-            "enabled": True,
-            "ok": False,
-            "host": settings.SMTP_HOST,
-            "port": int(settings.SMTP_PORT or 587),
-            "authenticated": bool(settings.SMTP_USER),
-            "error": str(exc),
-        }
+        return {"enabled": True, "ok": False, "host": host, "port": port,
+                "authenticated": user, "error": str(exc)}
 
 
 def _send_bucket(message_ids: list[int], schema: str) -> list[dict[str, Any]]:
@@ -273,6 +273,7 @@ def _send_bucket(message_ids: list[int], schema: str) -> list[dict[str, Any]]:
     with use_company(schema):
         results: list[dict[str, Any]] = []
         db: Session = SessionLocal()
+        cfg = mail_config_service.get_smtp_config(db)  # effective config for this company
         client: smtplib.SMTP | None = None
         try:
             for mid in message_ids:
@@ -282,8 +283,8 @@ def _send_bucket(message_ids: list[int], schema: str) -> list[dict[str, Any]]:
                     continue
                 try:
                     if client is None:
-                        client = _open_client()
-                    em = _build_email(msg)
+                        client = _open_client(cfg)
+                    em = _build_email(msg, cfg.from_addr)
                     client.send_message(em)
                     _sync_delivery_state(db, msg, status="SENT")
                     db.commit()
@@ -324,12 +325,16 @@ def _send_bucket(message_ids: list[int], schema: str) -> list[dict[str, Any]]:
 
 
 def send_ready_messages(limit: int | None = None, *, schema: str | None = None) -> dict[str, Any]:
-    ready, reason = _config_ready()
+    active_schema = schema or get_current_schema()
+
+    db: Session = SessionLocal()
+    try:
+        ready, reason = mail_config_service.get_smtp_config(db).ready()
+    finally:
+        db.close()
     if not ready:
         log.info("Mail send worker disabled: %s", reason)
         return {"enabled": False, "reason": reason, "attempted": 0, "results": []}
-
-    active_schema = schema or get_current_schema()
 
     if limit is None:
         limit = int(getattr(settings, "MAIL_SEND_BATCH_LIMIT", 50) or 50)
@@ -384,15 +389,16 @@ def send_message_now(db: Session, message_id: int) -> dict[str, Any]:
     the message is left READY (retry counter bumped) for the cron to pick up,
     and this never raises. Uses the caller's session.
     """
-    ready, reason = _config_ready()
+    cfg = mail_config_service.get_smtp_config(db)
+    ready, reason = cfg.ready()
     if not ready:
         return {"enabled": False, "reason": reason, "sent": False}
     msg = db.get(CommunicationMessage, message_id)
     if msg is None or msg.direction != "OUTGOING" or msg.status != "READY":
         return {"enabled": True, "sent": False, "reason": "not a queued outgoing message"}
     try:
-        em = _build_email(msg)
-        _send_one(em)
+        em = _build_email(msg, cfg.from_addr)
+        _send_one(em, cfg)
         _sync_delivery_state(db, msg, status="SENT")
         db.commit()
         return {"enabled": True, "sent": True, "status": "SENT", "message_id": msg.id}

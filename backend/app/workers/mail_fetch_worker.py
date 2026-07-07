@@ -30,11 +30,13 @@ from ..services import (
     ai_insights_service,
     communication_message_service as msg_service,
     knowledge_indexer,
+    mail_config_service,
     mail_parser_service,
     notification_service,
     status_change_service,
     supplier_assignment_service,
 )
+from ..services.mail_config_service import ImapConfig
 
 log = logging.getLogger(__name__)
 
@@ -106,16 +108,16 @@ def _classify_customer_mail(subject: str | None, body: str | None) -> str:
     return "GENERAL"
 
 
-def _connect_imap() -> imaplib.IMAP4:
-    if settings.MAIL_INBOX_USE_SSL:
-        return imaplib.IMAP4_SSL(settings.IMAP_HOST, settings.IMAP_PORT)
-    return imaplib.IMAP4(settings.IMAP_HOST, settings.IMAP_PORT)
+def _connect_imap(cfg: ImapConfig) -> imaplib.IMAP4:
+    if cfg.use_ssl:
+        return imaplib.IMAP4_SSL(cfg.host, cfg.port)
+    return imaplib.IMAP4(cfg.host, cfg.port)
 
 
-def _connect_pop3() -> poplib.POP3:
-    if settings.MAIL_INBOX_USE_SSL:
-        return poplib.POP3_SSL(settings.IMAP_HOST, settings.IMAP_PORT, timeout=30)
-    return poplib.POP3(settings.IMAP_HOST, settings.IMAP_PORT, timeout=30)
+def _connect_pop3(cfg: ImapConfig) -> poplib.POP3:
+    if cfg.use_ssl:
+        return poplib.POP3_SSL(cfg.host, cfg.port, timeout=30)
+    return poplib.POP3(cfg.host, cfg.port, timeout=30)
 
 
 def _process_one(
@@ -339,9 +341,10 @@ def _fetch_imap_messages(
     db: Session,
     client: imaplib.IMAP4,
     limit: int,
+    cfg: ImapConfig,
 ) -> dict[str, Any]:
-    client.login(settings.IMAP_USER, settings.IMAP_PASSWORD)
-    client.select(settings.IMAP_FOLDER or "INBOX")
+    client.login(cfg.user, cfg.password)
+    client.select(cfg.folder or "INBOX")
 
     typ, data = client.search(None, "UNSEEN")
     if typ != "OK":
@@ -387,9 +390,10 @@ def _fetch_pop3_messages(
     db: Session,
     client: poplib.POP3,
     limit: int,
+    cfg: ImapConfig,
 ) -> dict[str, Any]:
-    client.user(settings.IMAP_USER)
-    client.pass_(settings.IMAP_PASSWORD)
+    client.user(cfg.user)
+    client.pass_(cfg.password)
 
     message_count, _ = client.stat()
     if message_count <= 0:
@@ -445,13 +449,19 @@ def fetch_supplier_mails(limit: int = 50) -> dict[str, Any]:
     Returns a structured summary. Never raises if disabled/misconfigured —
     caller can treat that as a no-op.
     """
-    ready, reason = _config_ready()
+    db: Session = SessionLocal()
+    try:
+        cfg = mail_config_service.get_imap_config(db)
+    finally:
+        db.close()
+
+    ready, reason = cfg.ready()
     if not ready:
         log.info("Mail fetch worker disabled: %s", reason)
         return {
             "enabled": False,
             "reason": reason,
-            "protocol": settings.MAIL_FETCH_PROTOCOL,
+            "protocol": cfg.protocol,
             "fetched": 0,
             "processed": [],
         }
@@ -459,17 +469,17 @@ def fetch_supplier_mails(limit: int = 50) -> dict[str, Any]:
     db: Session = SessionLocal()
     client: imaplib.IMAP4 | poplib.POP3 | None = None
     try:
-        if settings.MAIL_FETCH_PROTOCOL == "POP3":
-            client = _connect_pop3()
-            return _fetch_pop3_messages(db, client, limit)
+        if cfg.protocol == "POP3":
+            client = _connect_pop3(cfg)
+            return _fetch_pop3_messages(db, client, limit, cfg)
 
-        client = _connect_imap()
-        return _fetch_imap_messages(db, client, limit)
+        client = _connect_imap(cfg)
+        return _fetch_imap_messages(db, client, limit, cfg)
     except Exception as exc:  # noqa: BLE001
         log.exception("Mail fetch worker error")
         return {
             "enabled": True,
-            "protocol": settings.MAIL_FETCH_PROTOCOL,
+            "protocol": cfg.protocol,
             "fetched": 0,
             "processed": [],
             "error": str(exc),
@@ -486,51 +496,53 @@ def fetch_supplier_mails(limit: int = 50) -> dict[str, Any]:
         db.close()
 
 
-def test_inbox_connection() -> dict[str, Any]:
-    """Quick connectivity + auth check for the configured inbox."""
-    ready, reason = _config_ready()
+def test_inbox_connection(cfg: ImapConfig | None = None) -> dict[str, Any]:
+    """Quick connectivity + auth check for a mailbox. With no `cfg`, tests the env
+    mailbox (legacy); the settings API passes the effective per-company config."""
+    cfg = cfg or mail_config_service.env_imap_config()
+    ready, reason = cfg.ready()
     if not ready:
         return {
             "enabled": False,
             "ok": False,
-            "protocol": settings.MAIL_FETCH_PROTOCOL,
+            "protocol": cfg.protocol,
             "reason": reason,
         }
 
     client: imaplib.IMAP4 | poplib.POP3 | None = None
     try:
-        if settings.MAIL_FETCH_PROTOCOL == "POP3":
-            client = _connect_pop3()
-            client.user(settings.IMAP_USER)
-            client.pass_(settings.IMAP_PASSWORD)
+        if cfg.protocol == "POP3":
+            client = _connect_pop3(cfg)
+            client.user(cfg.user)
+            client.pass_(cfg.password)
             count, _ = client.stat()
             return {
                 "enabled": True,
                 "ok": True,
                 "protocol": "POP3",
-                "host": settings.IMAP_HOST,
-                "port": int(settings.IMAP_PORT or 0),
+                "host": cfg.host,
+                "port": int(cfg.port or 0),
                 "mailbox_count": int(count),
             }
-        client = _connect_imap()
-        client.login(settings.IMAP_USER, settings.IMAP_PASSWORD)
-        client.select(settings.IMAP_FOLDER or "INBOX")
+        client = _connect_imap(cfg)
+        client.login(cfg.user, cfg.password)
+        client.select(cfg.folder or "INBOX")
         return {
             "enabled": True,
             "ok": True,
             "protocol": "IMAP",
-            "host": settings.IMAP_HOST,
-            "port": int(settings.IMAP_PORT or 0),
-            "folder": settings.IMAP_FOLDER or "INBOX",
+            "host": cfg.host,
+            "port": int(cfg.port or 0),
+            "folder": cfg.folder or "INBOX",
         }
     except Exception as exc:  # noqa: BLE001
         log.exception("Inbox connection test failed")
         return {
             "enabled": True,
             "ok": False,
-            "protocol": settings.MAIL_FETCH_PROTOCOL,
-            "host": settings.IMAP_HOST,
-            "port": int(settings.IMAP_PORT or 0),
+            "protocol": cfg.protocol,
+            "host": cfg.host,
+            "port": int(cfg.port or 0),
             "error": str(exc),
         }
     finally:

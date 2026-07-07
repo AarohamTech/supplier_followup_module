@@ -8,24 +8,11 @@ import type {
   CronJobRow,
   DraftRule,
   MailEngineHealth,
-  MailEngineSnapshot,
 } from "@/lib/types";
 import { signalClass } from "@/lib/format";
 import PageHeader from "@/components/layout/PageHeader";
+import MainMailboxSettings from "@/components/settings/MainMailboxSettings";
 import { Settings } from "lucide-react";
-
-type TestResult = {
-  ok?: boolean;
-  enabled?: boolean;
-  host?: string;
-  port?: number;
-  authenticated?: boolean;
-  folder?: string;
-  protocol?: string;
-  mailbox_count?: number;
-  reason?: string;
-  error?: string;
-};
 
 const SCHEDULER_FIELDS: { key: string; label: string }[] = [
   { key: "MAIL_FETCH_INTERVAL_MINUTES", label: "Mail Fetch (min)" },
@@ -63,7 +50,6 @@ function formatDateTime(value: string | null | undefined) {
 }
 
 export default function SettingsPage() {
-  const [snapshot, setSnapshot] = useState<MailEngineSnapshot | null>(null);
   const [health, setHealth] = useState<MailEngineHealth | null>(null);
   const [cronJobs, setCronJobs] = useState<CronJobRow[]>([]);
   const [cronLogs, setCronLogs] = useState<CronJobLog[]>([]);
@@ -71,8 +57,6 @@ export default function SettingsPage() {
   const [scheduler, setScheduler] = useState<Record<string, number>>({});
   const [followup, setFollowup] = useState<Record<string, number>>({});
   const [message, setMessage] = useState<string | null>(null);
-  const [smtpTest, setSmtpTest] = useState<TestResult | null>(null);
-  const [imapTest, setImapTest] = useState<TestResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [digest, setDigest] = useState<AdminDigestConfig | null>(null);
@@ -81,8 +65,7 @@ export default function SettingsPage() {
   const refreshAll = useCallback(async () => {
     setLoading(true);
     try {
-      const [snap, jobsResp, sch, logs, healthSnap, draftResp, digestResp] = await Promise.all([
-        api.getMailEngineSnapshot(),
+      const [jobsResp, sch, logs, healthSnap, draftResp, digestResp] = await Promise.all([
         api.listCronJobs(),
         api.getSchedulerSettings(),
         api.getCronJobLogs({ limit: 20 }),
@@ -90,7 +73,6 @@ export default function SettingsPage() {
         api.listDraftRules(),
         api.getAdminDigest().catch(() => null),
       ]);
-      setSnapshot(snap);
       setCronJobs(jobsResp.jobs || []);
       setScheduler(sch.scheduler_intervals_minutes || {});
       setFollowup(sch.followup_intervals_hours || {});
@@ -122,24 +104,6 @@ export default function SettingsPage() {
     } finally {
       setBusyKey(null);
     }
-  }
-
-  async function handleTestSmtp() {
-    await runWithBusy("test-smtp", async () => {
-      const result = await api.testSmtp();
-      setSmtpTest(result as TestResult);
-      if ((result as TestResult).ok) setMessage("SMTP connection successful.");
-      else setMessage(`SMTP test failed: ${(result as TestResult).error || (result as TestResult).reason || "unknown"}`);
-    });
-  }
-
-  async function handleTestImap() {
-    await runWithBusy("test-imap", async () => {
-      const result = await api.testImap();
-      setImapTest(result as TestResult);
-      if ((result as TestResult).ok) setMessage("Inbox connection successful.");
-      else setMessage(`Inbox test failed: ${(result as TestResult).error || (result as TestResult).reason || "unknown"}`);
-    });
   }
 
   async function handleSaveScheduler() {
@@ -252,8 +216,6 @@ export default function SettingsPage() {
     });
   }
 
-  const smtp = snapshot?.smtp;
-  const imap = snapshot?.imap;
 
   const queueSummary = useMemo(() => {
     if (!health) return null;
@@ -300,94 +262,8 @@ export default function SettingsPage() {
         <div className="card p-3 text-xs text-brand-muted">{message}</div>
       )}
 
-      {/* SMTP + IMAP cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="card p-5 space-y-3">
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="font-semibold text-sm">SMTP (Outbound)</div>
-              <div className="text-xs text-brand-muted">
-                Credentials are read from <code>.env</code> at startup. Use the test button to verify reachability.
-              </div>
-            </div>
-            <button
-              type="button"
-              disabled={busyKey === "test-smtp"}
-              onClick={handleTestSmtp}
-              className="btn-dark"
-            >
-              {busyKey === "test-smtp" ? "Testing…" : "Test Connection"}
-            </button>
-          </div>
-          <dl className="text-xs grid grid-cols-3 gap-2">
-            <dt className="text-brand-muted">Enabled</dt>
-            <dd className="col-span-2">{smtp?.enabled ? "Yes" : "No"}</dd>
-            <dt className="text-brand-muted">Host</dt>
-            <dd className="col-span-2">{smtp?.host || "—"}</dd>
-            <dt className="text-brand-muted">Port</dt>
-            <dd className="col-span-2">{smtp?.port || "—"}</dd>
-            <dt className="text-brand-muted">User</dt>
-            <dd className="col-span-2">{smtp?.user || "—"}</dd>
-            <dt className="text-brand-muted">Password</dt>
-            <dd className="col-span-2">{smtp?.password_masked || "—"}</dd>
-            <dt className="text-brand-muted">From</dt>
-            <dd className="col-span-2">{smtp?.from || "—"}</dd>
-          </dl>
-          {smtpTest && (
-            <div
-              className={`text-xs px-2 py-1 rounded ${statusBadge(smtpTest.ok ? "OK" : "ERROR")}`}
-            >
-              {smtpTest.ok
-                ? `Connection OK${smtpTest.authenticated ? " · authenticated" : ""}`
-                : `Failed: ${smtpTest.error || smtpTest.reason || "unknown"}`}
-            </div>
-          )}
-        </div>
-
-        <div className="card p-5 space-y-3">
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="font-semibold text-sm">Inbox ({imap?.protocol || "IMAP"})</div>
-              <div className="text-xs text-brand-muted">
-                Configured via <code>.env</code>. Verify mailbox access before enabling auto-fetch.
-              </div>
-            </div>
-            <button
-              type="button"
-              disabled={busyKey === "test-imap"}
-              onClick={handleTestImap}
-              className="btn-dark"
-            >
-              {busyKey === "test-imap" ? "Testing…" : "Test Connection"}
-            </button>
-          </div>
-          <dl className="text-xs grid grid-cols-3 gap-2">
-            <dt className="text-brand-muted">Enabled</dt>
-            <dd className="col-span-2">{imap?.enabled ? "Yes" : "No"}</dd>
-            <dt className="text-brand-muted">Protocol</dt>
-            <dd className="col-span-2">{imap?.protocol || "—"}</dd>
-            <dt className="text-brand-muted">SSL</dt>
-            <dd className="col-span-2">{imap?.use_ssl ? "Yes" : "No"}</dd>
-            <dt className="text-brand-muted">Host</dt>
-            <dd className="col-span-2">{imap?.host || "—"}</dd>
-            <dt className="text-brand-muted">Port</dt>
-            <dd className="col-span-2">{imap?.port || "—"}</dd>
-            <dt className="text-brand-muted">User</dt>
-            <dd className="col-span-2">{imap?.user || "—"}</dd>
-            <dt className="text-brand-muted">Folder</dt>
-            <dd className="col-span-2">{imap?.folder || "—"}</dd>
-          </dl>
-          {imapTest && (
-            <div
-              className={`text-xs px-2 py-1 rounded ${statusBadge(imapTest.ok ? "OK" : "ERROR")}`}
-            >
-              {imapTest.ok
-                ? `Connection OK${imapTest.mailbox_count !== undefined ? ` · mailbox=${imapTest.mailbox_count}` : ""}`
-                : `Failed: ${imapTest.error || imapTest.reason || "unknown"}`}
-            </div>
-          )}
-        </div>
-      </div>
+      {/* Editable main mailbox credentials (admin-only) */}
+      <MainMailboxSettings />
 
       {/* Cron jobs */}
       <div className="card p-5 space-y-3">

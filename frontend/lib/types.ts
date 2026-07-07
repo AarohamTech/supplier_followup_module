@@ -818,6 +818,50 @@ export interface MailEngineSnapshot {
   scheduler_enabled: boolean;
 }
 
+// Editable main mailbox credentials (effective per-company config; passwords masked).
+export interface MailConfig {
+  smtp: {
+    enabled: boolean;
+    host: string;
+    port: number;
+    user: string;
+    from: string;
+    password_masked: string;
+    password_set: boolean;
+  };
+  imap: {
+    enabled: boolean;
+    protocol: string;
+    use_ssl: boolean;
+    host: string;
+    port: number;
+    user: string;
+    folder: string;
+    password_masked: string;
+    password_set: boolean;
+  };
+}
+
+export interface SmtpConfigInput {
+  enabled: boolean;
+  host: string;
+  port: number;
+  user: string;
+  from: string;
+  password?: string; // blank/omitted keeps the stored password
+}
+
+export interface ImapConfigInput {
+  enabled: boolean;
+  protocol: string;
+  use_ssl: boolean;
+  host: string;
+  port: number;
+  user: string;
+  folder: string;
+  password?: string;
+}
+
 export interface DraftRule {
   id: number;
   template_name: string;
