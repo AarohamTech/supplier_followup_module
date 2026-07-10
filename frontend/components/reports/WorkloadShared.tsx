@@ -149,9 +149,13 @@ export function PendingPoTable({ rows, showSupplier }: { rows: WorkloadPendingPo
               <th className="px-4 py-2 font-semibold">PO No.</th>
               <th className="px-3 py-2 font-semibold">Material</th>
               {showSupplier && <th className="px-3 py-2 font-semibold">Supplier</th>}
+              <th className="px-3 py-2 font-semibold">Customer</th>
+              <th className="px-3 py-2 font-semibold">Customer PO</th>
               <th className="px-3 py-2 font-semibold">Signal</th>
               <th className="px-3 py-2 text-right font-semibold">Qty</th>
+              <th className="px-3 py-2 text-right font-semibold">Stock</th>
               <th className="px-3 py-2 font-semibold">Status</th>
+              <th className="px-3 py-2 text-right font-semibold">PO date</th>
               <th className="px-3 py-2 text-right font-semibold">Ship date</th>
               <th className="px-3 py-2 text-right font-semibold">Days overdue</th>
               <th className="px-3 py-2 text-right font-semibold">Follow-ups</th>
@@ -166,13 +170,24 @@ export function PendingPoTable({ rows, showSupplier }: { rows: WorkloadPendingPo
                   <div className="truncate text-brand-dark" title={r.material_name}>{r.material_name}</div>
                 </td>
                 {showSupplier && <td className="max-w-[160px] truncate px-3 py-2 text-brand-dark">{r.supplier_name || "—"}</td>}
+                <td className="max-w-[180px] px-3 py-2">
+                  <div className="truncate text-brand-dark" title={r.customer_name || undefined}>{r.customer_name || "—"}</div>
+                </td>
+                <td className="max-w-[150px] px-3 py-2">
+                  <div className="truncate text-brand-dark" title={r.customer_po_no || undefined}>{r.customer_po_no || "—"}</div>
+                  {r.customer_po_date && <div className="text-[10px] text-brand-muted">{fmtDate(r.customer_po_date)}</div>}
+                </td>
                 <td className="px-3 py-2">
                   {r.signal ? <span className={`badge ${signalChip(r.signal)}`}>{r.signal}</span> : <span className="text-brand-muted">—</span>}
                 </td>
                 <td className="px-3 py-2 text-right tabular-nums text-brand-dark">
                   {r.qty != null ? `${r.qty.toLocaleString()}${r.uom ? ` ${r.uom}` : ""}` : "—"}
                 </td>
+                <td className="px-3 py-2 text-right tabular-nums text-brand-dark">
+                  {r.stock != null ? r.stock.toLocaleString() : "—"}
+                </td>
                 <td className="px-3 py-2 text-brand-dark">{r.po_status || "—"}</td>
+                <td className="px-3 py-2 text-right text-brand-dark">{r.supplier_date ? fmtDate(r.supplier_date) : "—"}</td>
                 <td className="px-3 py-2 text-right text-brand-dark">{r.shipment_date ? fmtDate(r.shipment_date) : "—"}</td>
                 <td className="px-3 py-2 text-right"><Num v={r.days_overdue ?? 0} warn /></td>
                 <td className="px-3 py-2 text-right"><Num v={r.followup_count} /></td>
@@ -181,7 +196,7 @@ export function PendingPoTable({ rows, showSupplier }: { rows: WorkloadPendingPo
             ))}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={showSupplier ? 10 : 9} className="px-4 py-8 text-center text-brand-muted">Nothing pending. 🎉</td>
+                <td colSpan={showSupplier ? 14 : 13} className="px-4 py-8 text-center text-brand-muted">Nothing pending. 🎉</td>
               </tr>
             )}
           </tbody>

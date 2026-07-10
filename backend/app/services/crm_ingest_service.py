@@ -246,9 +246,14 @@ _CUSTOMER_NAME_KEYS = (
 _CUSTOMER_PO_KEYS = (
     "CustomerPoNo", "CustPoNo", "CustomerPONo", "PartyPoNo", "CustomerRefNo",
     "CustPoNumber", "CustomerOrderNo",
+    # Live feed (verified 2026-07-10): RefTrnNo is the customer-order transaction
+    # this PO serves — the closest thing to a customer PO number the feed carries.
+    # If Hariom adds the customer's own document number later, list it above.
+    "RefTrnNo",
 )
 _CUSTOMER_PO_DATE_KEYS = (
     "CustomerPoDate", "CustPoDate", "PartyPoDate", "CustomerOrderDate", "PoDate",
+    "RefTrnDate",
 )
 
 

@@ -71,12 +71,26 @@ def request_cancellation(
             r.cancel_remark = remark
     db.commit()
 
+    # The PO chain starts from a customer order, so the ERP request carries the
+    # customer context per line (name, order ref/date) plus the supplier PO date.
+    lines = [
+        {
+            "CrmNo": r.crm_no,
+            "MaterialName": r.material_name,
+            "Qty": float(r.qty) if r.qty is not None else None,
+            "CustomerName": r.customer_name,
+            "CustomerPoNo": r.po_no if r.po_no != r.supplier_po_no else None,
+            "CustomerPoDate": r.po_date.isoformat() if r.po_date else None,
+        }
+        for r in rows
+    ]
     external = _raise_external_cancel(
         supplier_po_no=supplier_po_no,
         supplier_name=supplier_name,
+        po_date=rows[0].supplier_date.isoformat() if rows[0].supplier_date else None,
         requested_by=requested_by,
         remark=remark,
-        record_ids=[r.id for r in rows],
+        lines=lines,
     )
     return {
         "supplier_po_no": supplier_po_no,

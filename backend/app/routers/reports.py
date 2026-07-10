@@ -349,6 +349,7 @@ def _pending_po_rows(db: Session, clause: Any) -> list[dict[str, Any]]:
             "material_name": r.material_name,
             "qty": float(r.qty) if r.qty is not None else None,
             "uom": r.uom,
+            "stock": float(r.stock) if r.stock is not None else None,
             "signal": r.signal,
             "po_status": r.po_status,
             "shipment_date": r.shipment_date,
@@ -356,6 +357,12 @@ def _pending_po_rows(db: Session, clause: Any) -> list[dict[str, Any]]:
             "followup_count": r.followup_count or 0,
             "commitment_date": r.commitment_date,
             "escalation_level": r.escalation_level,
+            # Customer chain: whose order this PO serves + the customer's order
+            # reference/date, and the supplier PO date.
+            "customer_name": r.customer_name,
+            "customer_po_no": r.po_no if r.po_no != r.supplier_po_no else None,
+            "customer_po_date": r.po_date,
+            "supplier_date": r.supplier_date,
         }
         for r in rows
     ]
@@ -586,7 +593,8 @@ def _xlsx_response(data: bytes, filename: str) -> StreamingResponse:
 
 
 _PENDING_PO_HEADERS = [
-    "PO No", "Supplier", "Material", "Qty", "UOM", "Signal", "PO Status",
+    "PO No", "Supplier", "Material", "Qty", "UOM", "Stock", "Signal", "PO Status",
+    "Customer", "Customer PO No", "Customer PO Date", "PO Date",
     "Shipment Date", "Days Overdue", "Follow-ups", "Commitment Date", "Escalation",
 ]
 _OPEN_TASK_HEADERS = [
@@ -598,7 +606,10 @@ _OPEN_TASK_HEADERS = [
 def _pending_po_sheet_rows(rows: list[dict[str, Any]]) -> list[list[Any]]:
     return [
         [r["supplier_po_no"], r["supplier_name"], r["material_name"], r["qty"], r["uom"],
-         r["signal"], r["po_status"], r["shipment_date"], r["days_overdue"],
+         r.get("stock"), r["signal"], r["po_status"],
+         r.get("customer_name"), r.get("customer_po_no"), r.get("customer_po_date"),
+         r.get("supplier_date"),
+         r["shipment_date"], r["days_overdue"],
          r["followup_count"], r["commitment_date"], r["escalation_level"]]
         for r in rows
     ]

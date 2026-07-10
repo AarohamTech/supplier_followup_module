@@ -449,6 +449,11 @@ export interface WorkloadPendingPo {
   followup_count: number;
   commitment_date?: string | null;
   escalation_level?: string | null;
+  stock?: number | null;
+  customer_name?: string | null;
+  customer_po_no?: string | null;
+  customer_po_date?: string | null;
+  supplier_date?: string | null; // supplier PO date
 }
 
 export interface WorkloadOpenTask {

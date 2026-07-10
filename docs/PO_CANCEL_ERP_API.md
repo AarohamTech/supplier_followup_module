@@ -21,17 +21,30 @@ Body:
       "CompanyId": "102",
       "PoNo": "000449",
       "SupplierName": "VEDANT TOOLS PVT LTD",
+      "PoDate": "2026-06-14",
       "RequestedBy": "1010000028",
       "Remark": "Material no longer required",
       "RequestedAt": "2026-07-10T18:30:00Z",
-      "CrmNos": ["2526-012467", "2526-012468"]
+      "Lines": [
+        {
+          "CrmNo": "2526-012467",
+          "MaterialName": "BLIND SLEEVE 70 X 100",
+          "Qty": 1800,
+          "CustomerName": "SHRIRAM FOUNDRY PVT LTD - DEWAS",
+          "CustomerPoNo": "119262770111000130",
+          "CustomerPoDate": "2026-06-10"
+        }
+      ]
     }
 
 Notes:
 - PoNo is the CRM PoNo. SupplierName is needed because PoNo repeats across suppliers.
+- PoDate is the supplier PO date.
 - RequestedBy is the employee code (or email) of the person who raised the request.
 - Remark is the reason typed by the requester (max 500 chars).
-- CrmNos lists the CRM lines under that PO.
+- Lines lists each CRM line under that PO with its customer context: the end
+  customer the PO serves, the customer order reference (RefTrnNo) and its date.
+  Lines from a PO not linked to any customer (direct PO) have CustomerName null.
 
 Expected immediate response:
 
