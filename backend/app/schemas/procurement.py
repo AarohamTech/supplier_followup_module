@@ -50,6 +50,13 @@ class ProcurementBase(BaseModel):
     customer_name: Optional[str] = None
     customer_po_no: Optional[str] = None
     po_date: Optional[date] = None
+    # Receipt quantities from the CRM desk feed: PoQty (ordered), GrnQty (received
+    # at Hariom), PendQty (still to receive). po_type flags "Open" POs whose
+    # quantities are unreliable.
+    po_type: Optional[str] = None
+    po_qty: Optional[float] = None
+    grn_qty: Optional[float] = None
+    pending_qty: Optional[float] = None
 
     @field_validator("supplier_date", "po_date", mode="before")
     @classmethod
@@ -100,6 +107,8 @@ class ProcurementOut(ProcurementBase):
 
     id: int
     po_no: Optional[str] = None  # end-customer PO (same value as customer_po_no)
+    # Derived at ingest from the receipt quantities: PENDING / PARTIAL / COMPLETED.
+    receipt_status: Optional[str] = None
     followup_status: str
     mail_status: str
     followup_count: int

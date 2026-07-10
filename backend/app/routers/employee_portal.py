@@ -168,6 +168,10 @@ def po_materials(
             rate=float(r.rate) if r.rate is not None else None,
             lead_time=r.lead_time,
             commitment_date=_as_dt(r.commitment_date),
+            po_qty=float(r.po_qty) if r.po_qty is not None else None,
+            grn_qty=float(r.grn_qty) if r.grn_qty is not None else None,
+            pending_qty=float(r.pending_qty) if r.pending_qty is not None else None,
+            receipt_status=r.receipt_status,
         )
         for r in rows
     ]

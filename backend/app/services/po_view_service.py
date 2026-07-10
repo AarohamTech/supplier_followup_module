@@ -68,6 +68,17 @@ def grouped_pos(
     ).label("escalated")
     signal_c = func.max(sig_rank).label("signal_rank")
     cancel_c = func.max(cancel_rank).label("cancel_rank")
+    # Receipt progress rollup: a PO is COMPLETED only when every line is COMPLETED;
+    # any received progress on any line makes it PARTIAL.
+    completed_c = func.sum(
+        case((func.upper(func.coalesce(R.receipt_status, "")) == "COMPLETED", 1), else_=0)
+    ).label("completed_lines")
+    progressed_c = func.sum(
+        case((func.upper(func.coalesce(R.receipt_status, "")).in_(["COMPLETED", "PARTIAL"]), 1), else_=0)
+    ).label("progressed_lines")
+    tracked_c = func.sum(
+        case((R.receipt_status.isnot(None), 1), else_=0)
+    ).label("tracked_lines")
     name_key = func.upper(func.coalesce(R.supplier_name, ""))
 
     base = select(
@@ -78,6 +89,9 @@ def grouped_pos(
         signal_c,
         escalated,
         cancel_c,
+        completed_c,
+        progressed_c,
+        tracked_c,
         func.min(R.shipment_date).label("earliest"),
         func.max(R.po_status).label("po_status"),
     ).where(R.supplier_po_no.isnot(None))
@@ -102,14 +116,27 @@ def grouped_pos(
     items: list[dict[str, Any]] = []
     keys: list[tuple[str, str]] = []
     for r in rows:
+        material_count = int(r.material_count or 0)
+        completed = int(r.completed_lines or 0)
+        progressed = int(r.progressed_lines or 0)
+        tracked = int(r.tracked_lines or 0)
+        if tracked > 0 and completed == material_count:
+            receipt = "COMPLETED"
+        elif progressed > 0:
+            receipt = "PARTIAL"
+        elif tracked > 0:
+            receipt = "PENDING"
+        else:
+            receipt = None
         items.append({
             "supplier_po_no": r.po,
             "crm_no": r.crm_no,
             "supplier_name": r.supplier_name,
-            "material_count": int(r.material_count or 0),
+            "material_count": material_count,
             "overall_signal": _SIGNAL_LABEL.get(int(r.signal_rank or 0)),
             "po_status": r.po_status,
             "cancellation_status": _CANCEL_LABEL.get(int(r.cancel_rank or 0)),
+            "receipt_status": receipt,
             "earliest_shipment_date": _as_dt(r.earliest),
             "escalated": bool(r.escalated),
             "unread_inbound": 0,
@@ -161,6 +188,11 @@ def _material(r: ProcurementRecord) -> dict[str, Any]:
         "rate": float(r.rate) if r.rate is not None else None,
         "lead_time": r.lead_time,
         "commitment_date": _as_dt(r.commitment_date),
+        # Receipt progress from the CRM desk feed (GRN quantities).
+        "po_qty": float(r.po_qty) if r.po_qty is not None else None,
+        "grn_qty": float(r.grn_qty) if r.grn_qty is not None else None,
+        "pending_qty": float(r.pending_qty) if r.pending_qty is not None else None,
+        "receipt_status": r.receipt_status,
     }
 
 

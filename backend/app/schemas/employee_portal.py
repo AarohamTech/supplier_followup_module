@@ -29,6 +29,8 @@ class EmployeePo(BaseModel):
     po_status: Optional[str] = None
     # NULL / "PENDING" (cancel requested, awaiting confirmation) / "CANCELLED".
     cancellation_status: Optional[str] = None
+    # Receipt rollup from CRM GRN quantities: PENDING / PARTIAL / COMPLETED.
+    receipt_status: Optional[str] = None
     earliest_shipment_date: Optional[datetime] = None
     escalated: bool = False
     # Unread supplier replies (INCOMING, not yet read) on this PO.
@@ -53,3 +55,8 @@ class EmployeePoMaterial(BaseModel):
     rate: Optional[float] = None
     lead_time: Optional[int] = None
     commitment_date: Optional[datetime] = None
+    # Receipt quantities from the CRM desk feed (GRN progress).
+    po_qty: Optional[float] = None
+    grn_qty: Optional[float] = None
+    pending_qty: Optional[float] = None
+    receipt_status: Optional[str] = None

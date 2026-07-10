@@ -75,6 +75,17 @@ class ProcurementRecord(Base):
     risk_reason: Mapped[str | None] = mapped_column(String(500))
     risk_scored_at: Mapped[datetime | None] = mapped_column(DateTime)
 
+    # Receipt quantities from the CRM desk feed (GetPendingUserDesk):
+    # po_qty = ordered qty, grn_qty = material inward (received) at Hariom,
+    # pending_qty = still to receive. receipt_status is derived at ingest:
+    # PENDING / PARTIAL / COMPLETED (pending_qty <= 0); NULL when the feed has no
+    # quantities or the PO is an "Open" type (quantities unreliable per Hariom IT).
+    po_type: Mapped[str | None] = mapped_column(String(32))
+    po_qty: Mapped[float | None] = mapped_column(Numeric(18, 3))
+    grn_qty: Mapped[float | None] = mapped_column(Numeric(18, 3))
+    pending_qty: Mapped[float | None] = mapped_column(Numeric(18, 3))
+    receipt_status: Mapped[str | None] = mapped_column(String(16), index=True)
+
     # PO cancellation request lifecycle. NULL = not requested; "PENDING" = a cancel
     # was raised and is awaiting external (CRM) confirmation; "CANCELLED" = confirmed.
     cancellation_status: Mapped[str | None] = mapped_column(String(32), index=True)

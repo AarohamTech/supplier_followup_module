@@ -1449,6 +1449,7 @@ export interface EmployeePo {
   overall_signal?: string | null;
   po_status?: string | null;
   cancellation_status?: string | null;
+  receipt_status?: string | null; // PENDING / PARTIAL / COMPLETED (GRN rollup)
   earliest_shipment_date?: string | null;
   unread_inbound?: number;
   escalated: boolean;
@@ -1496,6 +1497,11 @@ export interface EmployeePoMaterial {
   rate?: number | null;
   lead_time?: number | null;
   commitment_date?: string | null;
+  // Receipt quantities from the CRM desk feed (GRN progress).
+  po_qty?: number | null;
+  grn_qty?: number | null;
+  pending_qty?: number | null;
+  receipt_status?: string | null;
 }
 
 export interface EmployeeCredential {

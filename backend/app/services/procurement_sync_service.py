@@ -20,7 +20,7 @@ log = logging.getLogger(__name__)
 REQUIRED_KEY_FIELDS = ("crm_no", "supplier_po_no", "material_name")
 DATE_FIELDS = {"supplier_date", "po_date"}
 DATETIME_FIELDS = {"shipment_date"}
-NUMERIC_FIELDS = {"stock", "qty", "quantity", "rate"}
+NUMERIC_FIELDS = {"stock", "qty", "quantity", "rate", "po_qty", "grn_qty", "pending_qty"}
 INTEGER_FIELDS = {"lead_time"}
 STRING_FIELDS = {
     "crm_no",
@@ -34,12 +34,13 @@ STRING_FIELDS = {
     "owner_emp_code",
     "customer_name",
     "customer_po_no",
+    "po_type",
 }
 
 UPDATABLE_FROM_SOURCE = (
     "uom", "lead_time", "shipment_date", "signal", "stock", "qty",
     "po_status", "adv_status", "supplier_date", "supplier_name", "quantity", "rate",
-    "owner_emp_code",
+    "owner_emp_code", "po_type", "po_qty", "grn_qty", "pending_qty",
 )
 
 ACCEPTED_EXCEL_COLUMNS = [

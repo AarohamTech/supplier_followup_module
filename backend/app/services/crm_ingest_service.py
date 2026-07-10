@@ -263,7 +263,40 @@ def map_row(row: dict[str, Any]) -> dict[str, Any]:
         "customer_name": _customer_name(row),
         "customer_po_no": _first(row, _CUSTOMER_PO_KEYS),
         "po_date": _first(row, _CUSTOMER_PO_DATE_KEYS),
+        # Receipt quantities (Hariom User Desk API): PoQty = ordered, GrnQty =
+        # material inward at Hariom, PendQty = still to receive. Candidate keys are
+        # defensive; the "[crm] desk row keys" log confirms the real names in prod.
+        "po_type": row.get("PoType") or row.get("POType"),
+        "po_qty": _first(row, ("PoQty", "POQty")),
+        "grn_qty": _first(row, ("GrnQty", "GrrQty", "GRNQty")),
+        "pending_qty": _first(row, ("PendQty", "PendingQty", "PendedQty")),
     }
+
+
+def _receipt_status(payload: dict[str, Any]) -> str | None:
+    """Derive PENDING / PARTIAL / COMPLETED from the receipt quantities.
+
+    None when the feed carries no quantities, or for "Open" POs — Hariom IT says
+    Open-type quantities are unreliable (PoQty is echoed as PendQty).
+    """
+    if str(payload.get("po_type") or "").strip().upper() == "OPEN":
+        return None
+
+    def _num(v: Any) -> float | None:
+        try:
+            return float(v) if v is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    pend = _num(payload.get("pending_qty"))
+    grn = _num(payload.get("grn_qty"))
+    if pend is None and grn is None:
+        return None
+    if pend is not None and pend <= 0:
+        return "COMPLETED"
+    if grn is not None and grn > 0:
+        return "PARTIAL"
+    return "PENDING"
 
 
 # ── bulk upsert ───────────────────────────────────────────────────────────────
@@ -306,6 +339,11 @@ def _col_values(payload: dict[str, Any]) -> dict[str, Any]:
         "po_no": payload.get("customer_po_no") or payload["supplier_po_no"],
         "customer_name": payload.get("customer_name"),
         "po_date": payload.get("po_date"),
+        "po_type": payload.get("po_type"),
+        "po_qty": payload.get("po_qty"),
+        "grn_qty": payload.get("grn_qty"),
+        "pending_qty": payload.get("pending_qty"),
+        "receipt_status": _receipt_status(payload),
         "followup_status": rule.followup_status,
         "escalation_level": rule.escalation_level,
         "ai_required": rule.ai_required,
@@ -325,6 +363,7 @@ _HASH_FIELDS = (
     "signal", "po_status", "adv_status", "shipment_date", "qty", "rate", "stock",
     "supplier_name", "supplier_date", "lead_time", "uom", "owner_emp_code", "quantity",
     "customer_name", "customer_po_no", "po_date",
+    "po_type", "po_qty", "grn_qty", "pending_qty",
 )
 
 
@@ -413,6 +452,11 @@ def _bulk_upsert(db: Session, raw_rows: list[dict[str, Any]]) -> tuple[int, int,
                 "po_no": stmt.excluded.po_no,
                 "customer_name": stmt.excluded.customer_name,
                 "po_date": stmt.excluded.po_date,
+                "po_type": stmt.excluded.po_type,
+                "po_qty": stmt.excluded.po_qty,
+                "grn_qty": stmt.excluded.grn_qty,
+                "pending_qty": stmt.excluded.pending_qty,
+                "receipt_status": stmt.excluded.receipt_status,
                 "source_hash": stmt.excluded.source_hash,
                 "followup_status": case(
                     (sig == "GREEN", "PENDING_ACK"),

@@ -570,6 +570,12 @@ def create_po_followup_mail(
 
 
 def _record_due_for_auto_mail(rec: ProcurementRecord, now: datetime) -> bool:
+    # Fully received (per CRM GRN quantities) or cancel-requested lines are done —
+    # never chase the supplier for them.
+    if (getattr(rec, "receipt_status", None) or "").upper() == "COMPLETED":
+        return False
+    if (getattr(rec, "cancellation_status", None) or "").upper() in {"PENDING", "CANCELLED"}:
+        return False
     if (rec.mail_status or "").upper() == "READY":
         return False
     if (rec.mail_status or "").upper() == "SENT":

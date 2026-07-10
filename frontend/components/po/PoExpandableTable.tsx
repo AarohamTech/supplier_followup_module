@@ -29,6 +29,24 @@ function fmtDate(d?: string | null) {
   return isNaN(dt.getTime()) ? "—" : dt.toLocaleDateString();
 }
 
+// Receipt progress (GRN quantities from the CRM): green when fully received.
+function ReceiptChip({ status }: { status?: string | null }) {
+  const s = (status || "").toUpperCase();
+  if (!s) return null;
+  const cls =
+    s === "COMPLETED"
+      ? "bg-emerald-50 text-emerald-700 ring-emerald-100"
+      : s === "PARTIAL"
+        ? "bg-blue-50 text-blue-700 ring-blue-100"
+        : "bg-subtle text-brand-muted ring-gray-200";
+  const label = s === "COMPLETED" ? "Received" : s === "PARTIAL" ? "Partly recd" : "Awaiting";
+  return (
+    <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ring-1 ring-inset ${cls}`}>
+      {label}
+    </span>
+  );
+}
+
 function fmtDateTime(d?: string | null) {
   if (!d) return "—";
   const dt = new Date(d);
@@ -159,7 +177,12 @@ export default function PoExpandableTable({
                     <td className="px-3 py-2 text-brand-dark">{p.supplier_name || "—"}</td>
                     <td className="px-3 py-2">{p.material_count}</td>
                     <td className="px-3 py-2">{fmtDate(p.earliest_shipment_date)}</td>
-                    <td className="px-3 py-2">{p.po_status || "—"}</td>
+                    <td className="px-3 py-2">
+                      <div className="flex items-center gap-1.5">
+                        <span>{p.po_status || "—"}</span>
+                        <ReceiptChip status={p.receipt_status} />
+                      </div>
+                    </td>
                     <td className="px-3 py-2 text-right" onClick={(e) => e.stopPropagation()}>
                       {cancelStatusOf(p) === "CANCELLED" ? (
                         <span className="inline-flex rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-semibold uppercase text-signal-red ring-1 ring-inset ring-red-100">Cancelled</span>
@@ -195,6 +218,9 @@ export default function PoExpandableTable({
                                       <th className="px-2 py-1">Material</th>
                                       <th className="px-2 py-1">UoM</th>
                                       <th className="px-2 py-1">Qty</th>
+                                      <th className="px-2 py-1">Recd (GRN)</th>
+                                      <th className="px-2 py-1">Pending</th>
+                                      <th className="px-2 py-1">Receipt</th>
                                       <th className="px-2 py-1">Signal</th>
                                       <th className="px-2 py-1">Ship Date</th>
                                       <th className="px-2 py-1">Overdue</th>
@@ -206,7 +232,10 @@ export default function PoExpandableTable({
                                       <tr key={m.procurement_record_id} className="border-t border-brand-border/60">
                                         <td className="px-2 py-1 text-brand-dark">{m.material_name}</td>
                                         <td className="px-2 py-1">{m.uom || "—"}</td>
-                                        <td className="px-2 py-1">{m.qty ?? "—"}</td>
+                                        <td className="px-2 py-1">{m.qty ?? m.po_qty ?? "—"}</td>
+                                        <td className="px-2 py-1">{m.grn_qty ?? "—"}</td>
+                                        <td className="px-2 py-1">{m.pending_qty ?? "—"}</td>
+                                        <td className="px-2 py-1"><ReceiptChip status={m.receipt_status} /></td>
                                         <td className="px-2 py-1"><SignalChip signal={m.signal} /></td>
                                         <td className="px-2 py-1">{fmtDate(m.shipment_date)}</td>
                                         <td className="px-2 py-1">
