@@ -180,10 +180,31 @@ def _feed_profile(feed: list[dict[str, Any]]) -> str:
     potype = Counter(str(r.get("PoType")) for r in rows).most_common(6)
     no_crm = sum(1 for r in rows if not r.get("CRMNo"))
     no_vendor = sum(1 for r in rows if not r.get("PoLongName"))
+
+    # Sample real values of the customer-linkage candidates so the right key can
+    # be pinned from the DB (APPROVED rows only — those are what we ingest).
+    approved = [r for r in rows if str(r.get("PoStatus") or "").upper() == "APPROVED"]
+    samples: list[str] = []
+    for k in ("LongName", "ConsLongName", "CustBranchName", "CompanyName",
+              "RefTrnNo", "MdnNo", "PoAmendNo", "Reason", "Remark"):
+        vals = []
+        empty = 0
+        for r in approved:
+            v = r.get(k)
+            if v in (None, "", 0):
+                empty += 1
+            elif str(v) not in vals:
+                vals.append(str(v)[:40])
+                if len(vals) >= 3:
+                    pass
+        samples.append(f"{k}: empty={empty}/{len(approved)} sample={vals[:3]}")
+
     return (
-        f"profile: rows={len(rows)} keys={sorted(keys)} present={interesting} "
-        f"po_status={status} po_type={potype} no_crmno={no_crm} no_vendor={no_vendor}"
-    )[:2000]
+        f"profile: rows={len(rows)} po_status={status} po_type={potype} "
+        f"no_crmno={no_crm} no_vendor={no_vendor} present={interesting} | "
+        + " | ".join(samples)
+        + f" | keys={sorted(keys)}"
+    )[:4000]
 
 
 def _log_row_keys(data: list[dict[str, Any]]) -> None:
