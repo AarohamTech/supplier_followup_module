@@ -186,7 +186,8 @@ def _feed_profile(feed: list[dict[str, Any]]) -> str:
     approved = [r for r in rows if str(r.get("PoStatus") or "").upper() == "APPROVED"]
     samples: list[str] = []
     for k in ("LongName", "ConsLongName", "CustBranchName", "CompanyName",
-              "RefTrnNo", "MdnNo", "PoAmendNo", "Reason", "Remark"):
+              "PoShortRefTrnNo", "PoRefTrnNo", "RefTrnNo", "MdnNo", "PoAmendNo",
+              "Reason", "Remark"):
         vals = []
         empty = 0
         for r in approved:
@@ -236,6 +237,11 @@ def _is_generated(row: dict[str, Any]) -> bool:
 _CUSTOMER_NAME_KEYS = (
     "CustomerName", "CustName", "PartyName", "BuyerName", "Customer",
     "CustomerLongName", "PartyLongName",
+    # Confirmed from the live GetPendingUserDesk feed (see the "profile:" ingest
+    # logs, 2026-07-10): LongName is the end-customer account (e.g. "SHRIRAM
+    # FOUNDRY PVT LTD - DEWAS"); ConsLongName is the consignee (usually the same).
+    # PoLongName (the supplier) is mapped separately and never consulted here.
+    "LongName", "ConsLongName",
 )
 _CUSTOMER_PO_KEYS = (
     "CustomerPoNo", "CustPoNo", "CustomerPONo", "PartyPoNo", "CustomerRefNo",
@@ -312,6 +318,9 @@ def map_row(row: dict[str, Any]) -> dict[str, Any]:
         "customer_name": _customer_name(row),
         "customer_po_no": _first(row, _CUSTOMER_PO_KEYS),
         "po_date": _first(row, _CUSTOMER_PO_DATE_KEYS),
+        # Supplier-facing PO document reference — what the supplier's own PO
+        # document says. Shown in the supplier portal instead of the bare PoNo.
+        "po_short_ref": row.get("PoShortRefTrnNo"),
         # Receipt quantities (Hariom User Desk API): PoQty = ordered, GrnQty =
         # material inward at Hariom, PendQty = still to receive. Candidate keys are
         # defensive; the "[crm] desk row keys" log confirms the real names in prod.
@@ -388,6 +397,7 @@ def _col_values(payload: dict[str, Any]) -> dict[str, Any]:
         "po_no": payload.get("customer_po_no") or payload["supplier_po_no"],
         "customer_name": payload.get("customer_name"),
         "po_date": payload.get("po_date"),
+        "po_short_ref": payload.get("po_short_ref"),
         "po_type": payload.get("po_type"),
         "po_qty": payload.get("po_qty"),
         "grn_qty": payload.get("grn_qty"),
@@ -412,7 +422,7 @@ _HASH_FIELDS = (
     "signal", "po_status", "adv_status", "shipment_date", "qty", "rate", "stock",
     "supplier_name", "supplier_date", "lead_time", "uom", "owner_emp_code", "quantity",
     "customer_name", "customer_po_no", "po_date",
-    "po_type", "po_qty", "grn_qty", "pending_qty",
+    "po_type", "po_qty", "grn_qty", "pending_qty", "po_short_ref",
 )
 
 
@@ -501,6 +511,7 @@ def _bulk_upsert(db: Session, raw_rows: list[dict[str, Any]]) -> tuple[int, int,
                 "po_no": stmt.excluded.po_no,
                 "customer_name": stmt.excluded.customer_name,
                 "po_date": stmt.excluded.po_date,
+                "po_short_ref": stmt.excluded.po_short_ref,
                 "po_type": stmt.excluded.po_type,
                 "po_qty": stmt.excluded.po_qty,
                 "grn_qty": stmt.excluded.grn_qty,

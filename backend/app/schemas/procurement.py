@@ -50,6 +50,8 @@ class ProcurementBase(BaseModel):
     customer_name: Optional[str] = None
     customer_po_no: Optional[str] = None
     po_date: Optional[date] = None
+    # Supplier-facing PO document reference (CRM PoShortRefTrnNo).
+    po_short_ref: Optional[str] = None
     # Receipt quantities from the CRM desk feed: PoQty (ordered), GrnQty (received
     # at Hariom), PendQty (still to receive). po_type flags "Open" POs whose
     # quantities are unreliable.

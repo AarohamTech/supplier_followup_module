@@ -227,12 +227,12 @@ export const api = {
         supplierName ? `?supplier_name=${encodeURIComponent(supplierName)}` : ""
       }`,
     ),
-  poViewRequestCancel: (supplierPoNo: string, supplierName?: string) =>
+  poViewRequestCancel: (supplierPoNo: string, supplierName?: string, remark?: string) =>
     http<{ supplier_po_no: string; cancellation_status: string; records_updated: number }>(
       `/api/po-view/pos/${encodeURIComponent(supplierPoNo)}/request-cancel${
         supplierName ? `?supplier_name=${encodeURIComponent(supplierName)}` : ""
       }`,
-      { method: "POST" },
+      { method: "POST", body: JSON.stringify({ remark: remark || null }) },
     ),
 
   listSupplierEmails: () => http<SupplierEmail[]>("/api/supplier-emails"),
@@ -1087,12 +1087,12 @@ export const api = {
         supplierName ? `?supplier_name=${encodeURIComponent(supplierName)}` : ""
       }`,
     ),
-  eportalRequestPoCancel: (supplierPoNo: string, supplierName?: string) =>
+  eportalRequestPoCancel: (supplierPoNo: string, supplierName?: string, remark?: string) =>
     http<{ supplier_po_no: string; cancellation_status: string; records_updated: number }>(
       `/api/eportal/pos/${encodeURIComponent(supplierPoNo)}/request-cancel${
         supplierName ? `?supplier_name=${encodeURIComponent(supplierName)}` : ""
       }`,
-      { method: "POST" },
+      { method: "POST", body: JSON.stringify({ remark: remark || null }) },
     ),
   eportalPoMessages: (supplierPoNo: string) =>
     http<PortalMessage[]>(`/api/eportal/pos/${encodeURIComponent(supplierPoNo)}/messages`),

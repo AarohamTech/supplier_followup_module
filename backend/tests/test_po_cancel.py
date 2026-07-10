@@ -46,6 +46,24 @@ class ServiceTests(unittest.TestCase):
             statuses = {r.crm_no: r.cancellation_status for r in db.query(ProcurementRecord).all()}
             self.assertEqual(statuses, {"C1": "CANCELLED", "C2": "CANCELLED", "C3": None})
 
+    def test_remark_is_stored_and_reject_clears_pending(self):
+        with _temp_db() as db:
+            _po(db, crm="C1", owner="E1")
+            res = pcs.request_cancellation(
+                db, supplier_po_no="PO9", supplier_name="Acme",
+                requested_by="E1", owner_emp_code="E1", remark="  duplicate order  ",
+            )
+            self.assertEqual(res["records_updated"], 1)
+            rec = db.query(ProcurementRecord).first()
+            self.assertEqual(rec.cancel_remark, "duplicate order")
+            self.assertEqual(rec.cancellation_status, "PENDING")
+
+            # ERP rejects -> pending flag + remark cleared, PO back to normal
+            self.assertEqual(pcs.reject_cancellation(db, supplier_po_no="PO9", supplier_name="Acme"), 1)
+            db.refresh(rec)
+            self.assertIsNone(rec.cancellation_status)
+            self.assertIsNone(rec.cancel_remark)
+
     def test_request_unknown_or_unowned_returns_none(self):
         with _temp_db() as db:
             _po(db, crm="C1", owner="E1")

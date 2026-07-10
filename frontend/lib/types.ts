@@ -1415,6 +1415,7 @@ export interface PortalSummary {
 
 export interface PortalPo {
   supplier_po_no: string;
+  po_ref?: string | null; // PO document reference the supplier knows (PoShortRefTrnNo)
   crm_no?: string | null;
   material_count: number;
   overall_signal?: string | null;
@@ -1450,6 +1451,8 @@ export interface EmployeePo {
   po_status?: string | null;
   cancellation_status?: string | null;
   receipt_status?: string | null; // PENDING / PARTIAL / COMPLETED (GRN rollup)
+  customer_name?: string | null; // end-customer; null => Direct PO
+  is_direct?: boolean;
   earliest_shipment_date?: string | null;
   unread_inbound?: number;
   escalated: boolean;

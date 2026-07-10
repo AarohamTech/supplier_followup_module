@@ -154,7 +154,7 @@ export default function PoDetailPage() {
         <div className="flex flex-col gap-4 px-5 py-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <h1 className="text-xl font-semibold tracking-tight text-brand-dark">PO {poNo}</h1>
+              <h1 className="text-xl font-semibold tracking-tight text-brand-dark">PO {po?.po_ref || poNo}</h1>
               {po?.escalated && <span className="badge badge-critical">Escalated</span>}
               {po?.overall_signal && <span className={"badge " + signalBadge(po.overall_signal)}>{po.overall_signal}</span>}
               {po?.completed ? <span className="badge badge-track">Completed</span> : <span className="badge badge-due">Pending</span>}

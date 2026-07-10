@@ -13,6 +13,7 @@ from datetime import date, datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
@@ -193,9 +194,14 @@ def po_detail(
     return detail
 
 
+class PoCancelIn(BaseModel):
+    remark: Optional[str] = None
+
+
 @router.post("/pos/{supplier_po_no}/request-cancel")
 def request_po_cancel(
     supplier_po_no: str,
+    payload: Optional[PoCancelIn] = None,
     supplier_name: Optional[str] = None,
     user: User = Depends(get_current_employee),
     db: Session = Depends(get_db),
@@ -209,6 +215,7 @@ def request_po_cancel(
         supplier_name=supplier_name,
         owner_emp_code=user.emp_code,
         requested_by=user.emp_code or user.email,
+        remark=payload.remark if payload else None,
     )
     if result is None:
         raise HTTPException(404, "PO not found among your assigned POs")

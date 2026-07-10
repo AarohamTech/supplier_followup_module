@@ -83,7 +83,7 @@ export default function PurchaseOrdersPage() {
           <PoExpandableTable
             pos={pos}
             loadDetail={(p) => api.poViewDetail(p.supplier_po_no, p.supplier_name || undefined)}
-            requestCancel={(p) => api.poViewRequestCancel(p.supplier_po_no, p.supplier_name || undefined).then(() => {})}
+            requestCancel={(p, remark) => api.poViewRequestCancel(p.supplier_po_no, p.supplier_name || undefined, remark).then(() => {})}
           />
           <Pager page={page} size={SIZE} total={total} onPage={setPage} unit="POs" />
         </>

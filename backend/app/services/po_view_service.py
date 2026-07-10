@@ -94,6 +94,7 @@ def grouped_pos(
         tracked_c,
         func.min(R.shipment_date).label("earliest"),
         func.max(R.po_status).label("po_status"),
+        func.max(R.customer_name).label("customer_name"),
     ).where(R.supplier_po_no.isnot(None))
     if owner_emp_code:
         base = base.where(R.owner_emp_code == owner_emp_code)
@@ -137,6 +138,10 @@ def grouped_pos(
             "po_status": r.po_status,
             "cancellation_status": _CANCEL_LABEL.get(int(r.cancel_rank or 0)),
             "receipt_status": receipt,
+            "customer_name": r.customer_name,
+            # A supplier PO with no end-customer linkage was ordered directly
+            # (not against a customer order) — tagged "Direct PO" in the UI.
+            "is_direct": r.customer_name is None,
             "earliest_shipment_date": _as_dt(r.earliest),
             "escalated": bool(r.escalated),
             "unread_inbound": 0,

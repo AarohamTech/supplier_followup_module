@@ -50,6 +50,7 @@ def request_cancellation(
     supplier_name: str | None,
     requested_by: str | None,
     owner_emp_code: str | None = None,
+    remark: str | None = None,
 ) -> dict[str, Any] | None:
     """Mark a PO's lines as pending-cancellation and raise the external request.
 
@@ -60,18 +61,21 @@ def request_cancellation(
     if not rows:
         return None
 
+    remark = (remark or "").strip()[:500] or None
     now = datetime.utcnow()
     for r in rows:
         if (r.cancellation_status or "").upper() not in _TERMINAL:
             r.cancellation_status = PENDING
             r.cancel_requested_by = requested_by
             r.cancel_requested_at = now
+            r.cancel_remark = remark
     db.commit()
 
     external = _raise_external_cancel(
         supplier_po_no=supplier_po_no,
         supplier_name=supplier_name,
         requested_by=requested_by,
+        remark=remark,
         record_ids=[r.id for r in rows],
     )
     return {
@@ -93,6 +97,25 @@ def confirm_cancellation(
     for r in rows:
         if (r.cancellation_status or "").upper() == PENDING:
             r.cancellation_status = CANCELLED
+            updated += 1
+    if updated:
+        db.commit()
+    return updated
+
+
+def reject_cancellation(
+    db: Session, *, supplier_po_no: str, supplier_name: str | None = None
+) -> int:
+    """ERP declined the cancel: clear the pending flag so the PO returns to its
+    normal lifecycle. Returns the number of records updated."""
+    rows = _records_for_po(db, supplier_po_no, supplier_name, owner_emp_code=None)
+    updated = 0
+    for r in rows:
+        if (r.cancellation_status or "").upper() == PENDING:
+            r.cancellation_status = None
+            r.cancel_requested_by = None
+            r.cancel_requested_at = None
+            r.cancel_remark = None
             updated += 1
     if updated:
         db.commit()

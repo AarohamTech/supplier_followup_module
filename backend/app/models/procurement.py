@@ -80,6 +80,10 @@ class ProcurementRecord(Base):
     # pending_qty = still to receive. receipt_status is derived at ingest:
     # PENDING / PARTIAL / COMPLETED (pending_qty <= 0); NULL when the feed has no
     # quantities or the PO is an "Open" type (quantities unreliable per Hariom IT).
+    # Supplier-facing PO document reference (CRM `PoShortRefTrnNo`). This is the
+    # number the supplier knows from their PO document — the supplier portal shows
+    # it; `supplier_po_no` (the CRM PoNo counter) stays the internal grouping key.
+    po_short_ref: Mapped[str | None] = mapped_column(String(64), index=True)
     po_type: Mapped[str | None] = mapped_column(String(32))
     po_qty: Mapped[float | None] = mapped_column(Numeric(18, 3))
     grn_qty: Mapped[float | None] = mapped_column(Numeric(18, 3))
@@ -91,6 +95,8 @@ class ProcurementRecord(Base):
     cancellation_status: Mapped[str | None] = mapped_column(String(32), index=True)
     cancel_requested_by: Mapped[str | None] = mapped_column(String(64))
     cancel_requested_at: Mapped[datetime | None] = mapped_column(DateTime)
+    # Requester's reason, forwarded to the ERP cancel API.
+    cancel_remark: Mapped[str | None] = mapped_column(String(500))
 
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)

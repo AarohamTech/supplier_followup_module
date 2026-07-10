@@ -11,8 +11,12 @@ import logging
 from typing import Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
 from ..core.config import settings
+from ..database import get_db
+from ..services import po_cancel_service
 from ..workers import mail_fetch_worker, mail_send_worker
 
 log = logging.getLogger(__name__)
@@ -88,3 +92,35 @@ def trigger_mail_send(limit: int = Query(25, ge=1, le=500)) -> dict[str, Any]:
 def test_mail_send() -> dict[str, Any]:
     """Validate SMTP connectivity and credentials without sending a message."""
     return mail_send_worker.test_smtp_connection()
+
+
+class PoCancelConfirmIn(BaseModel):
+    po_no: str
+    supplier_name: str | None = None
+    # CANCELLED = ERP confirmed the cancellation; REJECTED = ERP declined, the PO
+    # goes back to normal (pending flag cleared).
+    status: str = "CANCELLED"
+    message: str | None = None
+
+
+@router.post("/po-cancel-confirm")
+def po_cancel_confirm(payload: PoCancelConfirmIn, db: Session = Depends(get_db)) -> dict[str, Any]:
+    """ERP callback for a PO cancellation request we raised.
+
+    Flips the PO's lines from PENDING to CANCELLED (or clears the pending flag on
+    REJECTED). See docs/PO_CANCEL_ERP_API.md for the contract given to the ERP team.
+    """
+    decision = (payload.status or "").strip().upper()
+    if decision == "CANCELLED":
+        updated = po_cancel_service.confirm_cancellation(
+            db, supplier_po_no=payload.po_no, supplier_name=payload.supplier_name
+        )
+    elif decision == "REJECTED":
+        updated = po_cancel_service.reject_cancellation(
+            db, supplier_po_no=payload.po_no, supplier_name=payload.supplier_name
+        )
+    else:
+        raise HTTPException(422, "status must be CANCELLED or REJECTED")
+    if updated == 0:
+        raise HTTPException(404, "No pending cancellation found for that PO")
+    return {"ok": True, "po_no": payload.po_no, "status": decision, "records_updated": updated}

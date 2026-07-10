@@ -54,7 +54,7 @@ export default function EmployeePosPage() {
         <PoExpandableTable
           pos={filtered}
           loadDetail={(p) => api.eportalPoDetail(p.supplier_po_no, p.supplier_name || undefined)}
-          requestCancel={(p) => api.eportalRequestPoCancel(p.supplier_po_no, p.supplier_name || undefined).then(() => {})}
+          requestCancel={(p, remark) => api.eportalRequestPoCancel(p.supplier_po_no, p.supplier_name || undefined, remark).then(() => {})}
         />
       )}
     </div>

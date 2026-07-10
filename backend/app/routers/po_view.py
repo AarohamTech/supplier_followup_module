@@ -3,6 +3,7 @@ and a whole-PO cancellation request. Admin only (guarded at the router level).""
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from ..core.deps import get_current_user, require_admin
@@ -42,9 +43,14 @@ def po_detail(
     return detail
 
 
+class PoCancelIn(BaseModel):
+    remark: str | None = None
+
+
 @router.post("/pos/{supplier_po_no}/request-cancel")
 def request_cancel(
     supplier_po_no: str,
+    payload: PoCancelIn | None = None,
     supplier_name: str | None = Query(default=None),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -56,6 +62,7 @@ def request_cancel(
         supplier_name=supplier_name,
         requested_by=user.email,
         owner_emp_code=None,
+        remark=payload.remark if payload else None,
     )
     if result is None:
         raise HTTPException(404, "PO not found")

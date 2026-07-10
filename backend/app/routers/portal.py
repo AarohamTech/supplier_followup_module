@@ -165,6 +165,7 @@ def list_pos(user: User = Depends(get_current_supplier), db: Session = Depends(g
             continue
         g = groups.setdefault(po, {
             "crm_no": r.crm_no,
+            "po_ref": None,
             "signals": [],
             "po_status": r.po_status,
             "earliest": None,
@@ -173,6 +174,9 @@ def list_pos(user: User = Depends(get_current_supplier), db: Session = Depends(g
         })
         g["count"] += 1
         g["signals"].append(r.signal)
+        # The supplier-facing PO document reference (PoShortRefTrnNo).
+        if not g["po_ref"] and getattr(r, "po_short_ref", None):
+            g["po_ref"] = r.po_short_ref
         if (r.escalation_level or "NONE").upper() != "NONE":
             g["escalated"] = True
         if r.shipment_date and (g["earliest"] is None or r.shipment_date < g["earliest"]):
@@ -181,6 +185,7 @@ def list_pos(user: User = Depends(get_current_supplier), db: Session = Depends(g
     items = [
         PortalPo(
             supplier_po_no=po,
+            po_ref=g["po_ref"],
             crm_no=g["crm_no"],
             material_count=g["count"],
             overall_signal=_worst_signal(g["signals"]),

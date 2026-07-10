@@ -88,13 +88,14 @@ export default function PoExpandableTable({
 }: {
   pos: EmployeePo[];
   loadDetail: (po: EmployeePo) => Promise<PoDetail>;
-  requestCancel: (po: EmployeePo) => Promise<void>;
+  requestCancel: (po: EmployeePo, remark: string) => Promise<void>;
 }) {
   const [open, setOpen] = useState<string | null>(null);
   const [detail, setDetail] = useState<Record<string, PoDetail>>({});
   const [loading, setLoading] = useState<string | null>(null);
   const [cancelOverride, setCancelOverride] = useState<Record<string, string>>({});
   const [confirmPo, setConfirmPo] = useState<EmployeePo | null>(null);
+  const [cancelRemark, setCancelRemark] = useState("");
   const [requesting, setRequesting] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
 
@@ -126,9 +127,10 @@ export default function PoExpandableTable({
     setRequesting(true);
     setCancelError(null);
     try {
-      await requestCancel(confirmPo);
+      await requestCancel(confirmPo, cancelRemark.trim());
       setCancelOverride((cur) => ({ ...cur, [poKey(confirmPo)]: "PENDING" }));
       setConfirmPo(null);
+      setCancelRemark("");
     } catch (e) {
       setCancelError((e as Error).message);
     } finally {
@@ -174,7 +176,18 @@ export default function PoExpandableTable({
                         <span className="ml-2 rounded bg-red-50 px-1.5 py-0.5 text-[10px] font-semibold text-signal-red">ESCALATED</span>
                       )}
                     </td>
-                    <td className="px-3 py-2 text-brand-dark">{p.supplier_name || "—"}</td>
+                    <td className="px-3 py-2 text-brand-dark">
+                      <div>{p.supplier_name || "—"}</div>
+                      {p.is_direct ? (
+                        <span className="mt-0.5 inline-flex rounded bg-violet-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-violet-700 ring-1 ring-inset ring-violet-100">
+                          Direct PO
+                        </span>
+                      ) : p.customer_name ? (
+                        <div className="text-[11px] text-brand-muted truncate max-w-[220px]" title={p.customer_name}>
+                          for {p.customer_name}
+                        </div>
+                      ) : null}
+                    </td>
                     <td className="px-3 py-2">{p.material_count}</td>
                     <td className="px-3 py-2">{fmtDate(p.earliest_shipment_date)}</td>
                     <td className="px-3 py-2">
@@ -191,7 +204,7 @@ export default function PoExpandableTable({
                       ) : (
                         <button
                           type="button"
-                          onClick={() => { setConfirmPo(p); setCancelError(null); }}
+                          onClick={() => { setConfirmPo(p); setCancelRemark(""); setCancelError(null); }}
                           className="inline-flex items-center gap-1 rounded-md border border-brand-border px-2 py-1 text-[11px] font-medium text-signal-red hover:bg-red-50"
                         >
                           <Ban size={12} /> Request cancel
@@ -294,6 +307,17 @@ export default function PoExpandableTable({
               <p className="text-xs text-brand-muted">
                 The PO will be marked <span className="font-medium">Pending cancellation</span> until it is confirmed.
               </p>
+              <label className="block text-sm">
+                <span className="text-xs text-brand-muted">Remark (reason for cancellation — sent to the ERP)</span>
+                <textarea
+                  className="mt-1 w-full rounded-md border border-brand-border px-3 py-2 text-sm outline-none focus:border-signal-red"
+                  rows={3}
+                  maxLength={500}
+                  value={cancelRemark}
+                  onChange={(e) => setCancelRemark(e.target.value)}
+                  placeholder="e.g. Material no longer required / duplicate order"
+                />
+              </label>
               {cancelError && <p className="text-xs text-signal-red">{cancelError}</p>}
             </div>
             <div className="border-t border-brand-border px-5 py-3 flex items-center justify-end gap-2">

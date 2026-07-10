@@ -37,7 +37,7 @@ export default function PortalPosPage() {
   const filtered = items.filter((p) =>
     !q.trim()
       ? true
-      : `${p.supplier_po_no} ${p.crm_no ?? ""}`.toLowerCase().includes(q.trim().toLowerCase()),
+      : `${p.po_ref ?? ""} ${p.supplier_po_no} ${p.crm_no ?? ""}`.toLowerCase().includes(q.trim().toLowerCase()),
   );
 
   const open = (po: string) => router.push(`/portal/pos/${encodeURIComponent(po)}`);
@@ -86,9 +86,14 @@ export default function PortalPosPage() {
               >
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-2">
-                    <span className="font-medium text-brand-dark">{p.supplier_po_no}</span>
+                    {/* The PO document reference (what the supplier's PO says); the
+                        bare CRM counter is only a muted fallback hint. */}
+                    <span className="font-medium text-brand-dark">{p.po_ref || p.supplier_po_no}</span>
                     {p.escalated && <span className="badge badge-critical">Escalated</span>}
                   </div>
+                  {p.po_ref && p.po_ref !== p.supplier_po_no && (
+                    <div className="text-[11px] text-brand-muted">#{p.supplier_po_no}</div>
+                  )}
                 </td>
                 <td className="px-4 py-3 text-xs text-brand-muted">{p.crm_no || "—"}</td>
                 <td className="px-4 py-3">{p.material_count}</td>

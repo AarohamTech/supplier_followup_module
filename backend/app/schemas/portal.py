@@ -20,6 +20,9 @@ class PortalSummary(BaseModel):
 
 class PortalPo(BaseModel):
     supplier_po_no: str
+    # PO document reference from the CRM (PoShortRefTrnNo) — the number the
+    # supplier knows from their PO document. Shown as the primary number.
+    po_ref: Optional[str] = None
     crm_no: Optional[str] = None
     material_count: int
     overall_signal: Optional[str] = None

@@ -31,6 +31,9 @@ class EmployeePo(BaseModel):
     cancellation_status: Optional[str] = None
     # Receipt rollup from CRM GRN quantities: PENDING / PARTIAL / COMPLETED.
     receipt_status: Optional[str] = None
+    # End-customer this PO serves; None => ordered directly (Direct PO).
+    customer_name: Optional[str] = None
+    is_direct: bool = False
     earliest_shipment_date: Optional[datetime] = None
     escalated: bool = False
     # Unread supplier replies (INCOMING, not yet read) on this PO.

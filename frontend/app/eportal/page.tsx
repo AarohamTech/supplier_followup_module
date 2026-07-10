@@ -99,7 +99,7 @@ export default function EmployeeDashboard() {
           <PoExpandableTable
             pos={pos.slice(0, 10)}
             loadDetail={(p) => api.eportalPoDetail(p.supplier_po_no, p.supplier_name || undefined)}
-            requestCancel={(p) => api.eportalRequestPoCancel(p.supplier_po_no, p.supplier_name || undefined).then(() => {})}
+            requestCancel={(p, remark) => api.eportalRequestPoCancel(p.supplier_po_no, p.supplier_name || undefined, remark).then(() => {})}
           />
         </div>
         <div className="space-y-4">
