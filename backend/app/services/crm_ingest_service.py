@@ -158,6 +158,34 @@ def fetch_desk(cfg: CrmConfig) -> list[dict[str, Any]]:
 _row_keys_logged = False
 
 
+def _feed_profile(feed: list[dict[str, Any]]) -> str:
+    """Compact profile of what the desk feed actually contains, persisted into the
+    ingest log so it can be read from the DB (no server access needed). Answers:
+    which keys the feed carries (do GRN/customer fields exist?), the PoStatus /
+    PoType mix, and how many rows lack a CRMNo or vendor — i.e. the non-CRM
+    ("external") PO candidates that the APPROVED+vendor filter currently drops."""
+    rows = [r for r in feed if isinstance(r, dict)]
+    if not rows:
+        return "profile: empty feed"
+    from collections import Counter
+
+    keys: set[str] = set()
+    for r in rows[:50]:
+        keys.update(r.keys())
+    interesting = [k for k in (
+        "CRMNo", "PoNo", "TrnNo", "PoType", "DocType", "PoQty", "GrnQty", "PendQty",
+        "Quantity", "PoQuantity", "PoStatus", "PoLongName", "LongName", "CustomerName",
+    ) if k in keys]
+    status = Counter(str(r.get("PoStatus")) for r in rows).most_common(6)
+    potype = Counter(str(r.get("PoType")) for r in rows).most_common(6)
+    no_crm = sum(1 for r in rows if not r.get("CRMNo"))
+    no_vendor = sum(1 for r in rows if not r.get("PoLongName"))
+    return (
+        f"profile: rows={len(rows)} keys={sorted(keys)} present={interesting} "
+        f"po_status={status} po_type={potype} no_crmno={no_crm} no_vendor={no_vendor}"
+    )[:2000]
+
+
 def _log_row_keys(data: list[dict[str, Any]]) -> None:
     """Log the desk-row field names once, so the real end-customer field names
     (see _CUSTOMER_*_KEYS) can be confirmed from the prod logs and pruned."""
@@ -595,7 +623,7 @@ def poll_and_ingest(
     _log_run(status="OK", trigger=trigger, desk=str(label),
              fetched=len(feed), generated=len(generated),
              created=created, updated=updated, skipped=skipped, errors=0,
-             duration_ms=duration_ms)
+             duration_ms=duration_ms, message=_feed_profile(feed))
     if created or updated:
         _auto_send_after_ingest(db)
 
