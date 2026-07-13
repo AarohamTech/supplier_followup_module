@@ -83,6 +83,7 @@ def create_user(
     emp_code: str | None = None,
     username: str | None = None,
     must_change_password: bool = False,
+    company_id: int | None = None,
     commit: bool = True,
 ) -> User:
     if get_by_email(db, email) is not None:
@@ -99,6 +100,8 @@ def create_user(
         supplier_id=supplier_id,
         emp_code=(emp_code or None),
         must_change_password=must_change_password,
+        # Portal accounts are pinned to a company; NULL = default company (102).
+        company_id=company_id,
     )
     db.add(user)
     if commit:

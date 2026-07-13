@@ -14,12 +14,12 @@ import logging
 import re
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from ..core.roles import Role
 from ..models.user import User
-from . import user_service
+from . import company_service, user_service
 from .supplier_account_service import generate_temp_password
 from .user_service import EmailTakenError, UsernameTakenError, get_by_email
 
@@ -45,11 +45,16 @@ def _full_name(row: dict[str, Any]) -> str | None:
 
 
 def list_employee_logins(db: Session) -> list[User]:
-    return list(
-        db.scalars(
-            select(User).where(User.emp_code.is_not(None)).order_by(User.username)
-        ).all()
-    )
+    """Employee logins for the company the admin is switched into. Accounts with
+    company_id NULL are legacy default-company (102) logins and show there."""
+    company_id = company_service.current_company_id(db)
+    default = company_service.get_default(db)
+    stmt = select(User).where(User.emp_code.is_not(None))
+    if default is not None and company_id == default.id:
+        stmt = stmt.where(or_(User.company_id == company_id, User.company_id.is_(None)))
+    else:
+        stmt = stmt.where(User.company_id == company_id)
+    return list(db.scalars(stmt.order_by(User.username)).all())
 
 
 def parse_employee_sheet(content: bytes) -> list[dict[str, Any]]:
@@ -78,6 +83,10 @@ def provision_from_rows(db: Session, rows: list[dict[str, Any]]) -> dict[str, An
     reactivated: list[str] = []
     conflicts: list[dict[str, str]] = []
     skipped: list[dict[str, str]] = []
+
+    # Pin new logins to the company the admin is switched into, so an Enterprises
+    # provisioning run creates Enterprises-scoped employee accounts.
+    company_id = company_service.current_company_id(db)
 
     for row in rows:
         emp_id = row.get("EMPLOYEE_ID")
@@ -110,6 +119,7 @@ def provision_from_rows(db: Session, rows: list[dict[str, Any]]) -> dict[str, An
                 emp_code=emp_code,
                 username=login_id,
                 must_change_password=True,
+                company_id=company_id,
                 commit=False,
             )
         except (EmailTakenError, UsernameTakenError) as exc:
@@ -148,6 +158,7 @@ def create_employee(
         emp_code=emp_code,
         username=username,
         must_change_password=True,
+        company_id=company_service.current_company_id(db),
         commit=True,
     )
     return {

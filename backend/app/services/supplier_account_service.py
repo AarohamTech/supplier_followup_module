@@ -21,6 +21,7 @@ from ..core.roles import Role
 from ..models.user import User
 from . import brand_email
 from . import communication_message_service as msg_service
+from . import company_service
 from . import user_service
 from .user_service import EmailTakenError
 
@@ -199,6 +200,9 @@ def sync_supplier_logins(
                 is_active=True,
                 supplier_id=supplier_id,
                 must_change_password=True,
+                # Pin to the company the admin is switched into (a supplier_id
+                # only means something inside that company's schema).
+                company_id=company_service.current_company_id(db),
                 commit=False,
             )
         except EmailTakenError:

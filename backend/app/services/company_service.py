@@ -70,6 +70,15 @@ def get_default(db: Session) -> Company | None:
     return db.scalar(select(Company).where(Company.is_default.is_(True)))
 
 
+def current_company_id(db: Session) -> int | None:
+    """Company id for the ambient tenant context (the company the admin is
+    switched into). Used to pin newly provisioned portal accounts."""
+    from ..core.tenant import get_current_schema
+
+    company = get_by_schema(db, get_current_schema())
+    return company.id if company is not None else None
+
+
 def resolve_login_company(db: Session, user, requested_code: str | None) -> Company | None:
     """Resolve which company an account logs into. Portal accounts (supplier or
     employee) are pinned to their own company; staff get the requested active

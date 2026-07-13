@@ -14,7 +14,7 @@ function fmtDate(d?: string | null) {
 }
 
 export default function EmployeesAdminPage() {
-  const { hasRole } = useAuth();
+  const { hasRole, company } = useAuth();
   const isAdmin = hasRole("admin");
 
   const [list, setList] = useState<AuthUser[]>([]);
@@ -184,7 +184,10 @@ export default function EmployeesAdminPage() {
       <div className="page-header">
         <div>
           <h1 className="page-title">Employee Logins</h1>
-          <p className="page-subtitle">Provision and manage internal employee portal accounts.</p>
+          <p className="page-subtitle">
+            Provision and manage internal employee portal accounts
+            {company ? <> for <span className="font-medium">{company.display_name}</span> — new logins are pinned to this company (switch companies from the top bar)</> : null}.
+          </p>
         </div>
         <label className="btn-primary cursor-pointer">
           {busy ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />} Import employee sheet
