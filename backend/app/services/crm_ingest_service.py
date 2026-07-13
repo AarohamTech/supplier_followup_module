@@ -326,6 +326,8 @@ def map_row(row: dict[str, Any]) -> dict[str, Any]:
         # Supplier-facing PO document reference — what the supplier's own PO
         # document says. Shown in the supplier portal instead of the bare PoNo.
         "po_short_ref": row.get("PoShortRefTrnNo"),
+        # Full PO transaction number — join key to Hariom's quantity API (TrnNo).
+        "po_trn_no": row.get("PoRefTrnNo"),
         # Receipt quantities (Hariom User Desk API): PoQty = ordered, GrnQty =
         # material inward at Hariom, PendQty = still to receive. Candidate keys are
         # defensive; the "[crm] desk row keys" log confirms the real names in prod.
@@ -403,6 +405,7 @@ def _col_values(payload: dict[str, Any]) -> dict[str, Any]:
         "customer_name": payload.get("customer_name"),
         "po_date": payload.get("po_date"),
         "po_short_ref": payload.get("po_short_ref"),
+        "po_trn_no": payload.get("po_trn_no"),
         "po_type": payload.get("po_type"),
         "po_qty": payload.get("po_qty"),
         "grn_qty": payload.get("grn_qty"),
@@ -427,7 +430,7 @@ _HASH_FIELDS = (
     "signal", "po_status", "adv_status", "shipment_date", "qty", "rate", "stock",
     "supplier_name", "supplier_date", "lead_time", "uom", "owner_emp_code", "quantity",
     "customer_name", "customer_po_no", "po_date",
-    "po_type", "po_qty", "grn_qty", "pending_qty", "po_short_ref",
+    "po_type", "po_qty", "grn_qty", "pending_qty", "po_short_ref", "po_trn_no",
 )
 
 
@@ -517,6 +520,7 @@ def _bulk_upsert(db: Session, raw_rows: list[dict[str, Any]]) -> tuple[int, int,
                 "customer_name": stmt.excluded.customer_name,
                 "po_date": stmt.excluded.po_date,
                 "po_short_ref": stmt.excluded.po_short_ref,
+                "po_trn_no": stmt.excluded.po_trn_no,
                 "po_type": stmt.excluded.po_type,
                 "po_qty": stmt.excluded.po_qty,
                 "grn_qty": stmt.excluded.grn_qty,
@@ -569,7 +573,50 @@ def _bulk_upsert(db: Session, raw_rows: list[dict[str, Any]]) -> tuple[int, int,
             )
 
     db.commit()
+
+    _sync_delisted(db, set(by_key.keys()))
     return created, updated, skipped
+
+
+def _sync_delisted(db: Session, feed_keys: set[tuple]) -> tuple[int, int]:
+    """Reconcile records against the full feed: a line that stopped appearing in
+    the CRM pending desk (received/closed/sold on the CRM side) is stamped
+    `delisted_at` so pending views and follow-ups drop it; a line that reappears
+    is un-delisted. Skipped entirely when the feed is empty (fail-safe: an API
+    hiccup must never delist everything). Returns (delisted, relisted)."""
+    if not feed_keys:
+        return 0, 0
+    now = datetime.utcnow()
+    delisted = relisted = 0
+    rows = db.execute(
+        select(
+            ProcurementRecord.id,
+            ProcurementRecord.crm_no,
+            ProcurementRecord.supplier_po_no,
+            ProcurementRecord.material_name,
+            ProcurementRecord.delisted_at,
+        )
+    ).all()
+    gone_ids = [r.id for r in rows if (r.crm_no, r.supplier_po_no, r.material_name) not in feed_keys and r.delisted_at is None]
+    back_ids = [r.id for r in rows if (r.crm_no, r.supplier_po_no, r.material_name) in feed_keys and r.delisted_at is not None]
+    if gone_ids:
+        db.execute(
+            ProcurementRecord.__table__.update()
+            .where(ProcurementRecord.id.in_(gone_ids))
+            .values(delisted_at=now)
+        )
+        delisted = len(gone_ids)
+    if back_ids:
+        db.execute(
+            ProcurementRecord.__table__.update()
+            .where(ProcurementRecord.id.in_(back_ids))
+            .values(delisted_at=None)
+        )
+        relisted = len(back_ids)
+    if gone_ids or back_ids:
+        db.commit()
+        log.info("[crm] delist sync: delisted=%d relisted=%d", delisted, relisted)
+    return delisted, relisted
 
 
 # ── orchestration ─────────────────────────────────────────────────────────────

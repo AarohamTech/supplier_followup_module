@@ -18,6 +18,10 @@ router = APIRouter(
 )
 
 
+class PoCancelIn(BaseModel):
+    remark: str | None = None
+
+
 @router.get("/pos")
 def list_pos(
     db: Session = Depends(get_db),
@@ -27,6 +31,45 @@ def list_pos(
 ) -> dict:
     items, total = po_view_service.grouped_pos(db, search=search, page=page, size=size)
     return {"items": items, "total": total, "page": page, "size": size}
+
+
+@router.get("/lines")
+def list_lines(
+    db: Session = Depends(get_db),
+    search: str | None = Query(default=None),
+    owner: str | None = Query(default=None),
+    page: int = Query(default=1, ge=1),
+    size: int = Query(default=50, ge=1, le=200),
+) -> dict:
+    """Material-wise PO lines for the Orders page (one row per material)."""
+    items, total = po_view_service.material_lines(
+        db, search=search, owner_emp_code=owner, page=page, size=size
+    )
+    return {"items": items, "total": total, "page": page, "size": size}
+
+
+@router.get("/line-owners")
+def list_line_owners(db: Session = Depends(get_db)) -> dict:
+    return {"owners": po_view_service.line_owners(db)}
+
+
+@router.post("/lines/{record_id}/request-cancel")
+def request_line_cancel(
+    record_id: int,
+    payload: PoCancelIn | None = None,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Material-wise cancellation: one PO line, with the requester's remark."""
+    result = po_cancel_service.request_line_cancellation(
+        db,
+        record_id=record_id,
+        requested_by=user.email,
+        remark=payload.remark if payload else None,
+    )
+    if result is None:
+        raise HTTPException(404, "PO line not found")
+    return result
 
 
 @router.get("/pos/{supplier_po_no}/detail")
@@ -41,10 +84,6 @@ def po_detail(
     if detail is None:
         raise HTTPException(404, "PO not found")
     return detail
-
-
-class PoCancelIn(BaseModel):
-    remark: str | None = None
 
 
 @router.post("/pos/{supplier_po_no}/request-cancel")

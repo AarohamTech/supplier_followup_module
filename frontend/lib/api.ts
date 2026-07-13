@@ -94,6 +94,7 @@ import type {
   EmployeePo,
   EmployeePoListResponse,
   EmployeePoMaterial,
+  OrderLine,
   PoDetail,
   EmployeeProvisionResult,
   EmployeeCreatePayload,
@@ -227,6 +228,26 @@ export const api = {
         supplierName ? `?supplier_name=${encodeURIComponent(supplierName)}` : ""
       }`,
     ),
+  // Material-wise Orders view
+  poViewLines: (params: { search?: string; owner?: string; page?: number; size?: number } = {}) => {
+    const q = new URLSearchParams();
+    if (params.search) q.set("search", params.search);
+    if (params.owner) q.set("owner", params.owner);
+    if (params.page) q.set("page", String(params.page));
+    if (params.size) q.set("size", String(params.size));
+    const qs = q.toString();
+    return http<{ items: OrderLine[]; total: number; page: number; size: number }>(
+      `/api/po-view/lines${qs ? `?${qs}` : ""}`,
+    );
+  },
+  poViewLineOwners: () =>
+    http<{ owners: { emp_code: string; name: string }[] }>(`/api/po-view/line-owners`),
+  poViewLineCancel: (recordId: number, remark?: string) =>
+    http<{ procurement_record_id: number; cancellation_status: string }>(
+      `/api/po-view/lines/${recordId}/request-cancel`,
+      { method: "POST", body: JSON.stringify({ remark: remark || null }) },
+    ),
+
   poViewRequestCancel: (supplierPoNo: string, supplierName?: string, remark?: string) =>
     http<{ supplier_po_no: string; cancellation_status: string; records_updated: number }>(
       `/api/po-view/pos/${encodeURIComponent(supplierPoNo)}/request-cancel${

@@ -95,7 +95,7 @@ def grouped_pos(
         func.min(R.shipment_date).label("earliest"),
         func.max(R.po_status).label("po_status"),
         func.max(R.customer_name).label("customer_name"),
-    ).where(R.supplier_po_no.isnot(None))
+    ).where(R.supplier_po_no.isnot(None), R.delisted_at.is_(None))
     if owner_emp_code:
         base = base.where(R.owner_emp_code == owner_emp_code)
     if search and search.strip():
@@ -179,6 +179,75 @@ def list_groups(db: Session, *, owner_emp_code: str | None = None) -> list[dict[
     return items
 
 
+def material_lines(
+    db: Session,
+    *,
+    search: str | None = None,
+    owner_emp_code: str | None = None,
+    page: int | None = None,
+    size: int | None = None,
+) -> tuple[list[dict[str, Any]], int]:
+    """Material-wise PO lines (one row per material, not grouped by PO) for the
+    Orders page. Excludes delisted lines; earliest ship date first."""
+    R = ProcurementRecord
+    stmt = select(R).where(R.supplier_po_no.isnot(None), R.delisted_at.is_(None))
+    if owner_emp_code:
+        stmt = stmt.where(R.owner_emp_code == owner_emp_code)
+    if search and search.strip():
+        like = f"%{search.strip()}%"
+        stmt = stmt.where(or_(
+            R.supplier_po_no.ilike(like),
+            R.po_short_ref.ilike(like),
+            R.supplier_name.ilike(like),
+            R.material_name.ilike(like),
+            R.customer_name.ilike(like),
+            R.crm_no.ilike(like),
+        ))
+    total = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
+    stmt = stmt.order_by(R.shipment_date.asc().nullslast(), R.id.asc())
+    if page and size:
+        stmt = stmt.limit(size).offset((page - 1) * size)
+    rows = list(db.scalars(stmt).all())
+
+    return [
+        {
+            **_material(r),
+            "supplier_po_no": r.supplier_po_no,
+            "po_short_ref": r.po_short_ref,
+            "customer_name": r.customer_name,
+            "customer_po_no": r.po_no if r.po_no != r.supplier_po_no else None,
+            "customer_po_date": _as_dt(r.po_date),
+            "supplier_date": _as_dt(r.supplier_date),
+            "stock": float(r.stock) if r.stock is not None else None,
+            "owner_emp_code": r.owner_emp_code,
+            "cancellation_status": r.cancellation_status,
+            "escalation_level": r.escalation_level,
+        }
+        for r in rows
+    ], int(total)
+
+
+def line_owners(db: Session) -> list[dict[str, Any]]:
+    """Distinct PO owners (for the user-wise filter), labeled with the matching
+    employee login's name when one exists."""
+    from ..models.user import User
+
+    codes = [
+        c for c in db.scalars(
+            select(ProcurementRecord.owner_emp_code)
+            .where(ProcurementRecord.owner_emp_code.isnot(None), ProcurementRecord.delisted_at.is_(None))
+            .distinct()
+        ).all() if c
+    ]
+    names = {
+        u.emp_code: (u.full_name or u.username)
+        for u in db.scalars(select(User).where(User.emp_code.in_(codes))).all()
+    } if codes else {}
+    out = [{"emp_code": c, "name": names.get(c) or c} for c in codes]
+    out.sort(key=lambda o: str(o["name"]).upper())
+    return out
+
+
 def _material(r: ProcurementRecord) -> dict[str, Any]:
     return {
         "procurement_record_id": r.id,
@@ -223,7 +292,10 @@ def po_detail(
 ) -> dict[str, Any] | None:
     """Materials + full communication history for one PO. Returns None if no
     matching (scoped) records exist — the caller turns that into a 404."""
-    mstmt = select(ProcurementRecord).where(ProcurementRecord.supplier_po_no == supplier_po_no)
+    mstmt = select(ProcurementRecord).where(
+        ProcurementRecord.supplier_po_no == supplier_po_no,
+        ProcurementRecord.delisted_at.is_(None),
+    )
     if supplier_name:
         mstmt = mstmt.where(func.upper(ProcurementRecord.supplier_name) == supplier_name.strip().upper())
     if owner_emp_code:

@@ -84,6 +84,13 @@ class ProcurementRecord(Base):
     # number the supplier knows from their PO document — the supplier portal shows
     # it; `supplier_po_no` (the CRM PoNo counter) stays the internal grouping key.
     po_short_ref: Mapped[str | None] = mapped_column(String(64), index=True)
+    # Full PO transaction number (CRM `PoRefTrnNo`) — the join key to Hariom's
+    # quantity API, whose rows carry the same value as `TrnNo`.
+    po_trn_no: Mapped[str | None] = mapped_column(String(64), index=True)
+    # Set when this line stopped appearing in the CRM pending desk feed (received/
+    # closed/sold on the CRM side). Delisted lines drop out of pending views and
+    # follow-ups; cleared automatically if the line reappears in the feed.
+    delisted_at: Mapped[datetime | None] = mapped_column(DateTime, index=True)
     po_type: Mapped[str | None] = mapped_column(String(32))
     po_qty: Mapped[float | None] = mapped_column(Numeric(18, 3))
     grn_qty: Mapped[float | None] = mapped_column(Numeric(18, 3))

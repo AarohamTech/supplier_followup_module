@@ -69,6 +69,7 @@ def _po_records(db: Session, supplier_name: str | None) -> list[ProcurementRecor
     return list(
         db.scalars(
             select(ProcurementRecord).where(
+                ProcurementRecord.delisted_at.is_(None),
                 func.upper(ProcurementRecord.supplier_name) == supplier_name.upper()
             )
         ).all()

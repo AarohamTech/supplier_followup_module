@@ -117,6 +117,50 @@ def confirm_cancellation(
     return updated
 
 
+def request_line_cancellation(
+    db: Session,
+    *,
+    record_id: int,
+    requested_by: str | None,
+    remark: str | None = None,
+) -> dict[str, Any] | None:
+    """Material-wise cancel: mark ONE PO line pending-cancellation and raise the
+    external request for just that line. Returns None if the record is unknown."""
+    rec = db.get(ProcurementRecord, record_id)
+    if rec is None:
+        return None
+    remark = (remark or "").strip()[:500] or None
+    if (rec.cancellation_status or "").upper() not in _TERMINAL:
+        rec.cancellation_status = PENDING
+        rec.cancel_requested_by = requested_by
+        rec.cancel_requested_at = datetime.utcnow()
+        rec.cancel_remark = remark
+        db.commit()
+
+    external = _raise_external_cancel(
+        supplier_po_no=rec.supplier_po_no,
+        supplier_name=rec.supplier_name,
+        po_date=rec.supplier_date.isoformat() if rec.supplier_date else None,
+        requested_by=requested_by,
+        remark=remark,
+        lines=[{
+            "CrmNo": rec.crm_no,
+            "MaterialName": rec.material_name,
+            "Qty": float(rec.qty) if rec.qty is not None else None,
+            "CustomerName": rec.customer_name,
+            "CustomerPoNo": rec.po_no if rec.po_no != rec.supplier_po_no else None,
+            "CustomerPoDate": rec.po_date.isoformat() if rec.po_date else None,
+        }],
+    )
+    return {
+        "procurement_record_id": rec.id,
+        "supplier_po_no": rec.supplier_po_no,
+        "material_name": rec.material_name,
+        "cancellation_status": PENDING,
+        "external": external,
+    }
+
+
 def reject_cancellation(
     db: Session, *, supplier_po_no: str, supplier_name: str | None = None
 ) -> int:

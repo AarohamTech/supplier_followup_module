@@ -337,7 +337,8 @@ def _pending_po_rows(db: Session, clause: Any) -> list[dict[str, Any]]:
     R = ProcurementRecord
     pending = (R.po_status.is_(None)) | (func.upper(R.po_status).notin_(_DELIVERED_STATUS))
     rows = db.scalars(
-        select(R).where(clause, pending)
+        # delisted = the line left the CRM pending desk (received/closed) — not pending.
+        select(R).where(clause, pending, R.delisted_at.is_(None))
         .order_by(R.shipment_date.asc().nullslast())
         .limit(_ROW_CAP)
     ).all()

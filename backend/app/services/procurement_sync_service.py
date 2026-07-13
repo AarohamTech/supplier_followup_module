@@ -36,12 +36,14 @@ STRING_FIELDS = {
     "customer_po_no",
     "po_type",
     "po_short_ref",
+    "po_trn_no",
 }
 
 UPDATABLE_FROM_SOURCE = (
     "uom", "lead_time", "shipment_date", "signal", "stock", "qty",
     "po_status", "adv_status", "supplier_date", "supplier_name", "quantity", "rate",
     "owner_emp_code", "po_type", "po_qty", "grn_qty", "pending_qty", "po_short_ref",
+    "po_trn_no",
 )
 
 ACCEPTED_EXCEL_COLUMNS = [

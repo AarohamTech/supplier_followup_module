@@ -1468,6 +1468,20 @@ export interface EmployeePoListResponse {
   items: EmployeePo[];
 }
 
+// One material line on the Orders page (material-wise, not PO-grouped).
+export interface OrderLine extends EmployeePoMaterial {
+  supplier_po_no: string;
+  po_short_ref?: string | null;
+  customer_name?: string | null;
+  customer_po_no?: string | null;
+  customer_po_date?: string | null;
+  supplier_date?: string | null;
+  stock?: number | null;
+  owner_emp_code?: string | null;
+  cancellation_status?: string | null;
+  escalation_level?: string | null;
+}
+
 // One communication message on a PO (for the PO detail view).
 export interface PoMessage {
   id: number;
