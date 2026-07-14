@@ -1480,6 +1480,9 @@ export interface OrderLine extends EmployeePoMaterial {
   owner_emp_code?: string | null;
   cancellation_status?: string | null;
   escalation_level?: string | null;
+  po_remark?: string | null;
+  po_trn_no?: string | null; // CRM PO transaction number (drives the PO PDF download)
+  closed?: boolean; // delisted from the CRM pending desk (received/closed)
 }
 
 // One communication message on a PO (for the PO detail view).

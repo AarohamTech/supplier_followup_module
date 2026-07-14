@@ -229,12 +229,15 @@ export const api = {
       }`,
     ),
   // Material-wise Orders view
-  poViewLines: (params: { search?: string; owner?: string; page?: number; size?: number } = {}) => {
+  poViewLines: (params: {
+    search?: string; owner?: string; signal?: string; po_status?: string;
+    date_from?: string; date_to?: string; include_closed?: boolean;
+    page?: number; size?: number;
+  } = {}) => {
     const q = new URLSearchParams();
-    if (params.search) q.set("search", params.search);
-    if (params.owner) q.set("owner", params.owner);
-    if (params.page) q.set("page", String(params.page));
-    if (params.size) q.set("size", String(params.size));
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== "" && v !== false) q.set(k, String(v));
+    });
     const qs = q.toString();
     return http<{ items: OrderLine[]; total: number; page: number; size: number }>(
       `/api/po-view/lines${qs ? `?${qs}` : ""}`,

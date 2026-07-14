@@ -2,6 +2,8 @@
 and a whole-PO cancellation request. Admin only (guarded at the router level)."""
 from __future__ import annotations
 
+from datetime import date, datetime
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -38,12 +40,22 @@ def list_lines(
     db: Session = Depends(get_db),
     search: str | None = Query(default=None),
     owner: str | None = Query(default=None),
+    signal: str | None = Query(default=None),
+    po_status: str | None = Query(default=None),
+    supplier_name: str | None = Query(default=None),
+    date_from: date | None = Query(default=None),
+    date_to: date | None = Query(default=None),
+    include_closed: bool = Query(default=False),
     page: int = Query(default=1, ge=1),
     size: int = Query(default=50, ge=1, le=200),
 ) -> dict:
     """Material-wise PO lines for the Orders page (one row per material)."""
     items, total = po_view_service.material_lines(
-        db, search=search, owner_emp_code=owner, page=page, size=size
+        db, search=search, owner_emp_code=owner, signal=signal, po_status=po_status,
+        supplier_name=supplier_name,
+        date_from=datetime.combine(date_from, datetime.min.time()) if date_from else None,
+        date_to=datetime.combine(date_to, datetime.max.time()) if date_to else None,
+        include_closed=include_closed, page=page, size=size,
     )
     return {"items": items, "total": total, "page": page, "size": size}
 

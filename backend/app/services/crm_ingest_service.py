@@ -328,6 +328,7 @@ def map_row(row: dict[str, Any]) -> dict[str, Any]:
         "po_short_ref": row.get("PoShortRefTrnNo"),
         # Full PO transaction number — join key to Hariom's quantity API (TrnNo).
         "po_trn_no": row.get("PoRefTrnNo"),
+        "po_remark": row.get("Remark"),
         # Receipt quantities (Hariom User Desk API): PoQty = ordered, GrnQty =
         # material inward at Hariom, PendQty = still to receive. Candidate keys are
         # defensive; the "[crm] desk row keys" log confirms the real names in prod.
@@ -406,6 +407,7 @@ def _col_values(payload: dict[str, Any]) -> dict[str, Any]:
         "po_date": payload.get("po_date"),
         "po_short_ref": payload.get("po_short_ref"),
         "po_trn_no": payload.get("po_trn_no"),
+        "po_remark": payload.get("po_remark"),
         "po_type": payload.get("po_type"),
         "po_qty": payload.get("po_qty"),
         "grn_qty": payload.get("grn_qty"),
@@ -431,6 +433,7 @@ _HASH_FIELDS = (
     "supplier_name", "supplier_date", "lead_time", "uom", "owner_emp_code", "quantity",
     "customer_name", "customer_po_no", "po_date",
     "po_type", "po_qty", "grn_qty", "pending_qty", "po_short_ref", "po_trn_no",
+    "po_remark",
 )
 
 
@@ -521,6 +524,7 @@ def _bulk_upsert(db: Session, raw_rows: list[dict[str, Any]]) -> tuple[int, int,
                 "po_date": stmt.excluded.po_date,
                 "po_short_ref": stmt.excluded.po_short_ref,
                 "po_trn_no": stmt.excluded.po_trn_no,
+                "po_remark": stmt.excluded.po_remark,
                 "po_type": stmt.excluded.po_type,
                 "po_qty": stmt.excluded.po_qty,
                 "grn_qty": stmt.excluded.grn_qty,

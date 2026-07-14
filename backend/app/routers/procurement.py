@@ -142,6 +142,112 @@ def list_records(
     return ProcurementListOut(total=total, page=page, size=size, items=rows)
 
 
+@router.get("/po-pdf")
+def po_pdf(
+    trn_no: str = Query(..., description="PO transaction number (po_trn_no / CRM PoRefTrnNo)"),
+    amend_no: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+):
+    """Download the PO PDF from the Hariom CRM (proxied — the CRM only accepts
+    calls from this server). CompanyId is the current company's desk id."""
+    import requests
+    from fastapi.responses import Response
+    from ..core.tenant import get_current_schema, DEFAULT_SCHEMA
+    from ..services import company_service
+    from ..services.crm_config import get_crm_config
+
+    schema = get_current_schema()
+    if schema == DEFAULT_SCHEMA:
+        cfg = get_crm_config(str(crm_ingest_service.settings.CRM_DESK_ID or "102"), is_default=True)
+    else:
+        company = company_service.get_by_schema(db, schema)
+        cfg = get_crm_config(company.code, is_default=company.is_default) if company else None
+    if cfg is None:
+        raise HTTPException(503, "CRM connection is not configured for this company")
+
+    url = f"{cfg.base_url.rstrip('/')}/api/procurement/getpopdf"
+    params = {"CompanyId": cfg.desk_id, "TrnNo": trn_no, "AmendNo": amend_no}
+
+    def _call(token: str) -> "requests.Response":
+        return requests.get(
+            url, params=params,
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=crm_ingest_service.settings.CRM_HTTP_TIMEOUT_SECONDS,
+        )
+
+    resp = _call(crm_ingest_service.get_token(cfg))
+    if resp.status_code == 401:
+        resp = _call(crm_ingest_service.get_token(cfg, force_refresh=True))
+    if resp.status_code != 200 or not resp.content:
+        raise HTTPException(502, f"CRM PO PDF fetch failed ({resp.status_code})")
+    return Response(
+        content=resp.content,
+        media_type=resp.headers.get("Content-Type", "application/pdf"),
+        headers={"Content-Disposition": f'attachment; filename="PO-{trn_no}.pdf"'},
+    )
+
+
+@router.get("/export.xlsx")
+def export_records(
+    db: Session = Depends(get_db),
+    signal: Optional[str] = None,
+    supplier_name: Optional[str] = None,
+    supplier_po_no: Optional[str] = None,
+    crm_no: Optional[str] = None,
+    po_status: Optional[str] = None,
+    owner_emp_code: Optional[str] = None,
+    search: Optional[str] = None,
+):
+    """Download the (filtered) PO lines as an Excel workbook — the PO Follow-ups
+    'Download PO' action. Same filters as the list endpoint, capped at 5000 rows."""
+    from fastapi.responses import StreamingResponse
+    from io import BytesIO
+    from openpyxl import Workbook
+
+    R = ProcurementRecord
+    stmt = select(R)
+    if signal: stmt = stmt.where(R.signal == signal.upper())
+    if supplier_name: stmt = stmt.where(R.supplier_name.ilike(f"%{supplier_name}%"))
+    if supplier_po_no: stmt = stmt.where(R.supplier_po_no.ilike(f"%{supplier_po_no}%"))
+    if crm_no: stmt = stmt.where(R.crm_no.ilike(f"%{crm_no}%"))
+    if po_status: stmt = stmt.where(R.po_status == po_status)
+    if owner_emp_code: stmt = stmt.where(R.owner_emp_code == owner_emp_code)
+    if search:
+        like = f"%{search}%"
+        stmt = stmt.where(or_(
+            R.crm_no.ilike(like), R.supplier_po_no.ilike(like), R.material_name.ilike(like),
+            R.supplier_name.ilike(like), R.po_status.ilike(like), R.signal.ilike(like),
+        ))
+    rows = db.scalars(stmt.order_by(R.shipment_date.asc().nulls_last()).limit(5000)).all()
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "PO Lines"
+    ws.append([
+        "PO No", "PO Ref", "Vendor", "Customer", "Customer PO", "CRM No", "Material",
+        "Qty", "UOM", "Stock", "Rate", "Signal", "PO Status", "PO Date", "Ship Date",
+        "Commitment Date", "Follow-ups", "Owner", "Remark",
+    ])
+    for r in rows:
+        ws.append([
+            r.supplier_po_no, r.po_short_ref, r.supplier_name, r.customer_name,
+            (r.po_no if r.po_no != r.supplier_po_no else None), r.crm_no, r.material_name,
+            float(r.qty) if r.qty is not None else None, r.uom,
+            float(r.stock) if r.stock is not None else None,
+            float(r.rate) if r.rate is not None else None,
+            r.signal, r.po_status, r.supplier_date, r.shipment_date,
+            r.commitment_date, r.followup_count, r.owner_emp_code, r.po_remark,
+        ])
+    buf = BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="po-lines.xlsx"'},
+    )
+
+
 @router.get("/columns")
 def columns():
     return {

@@ -1,5 +1,6 @@
 import { FileSpreadsheet } from "lucide-react";
 
+import DownloadPoButton from "@/components/procurement/DownloadPoButton";
 import FiltersBar from "@/components/procurement/FiltersBar";
 import QuickFilters from "@/components/procurement/QuickFilters";
 import PoTable from "@/components/procurement/PoTable";
@@ -17,6 +18,7 @@ export default function Page() {
           </>
         }
         icon={FileSpreadsheet}
+        actions={<DownloadPoButton />}
       />
       <FiltersBar />
       <QuickFilters />

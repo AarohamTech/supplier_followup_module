@@ -87,6 +87,8 @@ class ProcurementRecord(Base):
     # Full PO transaction number (CRM `PoRefTrnNo`) — the join key to Hariom's
     # quantity API, whose rows carry the same value as `TrnNo`.
     po_trn_no: Mapped[str | None] = mapped_column(String(64), index=True)
+    # PO remark from the CRM feed (`Remark`, e.g. "MONTHLY ORDER JUNE - JULY 26").
+    po_remark: Mapped[str | None] = mapped_column(String(500))
     # Set when this line stopped appearing in the CRM pending desk feed (received/
     # closed/sold on the CRM side). Delisted lines drop out of pending views and
     # follow-ups; cleared automatically if the line reappears in the feed.

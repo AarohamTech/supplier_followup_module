@@ -184,15 +184,34 @@ def material_lines(
     *,
     search: str | None = None,
     owner_emp_code: str | None = None,
+    signal: str | None = None,
+    po_status: str | None = None,
+    supplier_name: str | None = None,
+    date_from: Any = None,
+    date_to: Any = None,
+    include_closed: bool = False,
     page: int | None = None,
     size: int | None = None,
 ) -> tuple[list[dict[str, Any]], int]:
     """Material-wise PO lines (one row per material, not grouped by PO) for the
-    Orders page. Excludes delisted lines; earliest ship date first."""
+    Orders page. Delisted (closed) lines are hidden unless include_closed;
+    earliest ship date first."""
     R = ProcurementRecord
-    stmt = select(R).where(R.supplier_po_no.isnot(None), R.delisted_at.is_(None))
+    stmt = select(R).where(R.supplier_po_no.isnot(None))
+    if not include_closed:
+        stmt = stmt.where(R.delisted_at.is_(None))
     if owner_emp_code:
         stmt = stmt.where(R.owner_emp_code == owner_emp_code)
+    if signal:
+        stmt = stmt.where(func.upper(R.signal) == signal.strip().upper())
+    if po_status:
+        stmt = stmt.where(func.upper(R.po_status) == po_status.strip().upper())
+    if supplier_name:
+        stmt = stmt.where(R.supplier_name.ilike(f"%{supplier_name.strip()}%"))
+    if date_from is not None:
+        stmt = stmt.where(R.shipment_date >= date_from)
+    if date_to is not None:
+        stmt = stmt.where(R.shipment_date <= date_to)
     if search and search.strip():
         like = f"%{search.strip()}%"
         stmt = stmt.where(or_(
@@ -222,6 +241,9 @@ def material_lines(
             "owner_emp_code": r.owner_emp_code,
             "cancellation_status": r.cancellation_status,
             "escalation_level": r.escalation_level,
+            "po_remark": r.po_remark,
+            "po_trn_no": r.po_trn_no,
+            "closed": r.delisted_at is not None,
         }
         for r in rows
     ], int(total)

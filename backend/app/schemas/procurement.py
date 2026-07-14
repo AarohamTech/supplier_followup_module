@@ -54,6 +54,8 @@ class ProcurementBase(BaseModel):
     po_short_ref: Optional[str] = None
     # Full PO transaction number (CRM PoRefTrnNo) — quantity-API join key.
     po_trn_no: Optional[str] = None
+    # PO remark from the CRM feed.
+    po_remark: Optional[str] = None
     # Receipt quantities from the CRM desk feed: PoQty (ordered), GrnQty (received
     # at Hariom), PendQty (still to receive). po_type flags "Open" POs whose
     # quantities are unreliable.
