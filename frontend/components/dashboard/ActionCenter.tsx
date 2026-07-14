@@ -1,5 +1,5 @@
 "use client";
-import { ArrowUpRight, Bell, Clock, Edit3, Mail, Zap } from "lucide-react";
+import { ArrowUpRight, Bell, Clock, Edit3, Mail, LayoutGrid } from "lucide-react";
 import Link from "next/link";
 
 const actions = [
@@ -13,7 +13,7 @@ export default function ActionCenter() {
   return (
     <div className="card overflow-hidden">
       <div className="flex items-center gap-2 border-b border-brand-border px-4 py-3">
-        <Zap size={14} className="text-signal-red" />
+        <LayoutGrid size={14} className="text-signal-red" />
         <div className="text-sm font-semibold">Quick actions</div>
       </div>
       <div className="p-2">

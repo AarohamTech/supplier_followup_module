@@ -1,6 +1,6 @@
 "use client";
 import { useStore } from "@/lib/store";
-import { Sparkles } from "lucide-react";
+import { Activity } from "lucide-react";
 
 export default function AIInsights() {
   const list = useStore((s) => s.list);
@@ -29,7 +29,7 @@ export default function AIInsights() {
   return (
     <div className="card p-4">
       <div className="flex items-center gap-2 mb-3">
-        <Sparkles size={14} className="text-signal-red" />
+        <Activity size={14} className="text-signal-red" />
         <div className="font-semibold text-sm">Harmony Intelligent</div>
       </div>
       <ul className="space-y-2">

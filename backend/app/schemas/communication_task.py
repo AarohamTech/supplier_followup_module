@@ -64,6 +64,11 @@ class CommunicationTaskUpdate(BaseModel):
     progress_percent: Optional[int] = Field(default=None, ge=0, le=100)
 
 
+# Legacy P0-P3 rows may still exist in pre-migration data. Map them so serving an
+# old row never crashes the whole list endpoint (response-model validation is strict).
+_LEGACY_PRIORITY = {"P0": "HIGH", "P1": "HIGH", "P2": "MEDIUM", "P3": "LOW"}
+
+
 class CommunicationTaskOut(CommunicationTaskBase):
     model_config = ConfigDict(from_attributes=True)
 
@@ -79,6 +84,32 @@ class CommunicationTaskOut(CommunicationTaskBase):
             except (TypeError, ValueError):
                 continue  # drop legacy free-text watcher names (pre-migration data)
         return out
+
+    # Output only: coerce any legacy/unknown enum value to a safe default so a
+    # single stale row can't 500 the list. Input models stay strict (bad creates 422).
+    @field_validator("priority", mode="before")
+    @classmethod
+    def _coerce_priority(cls, v):
+        if v in ("LOW", "MEDIUM", "HIGH"):
+            return v
+        return _LEGACY_PRIORITY.get(v, "MEDIUM")
+
+    @field_validator("status", mode="before")
+    @classmethod
+    def _coerce_status(cls, v):
+        valid = {"BACKLOG", "TODO", "IN_PROGRESS", "WAITING_SUPPLIER",
+                 "WAITING_CUSTOMER", "BLOCKED", "DONE"}
+        return v if v in valid else "TODO"
+
+    @field_validator("signal", mode="before")
+    @classmethod
+    def _coerce_signal(cls, v):
+        return v if v in ("GREEN", "YELLOW", "RED", "BLACK") else "YELLOW"
+
+    @field_validator("task_source", mode="before")
+    @classmethod
+    def _coerce_source(cls, v):
+        return v if v in ("SUPPLIER", "CUSTOMER", "INTERNAL", "ESCALATION") else "INTERNAL"
 
     id: int
     comments_count: int = 0

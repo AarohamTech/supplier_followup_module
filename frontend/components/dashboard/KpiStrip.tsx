@@ -1,6 +1,6 @@
 "use client";
 import { useStore } from "@/lib/store";
-import { Layers, Calendar, AlertCircle, Zap, MessageSquare, Sparkles } from "lucide-react";
+import { Layers, Calendar, AlertCircle, OctagonAlert, MessageSquare, Flag } from "lucide-react";
 
 export default function KpiStrip() {
   const k = useStore((s) => s.kpis);
@@ -8,9 +8,9 @@ export default function KpiStrip() {
     { icon: Layers, label: "Total records", value: k?.total_records ?? 0, tint: "bg-blue-50 text-blue-700" },
     { icon: Calendar, label: "Due today", value: k?.due_today_count ?? 0, tint: "bg-amber-50 text-amber-700" },
     { icon: AlertCircle, label: "Overdue", value: k?.overdue_count ?? 0, tint: "bg-red-50 text-signal-red", strong: true },
-    { icon: Zap, label: "Black", value: k?.black_count ?? 0, tint: "bg-red-50 text-signal-red", strong: true },
+    { icon: OctagonAlert, label: "Black", value: k?.black_count ?? 0, tint: "bg-red-50 text-signal-red", strong: true },
     { icon: MessageSquare, label: "Red signal", value: k?.red_count ?? 0, tint: "bg-rose-50 text-rose-700" },
-    { icon: Sparkles, label: "HI required", value: k?.ai_required_count ?? 0, tint: "bg-violet-50 text-violet-700" },
+    { icon: Flag, label: "HI required", value: k?.ai_required_count ?? 0, tint: "bg-violet-50 text-violet-700" },
   ];
   return (
     <section aria-label="Procurement overview" className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-brand-border bg-brand-border shadow-card md:grid-cols-3 lg:grid-cols-6">
