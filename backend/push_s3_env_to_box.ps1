@@ -18,29 +18,31 @@ if (@($lines).Count -lt 4) {
 }
 $payload = ($lines -join "`n") + "`n"
 
+# NOTE: no double quotes anywhere in the remote script — PowerShell mangles
+# embedded double quotes when passing the block as one ssh argument.
 $remote = @'
 set -e
 cd ~/supplier_followup_module/backend
-if grep -q "^S3_BUCKET=" .env; then
-  echo "S3 keys already present in box .env - leaving untouched"
+if grep -q ^S3_BUCKET= .env; then
+  echo S3 keys already present in box .env - leaving untouched
   cat > /dev/null
 else
-  printf "\n" >> .env
+  printf '\n' >> .env
   cat >> .env
-  echo "S3 keys appended to box .env"
+  echo S3 keys appended to box .env
 fi
-.venv/bin/python -c "import boto3; print('boto3', boto3.__version__, 'installed')"
-echo -n "deployed commit: "; git log --oneline -1
+.venv/bin/python -c 'import boto3; print(boto3.__version__)' && echo boto3 installed
+git log --oneline -1
 sudo systemctl restart sfa-backend
 for i in $(seq 1 30); do
   if curl -fsS http://localhost:8000/healthz >/dev/null 2>&1; then
-    echo "backend healthy after ~$((i*2))s - attachments are LIVE"
+    echo backend healthy after ~$((i*2))s - attachments are LIVE
     exit 0
   fi
   sleep 2
 done
-echo "healthcheck FAILED - recent logs:"
-sudo journalctl -u sfa-backend --since "3 min ago" --no-pager | tail -30
+echo healthcheck FAILED - recent logs:
+sudo journalctl -u sfa-backend --since -3min --no-pager | tail -30
 exit 1
 '@
 
