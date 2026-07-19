@@ -228,15 +228,15 @@ def _log_row_keys(data: list[dict[str, Any]]) -> None:
 
 
 # ── quantity-API probe ────────────────────────────────────────────────────────
-# Hariom's NEWER desk API carries the receipt quantities (PoQty/GrnQty/PendQty)
-# and the customer-unlinked direct POs; the classic feed above has neither. As of
-# 2026-07-10 it was LAN-only inside Hariom (10.10.1.18), so the GRN columns stay
-# empty until Hariom IT (Vinayak) exposes it publicly. The probe re-checks it
-# from this server — the only host the CRM accepts calls from — so the admin
-# panel shows the moment it becomes reachable. Variants cover the unknown desk-id
-# convention (path segment like GetPendingUserDesk vs CompanyId query like
-# getpopdf).
+# The receipt quantities (PoQty/GrnQty/PendQty) are not in the classic pending
+# desk feed above. Per the Hariom IT thread they live in two other feeds:
+# `getpendingpolist` on the PUBLIC host (confirmed 200 OK in Ninad's Postman
+# screenshot, 2026-07-11 — this is what `sync_quantities` consumes) and the
+# newer `crmappservices` desk API, which was LAN-only (10.10.1.18) as of
+# 2026-07-10. The probe checks all of them from this server — the only host the
+# CRM accepts calls from — so the admin panel shows what is actually reachable.
 QTY_API_VARIANTS = (
+    "api/procurement/getpendingpolist/{desk}",
     "api/crmappservices/getpendinguserdesk/{desk}",
     "api/crmappservices/getpendinguserdesk?CompanyId={desk}",
     "api/crmappservices/getpendinguserdesk",
@@ -277,7 +277,13 @@ def probe_qty_api(cfg: CrmConfig) -> str:
         have = [k for k in _QTY_PROBE_KEYS if k in first]
         line = f"{variant} -> HTTP 200 rows={len(rows)} qty_keys={','.join(have) or 'none'}"
         if have:
-            line += f" keys={sorted(first)[:40]}"
+            # Sample the join-key candidates so the TrnNo <-> po_trn_no match can
+            # be verified straight from the admin panel.
+            line += (
+                f" trn_sample={str(first.get('TrnNo'))[:24]}"
+                f" pono_sample={str(first.get('PoNo'))[:24]}"
+                f" keys={sorted(first)[:40]}"
+            )
         parts.append(line)
     return "qty-api probe: " + " | ".join(parts)
 
@@ -298,6 +304,159 @@ def _qty_probe_for_run(cfg: CrmConfig) -> str | None:
     except Exception:  # noqa: BLE001 — diagnostics must never break ingest
         log.exception("[crm] qty-api probe failed (ignored)")
         return None
+
+
+# ── quantity sync (getpendingpolist) ─────────────────────────────────────────
+def fetch_qty_list(cfg: CrmConfig) -> list[dict[str, Any]]:
+    """Fetch the pending-PO-list feed — the PUBLIC endpoint confirmed live in the
+    Hariom IT thread (Ninad's Postman screenshot, 2026-07-11). Each row is one
+    PO material line with PoQty (ordered), GrnQty (received), PendQty (still to
+    receive), PoType and TrnNo — the PO transaction number the desk feed gives us
+    as PoRefTrnNo (stored on records as `po_trn_no`)."""
+    base = cfg.base_url.rstrip("/")
+    url = f"{base}/api/procurement/getpendingpolist/{cfg.desk_id}"
+
+    def _call(token: str) -> requests.Response:
+        return requests.get(
+            url,
+            headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
+            timeout=settings.CRM_HTTP_TIMEOUT_SECONDS,
+        )
+
+    resp = _call(get_token(cfg))
+    if resp.status_code == 401:
+        resp = _call(get_token(cfg, force_refresh=True))
+    resp.raise_for_status()
+    rows = _unwrap_rows(resp.json())
+    if rows is None:
+        raise RuntimeError("CRM qty list returned no list payload")
+    return rows
+
+
+def _qty_num(value: Any) -> float | None:
+    try:
+        return float(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def sync_quantities(db: Session, cfg: CrmConfig) -> dict[str, int]:
+    """Join the qty feed onto procurement_records by (TrnNo → po_trn_no, material
+    name), store PoQty/GrnQty/PendQty/PoType and re-derive receipt_status.
+    Returns stats for the ingest log — `matched=0` with rows present means the
+    join key assumption is wrong and needs revisiting against the probe output."""
+    rows = fetch_qty_list(cfg)
+    index: dict[tuple[str, str], dict[str, Any]] = {}
+    for r in rows:
+        if not isinstance(r, dict):
+            continue
+        trn = str(r.get("TrnNo") or "").strip()
+        mat = str(r.get("MaterialName") or "").strip().upper()
+        if trn and mat:
+            index[(trn, mat)] = r
+
+    recs = db.execute(
+        select(
+            ProcurementRecord.id, ProcurementRecord.po_trn_no, ProcurementRecord.material_name,
+            ProcurementRecord.po_qty, ProcurementRecord.grn_qty, ProcurementRecord.pending_qty,
+            ProcurementRecord.po_type, ProcurementRecord.receipt_status,
+        ).where(ProcurementRecord.po_trn_no.isnot(None))
+    ).all()
+
+    matched = 0
+    changes: list[dict[str, Any]] = []
+    for rec in recs:
+        row = index.get((str(rec.po_trn_no).strip(), str(rec.material_name or "").strip().upper()))
+        if row is None:
+            continue
+        matched += 1
+        po_qty = _qty_num(row.get("PoQty"))
+        grn_qty = _qty_num(row.get("GrnQty"))
+        pending_qty = _qty_num(row.get("PendQty"))
+        po_type = str(row.get("PoType") or "").strip() or None
+        status = _receipt_status({"po_type": po_type, "grn_qty": grn_qty, "pending_qty": pending_qty})
+        if (
+            _qty_num(rec.po_qty) == po_qty and _qty_num(rec.grn_qty) == grn_qty
+            and _qty_num(rec.pending_qty) == pending_qty
+            and (rec.po_type or None) == po_type and (rec.receipt_status or None) == status
+        ):
+            continue
+        changes.append({
+            "id": rec.id, "po_qty": po_qty, "grn_qty": grn_qty,
+            "pending_qty": pending_qty, "po_type": po_type, "receipt_status": status,
+        })
+
+    if changes:
+        _apply_qty_changes(db, changes)
+        db.commit()
+    return {"rows": len(rows), "recs": len(recs), "matched": matched, "updated": len(changes)}
+
+
+def _apply_qty_changes(db: Session, changes: list[dict[str, Any]]) -> None:
+    """Write qty updates in bulk. Postgres gets one UPDATE ... FROM (VALUES ...)
+    per chunk — the DB is cross-region, so per-row round trips are far too slow
+    for the initial backfill. Other dialects (SQLite tests) update via the ORM."""
+    if db.get_bind().dialect.name != "postgresql":
+        for ch in changes:
+            rec = db.get(ProcurementRecord, ch["id"])
+            if rec is None:
+                continue
+            rec.po_qty = ch["po_qty"]
+            rec.grn_qty = ch["grn_qty"]
+            rec.pending_qty = ch["pending_qty"]
+            rec.po_type = ch["po_type"]
+            rec.receipt_status = ch["receipt_status"]
+        return
+    chunk_size = 200
+    for i in range(0, len(changes), chunk_size):
+        chunk = changes[i:i + chunk_size]
+        values_sql: list[str] = []
+        params: dict[str, Any] = {}
+        for j, ch in enumerate(chunk):
+            values_sql.append(
+                f"(CAST(:id{j} AS bigint), CAST(:pq{j} AS numeric), CAST(:gq{j} AS numeric), "
+                f"CAST(:nq{j} AS numeric), CAST(:pt{j} AS varchar), CAST(:rs{j} AS varchar))"
+            )
+            params.update({
+                f"id{j}": ch["id"], f"pq{j}": ch["po_qty"], f"gq{j}": ch["grn_qty"],
+                f"nq{j}": ch["pending_qty"], f"pt{j}": ch["po_type"], f"rs{j}": ch["receipt_status"],
+            })
+        db.execute(text(
+            "UPDATE procurement_records AS r SET "
+            "po_qty = v.po_qty, grn_qty = v.grn_qty, pending_qty = v.pending_qty, "
+            "po_type = v.po_type, receipt_status = v.receipt_status "
+            f"FROM (VALUES {', '.join(values_sql)}) "
+            "AS v(id, po_qty, grn_qty, pending_qty, po_type, receipt_status) "
+            "WHERE r.id = v.id"
+        ), params)
+
+
+_qty_sync_last: dict[str, float] = {}
+
+
+def _qty_sync_for_run(db: Session, cfg: CrmConfig, *, force: bool = False) -> str | None:
+    """Run the quantity sync, throttled per desk (the feed is several MB); the
+    manual Sync-now button forces it. Returns the ingest-log message fragment.
+    Failure-safe: quantities must never break the PO ingest."""
+    if not settings.CRM_QTY_SYNC_ENABLED:
+        return None
+    key = f"{cfg.base_url}|{cfg.desk_id}"
+    now = time.time()
+    if not force and now - _qty_sync_last.get(key, 0.0) < settings.CRM_QTY_SYNC_INTERVAL_MINUTES * 60:
+        return None
+    _qty_sync_last[key] = now
+    try:
+        stats = sync_quantities(db, cfg)
+        log.info("[crm] qty sync desk=%s rows=%d matched=%d updated=%d",
+                 cfg.desk_id, stats["rows"], stats["matched"], stats["updated"])
+        return "qty-sync: rows={rows} recs={recs} matched={matched} updated={updated}".format(**stats)
+    except Exception as exc:  # noqa: BLE001
+        try:
+            db.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+        log.warning("[crm] qty sync failed (ignored): %s", exc)
+        return f"qty-sync: error {str(exc)[:200]}"
 
 
 def _emp_code(value: Any) -> str | None:
@@ -791,9 +950,13 @@ def poll_and_ingest(
 
     duration_ms = int((time.time() - t0) * 1000)
     message = _feed_profile(feed)
+    qty_note = _qty_sync_for_run(db, cfg, force=(trigger == "manual"))
+    if qty_note:
+        message = f"{message} || {qty_note}"
     probe = _qty_probe_for_run(cfg)
     if probe:
-        message = f"{message} || {probe}"[:6000]
+        message = f"{message} || {probe}"
+    message = message[:6000]
     _log_run(status="OK", trigger=trigger, desk=str(label),
              fetched=len(feed), generated=len(generated),
              created=created, updated=updated, skipped=skipped, errors=0,

@@ -167,10 +167,16 @@ class Settings(BaseSettings):
     CRM_DEVICE_ID: str = Field(default="102")
     CRM_INGEST_INTERVAL_MINUTES: int = Field(default=3)
     CRM_HTTP_TIMEOUT_SECONDS: float = Field(default=40.0)
-    # Hourly server-side probe of Hariom's newer quantity API (PoQty/GrnQty/
-    # PendQty) — result lands in the ingest log so the admin panel shows when
-    # Hariom IT exposes it publicly. Diagnostic only; safe to leave on.
+    # Hourly server-side probe of the quantity endpoints (PoQty/GrnQty/PendQty)
+    # — result lands in the ingest log so the admin panel shows what's reachable.
+    # Diagnostic only; safe to leave on.
     CRM_QTY_PROBE_ENABLED: bool = Field(default=True)
+    # Sync receipt quantities from the public getpendingpolist feed onto
+    # procurement_records (join: TrnNo -> po_trn_no + material name). The feed is
+    # several MB, so it runs at most every CRM_QTY_SYNC_INTERVAL_MINUTES; the
+    # manual Sync-now button forces it. Fail-safe — errors never break ingest.
+    CRM_QTY_SYNC_ENABLED: bool = Field(default=True)
+    CRM_QTY_SYNC_INTERVAL_MINUTES: int = Field(default=30)
 
     # Inbound mail from these sender domains is the Customer Emails inbox (the
     # parties we correspond with, e.g. our customer group). Other unmatched

@@ -44,7 +44,9 @@ class ProbeTests(unittest.TestCase):
         self.assertTrue(out.startswith("qty-api probe:"))
         self.assertEqual(out.count("HTTP 404"), len(ingest.QTY_API_VARIANTS))
         for call in fake.call_args_list:
-            self.assertTrue(call.args[0].startswith("http://crm.example:8599/api/crmappservices/"))
+            self.assertTrue(call.args[0].startswith("http://crm.example:8599/api/"))
+        # the confirmed-public pending-PO-list endpoint is probed first
+        self.assertIn("getpendingpolist/102", fake.call_args_list[0].args[0])
 
     def test_live_variant_reports_rows_and_qty_keys(self):
         rows = [{"TrnNo": "1", "PoQty": 5, "GrnQty": 2, "PendQty": 3, "PoType": "Basic"}] * 2
