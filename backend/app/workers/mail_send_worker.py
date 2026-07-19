@@ -94,7 +94,11 @@ def _is_message_id(value: str | None) -> bool:
     return bool(value) and "@" in value
 
 
-def _build_email(msg: CommunicationMessage, from_addr: str | None = None) -> EmailMessage:
+def _build_email(
+    msg: CommunicationMessage,
+    from_addr: str | None = None,
+    db: Session | None = None,
+) -> EmailMessage:
     from_addr = from_addr or settings.SMTP_FROM
     em = EmailMessage()
     em["From"] = from_addr
@@ -126,6 +130,21 @@ def _build_email(msg: CommunicationMessage, from_addr: str | None = None) -> Ema
     em.set_content(msg.body or _html_to_text(body_html) or "")
     if body_html:
         em.add_alternative(body_html, subtype="html")
+
+    # User-uploaded files bound to this message go out as real MIME attachments.
+    # A storage failure fails the send (and is retried) rather than silently
+    # delivering the mail without the files the sender attached.
+    if db is not None:
+        from ..services import attachment_service
+
+        for filename, content_type, data in attachment_service.load_for_email(db, msg.id):
+            maintype, _, subtype = (content_type or "application/octet-stream").partition("/")
+            em.add_attachment(
+                data,
+                maintype=maintype or "application",
+                subtype=subtype or "octet-stream",
+                filename=filename,
+            )
     return em
 
 
@@ -284,7 +303,7 @@ def _send_bucket(message_ids: list[int], schema: str) -> list[dict[str, Any]]:
                 try:
                     if client is None:
                         client = _open_client(cfg)
-                    em = _build_email(msg, cfg.from_addr)
+                    em = _build_email(msg, cfg.from_addr, db=db)
                     client.send_message(em)
                     _sync_delivery_state(db, msg, status="SENT")
                     db.commit()
@@ -397,7 +416,7 @@ def send_message_now(db: Session, message_id: int) -> dict[str, Any]:
     if msg is None or msg.direction != "OUTGOING" or msg.status != "READY":
         return {"enabled": True, "sent": False, "reason": "not a queued outgoing message"}
     try:
-        em = _build_email(msg, cfg.from_addr)
+        em = _build_email(msg, cfg.from_addr, db=db)
         _send_one(em, cfg)
         _sync_delivery_state(db, msg, status="SENT")
         db.commit()

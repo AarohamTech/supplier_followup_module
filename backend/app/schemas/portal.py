@@ -7,6 +7,7 @@ from typing import Optional
 from pydantic import BaseModel, Field
 
 from .asn import AsnSummaryOut
+from .attachment import AttachmentOut
 
 
 class PortalSummary(BaseModel):
@@ -35,6 +36,8 @@ class PortalPo(BaseModel):
     unread_inbound: int = 0
     # True when a buyer has escalated this PO (manual or rule-based).
     escalated: bool = False
+    # CRM PO transaction number — drives the official PO PDF download.
+    po_trn_no: Optional[str] = None
 
 
 class PortalMessage(BaseModel):
@@ -47,11 +50,14 @@ class PortalMessage(BaseModel):
     mail_type: Optional[str] = None
     status: str
     at: Optional[datetime] = None
+    attachments: list[AttachmentOut] = Field(default_factory=list)
 
 
 class PortalMessageCreate(BaseModel):
     body: str = Field(min_length=1)
     subject: Optional[str] = None
+    # Ids returned by the scoped /attachments/upload endpoint, bound on send.
+    attachment_ids: list[int] = Field(default_factory=list)
 
 
 class PortalEscalateIn(BaseModel):

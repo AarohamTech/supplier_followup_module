@@ -31,6 +31,8 @@ const employeeHub: CommHubAdapter = {
   commitments: (params) => api.eportalHubCommitments(params),
   approveMessage: (id) => api.eportalHubApproveMessage(id),
   discardMessage: (id) => api.eportalHubDiscardMessage(id),
+  uploadAttachment: (file) => api.eportalUploadAttachment(file),
+  attachmentEndpoint: (id) => `/api/eportal/attachments/${id}/download`,
 };
 
 export default function EmployeeCommunicationPage() {

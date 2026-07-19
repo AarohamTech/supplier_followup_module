@@ -10,6 +10,7 @@ import { fmtDate, fmtNum } from "@/lib/format";
 import type { Asn, PortalPo, PortalPoMaterial, PortalTask } from "@/lib/types";
 import AsnTable from "@/components/portal/AsnTable";
 import AsnDrawer from "@/components/portal/AsnDrawer";
+import PoPdfButton from "@/components/po/PoPdfButton";
 
 const STATUS_OPTIONS = ["CONFIRMED", "DELAYED", "PARTIAL", "DISPATCHED", "ON_HOLD", "CANCELLED"];
 
@@ -164,6 +165,15 @@ export default function PoDetailPage() {
             </p>
           </div>
           <div className="flex shrink-0 flex-wrap items-center gap-2">
+            {po?.po_trn_no && (
+              <PoPdfButton
+                trnNo={po.po_trn_no}
+                fileLabel={po.po_ref || poNo}
+                endpoint="/api/portal/po-pdf"
+                label="Download PO PDF"
+                className="btn-outline"
+              />
+            )}
             {isEscalated ? (
               <span className="inline-flex items-center gap-1.5 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-signal-red">
                 <AlertTriangle size={13} /> Escalated to buyer team

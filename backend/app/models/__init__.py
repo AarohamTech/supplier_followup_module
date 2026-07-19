@@ -12,6 +12,7 @@ from .hi_agent_chat_message import HiAgentChatMessage
 from .mail_history import MailHistory
 from .mail_parse_rule import MailParseRule
 from .mail_template import MailTemplate
+from .message_attachment import MessageAttachment
 from .notification import Notification
 from .procurement import ProcurementRecord
 from .status_change_log import StatusChangeLog
@@ -41,6 +42,7 @@ __all__ = [
     "MailHistory",
     "MailParseRule",
     "MailTemplate",
+    "MessageAttachment",
     "Notification",
     "ProcurementRecord",
     "StatusChangeLog",

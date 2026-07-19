@@ -17,8 +17,10 @@ const supplierAdapter: CommHubAdapter = {
     }));
   },
   listMessages: (po) => api.portalPoMessages(po),
-  sendMessage: (po, body) => api.sendPortalPoMessage(po, body),
+  sendMessage: (po, body, attachmentIds) => api.sendPortalPoMessage(po, body, undefined, attachmentIds),
   markRead: (po) => api.portalMarkPoRead(po),
+  uploadAttachment: (file) => api.portalUploadAttachment(file),
+  attachmentEndpoint: (id) => `/api/portal/attachments/${id}/download`,
   listMaterials: async (po) => {
     const mats = await api.portalPoMaterials(po);
     return mats.map((m) => ({

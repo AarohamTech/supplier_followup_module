@@ -178,6 +178,20 @@ class Settings(BaseSettings):
     CRM_QTY_SYNC_ENABLED: bool = Field(default=True)
     CRM_QTY_SYNC_INTERVAL_MINUTES: int = Field(default=30)
 
+    # ── File attachments (S3) ────────────────────────────────────────────────
+    # Chat / communication-hub file uploads land in a PRIVATE S3 bucket; all
+    # uploads and downloads are proxied through this backend (no public bucket
+    # access, no presigned URLs). The feature is disabled until the bucket and
+    # keys are configured. S3_ENDPOINT_URL is only for S3-compatible stores
+    # (MinIO / R2 / Wasabi); leave empty for real AWS.
+    S3_BUCKET: str = Field(default="")
+    S3_REGION: str = Field(default="ap-south-1")
+    S3_ACCESS_KEY_ID: str = Field(default="")
+    S3_SECRET_ACCESS_KEY: str = Field(default="")
+    S3_ENDPOINT_URL: str = Field(default="")
+    S3_KEY_PREFIX: str = Field(default="attachments/")
+    ATTACHMENT_MAX_MB: int = Field(default=15)
+
     # Inbound mail from these sender domains is the Customer Emails inbox (the
     # parties we correspond with, e.g. our customer group). Other unmatched
     # senders (bounce-backs, spam) are still stored but hidden from that view.

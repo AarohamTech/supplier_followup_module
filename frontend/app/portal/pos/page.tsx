@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 import type { PortalPo } from "@/lib/types";
 import { fmtDate } from "@/lib/format";
 import { signalBadge } from "@/lib/asn";
+import PoPdfButton from "@/components/po/PoPdfButton";
 
 export default function PortalPosPage() {
   const router = useRouter();
@@ -89,6 +90,11 @@ export default function PortalPosPage() {
                     {/* The PO document reference (what the supplier's PO says); the
                         bare CRM counter is only a muted fallback hint. */}
                     <span className="font-medium text-brand-dark">{p.po_ref || p.supplier_po_no}</span>
+                    <PoPdfButton
+                      trnNo={p.po_trn_no}
+                      fileLabel={p.po_ref || p.supplier_po_no}
+                      endpoint="/api/portal/po-pdf"
+                    />
                     {p.escalated && <span className="badge badge-critical">Escalated</span>}
                   </div>
                   {p.po_ref && p.po_ref !== p.supplier_po_no && (

@@ -1,6 +1,7 @@
 // Centralized API client and typed helpers.
 // Calls go through Next.js rewrites (/api/* → backend /api/*).
 import type {
+  AttachmentMeta,
   SentFeedItem,
   ProcurementRecord,
   ProcurementListResponse,
@@ -454,11 +455,19 @@ export const api = {
     non_po_subject?: string | null;
     body: string;
     send_email: boolean;
+    attachment_ids?: number[];
   }) =>
     http<{ ok: boolean; message_id: number; channel: "email" | "portal"; sent: boolean; emailed_to: string[]; no_email_on_file: boolean }>(
       "/api/communication-hub/reply",
       { method: "POST", body: JSON.stringify(body) },
     ),
+
+  // Staff chat-file upload (bind the returned id to a message on send).
+  uploadAttachment: (file: File) => {
+    const body = new FormData();
+    body.append("file", file);
+    return http<AttachmentMeta>("/api/attachments/upload", { method: "POST", body });
+  },
 
   hubEscalate: (procurementRecordId: number) =>
     http<{ message: string; mail_draft_id: number; task_id: number; subject: string }>(
@@ -1002,11 +1011,17 @@ export const api = {
   portalTasksDashboard: () => http<PortalTaskDashboard>("/api/portal/tasks/dashboard"),
   portalPoMessages: (supplierPoNo: string) =>
     http<PortalMessage[]>(`/api/portal/pos/${encodeURIComponent(supplierPoNo)}/messages`),
-  sendPortalPoMessage: (supplierPoNo: string, body: string, subject?: string) =>
+  sendPortalPoMessage: (supplierPoNo: string, body: string, subject?: string, attachmentIds?: number[]) =>
     http<PortalMessage>(`/api/portal/pos/${encodeURIComponent(supplierPoNo)}/messages`, {
       method: "POST",
-      body: JSON.stringify({ body, subject }),
+      body: JSON.stringify({ body, subject, attachment_ids: attachmentIds ?? [] }),
     }),
+  // Supplier chat-file upload (bind the returned id to a message on send).
+  portalUploadAttachment: (file: File) => {
+    const body = new FormData();
+    body.append("file", file);
+    return http<AttachmentMeta>("/api/portal/attachments/upload", { method: "POST", body });
+  },
   // Clear the unread-inbound badge for a supplier's PO thread.
   portalMarkPoRead: (supplierPoNo: string) =>
     http<{ marked: number }>(
@@ -1125,10 +1140,10 @@ export const api = {
     ),
   eportalPoMessages: (supplierPoNo: string) =>
     http<PortalMessage[]>(`/api/eportal/pos/${encodeURIComponent(supplierPoNo)}/messages`),
-  eportalSendMessage: (supplierPoNo: string, body: string, subject?: string) =>
+  eportalSendMessage: (supplierPoNo: string, body: string, subject?: string, attachmentIds?: number[]) =>
     http<PortalMessage>(`/api/eportal/pos/${encodeURIComponent(supplierPoNo)}/messages`, {
       method: "POST",
-      body: JSON.stringify({ body, subject }),
+      body: JSON.stringify({ body, subject, attachment_ids: attachmentIds ?? [] }),
     }),
   // Clear the unread-inbound badge for an employee's PO thread.
   eportalMarkPoRead: (supplierPoNo: string) =>
@@ -1253,11 +1268,19 @@ export const api = {
     non_po_subject?: string | null;
     body: string;
     send_email: boolean;
+    attachment_ids?: number[];
   }) =>
     http<{ ok: boolean; message_id: number; channel: "email" | "portal"; sent: boolean; emailed_to: string[]; no_email_on_file: boolean }>(
       "/api/eportal/hub/reply",
       { method: "POST", body: JSON.stringify(body) },
     ),
+
+  // Employee chat-file upload (bind the returned id to a message on send).
+  eportalUploadAttachment: (file: File) => {
+    const body = new FormData();
+    body.append("file", file);
+    return http<AttachmentMeta>("/api/eportal/attachments/upload", { method: "POST", body });
+  },
 
   eportalHubEscalate: (procurementRecordId: number) =>
     http<{ message: string; mail_draft_id: number; task_id: number; subject: string }>(

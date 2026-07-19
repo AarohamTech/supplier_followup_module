@@ -43,6 +43,7 @@ from ..services import ai_service
 from ..services import compose_service
 from .. import seed as seed_mod
 from ..services import agent_subscription_service as agent_subs
+from ..services import attachment_service
 from ..services import communication_message_service as msg_service
 from ..services import hi_agent_service
 from ..services import hi_agent_history_service as agent_history
@@ -716,6 +717,7 @@ def get_thread(
 
     # Merge CommunicationMessage rows (new pipeline) for the same PO/record.
     comm_msgs = _load_comm_messages(db, rec_id, s_po_no)
+    cm_attachments = attachment_service.for_messages(db, [cm.id for cm in comm_msgs])
     for cm in comm_msgs:
         reply_rows = _reply_message_table_rows(cm.body)
         outgoing_po_rows = (
@@ -765,6 +767,7 @@ def get_thread(
                     "date": cm.parsed_date.isoformat() if cm.parsed_date else None,
                 },
                 "error_message": cm.error_message,
+                "attachments": cm_attachments.get(cm.id, []),
                 "table_format": "PO_MATERIALS"
                 if outgoing_po_rows
                 else "PO_MATERIALS"
@@ -1472,6 +1475,9 @@ class HubReplyIn(BaseModel):
     body: str
     # True → also email the supplier (and show in their portal); False → portal-only.
     send_email: bool = True
+    # Uploaded file ids to attach — they ride along in the portal thread, and go
+    # out as real email attachments when send_email is on.
+    attachment_ids: list[int] = []
 
 
 @router.post("/reply", dependencies=[Depends(require_manager)])
@@ -1545,6 +1551,8 @@ def reply_now(payload: HubReplyIn, db: Session = Depends(get_db)) -> dict[str, A
             in_reply_to=in_reply_to,
             commit=True,
         )
+        # Bind BEFORE the immediate send so the files go out on the email itself.
+        attachment_service.bind(db, msg.id, payload.attachment_ids)
         from ..workers import mail_send_worker
 
         send_result = mail_send_worker.send_message_now(db, msg.id)
@@ -1570,6 +1578,7 @@ def reply_now(payload: HubReplyIn, db: Session = Depends(get_db)) -> dict[str, A
             sent_at=datetime.utcnow(),
             commit=True,
         )
+        attachment_service.bind(db, msg.id, payload.attachment_ids)
         sent = False
 
     notif.safe(

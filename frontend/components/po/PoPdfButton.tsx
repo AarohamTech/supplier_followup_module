@@ -15,11 +15,14 @@ export default function PoPdfButton({
   fileLabel,
   endpoint = "/api/procurement/po-pdf",
   className,
+  label,
 }: {
   trnNo?: string | null;
   fileLabel: string;
   endpoint?: string;
   className?: string;
+  /** Optional text next to the icon (icon-only by default). */
+  label?: string;
 }) {
   const [busy, setBusy] = useState(false);
   if (!trnNo) return null;
@@ -58,6 +61,7 @@ export default function PoPdfButton({
       className={className ?? "rounded p-0.5 text-brand-muted hover:bg-subtle hover:text-brand-dark disabled:opacity-50"}
     >
       {busy ? <Loader2 size={13} className="animate-spin" /> : <FileDown size={13} />}
+      {label && <span>{label}</span>}
     </button>
   );
 }

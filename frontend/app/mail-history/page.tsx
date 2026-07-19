@@ -32,6 +32,8 @@ const adminHub: CommHubAdapter = {
   commitments: (params) => api.listCommitments(params),
   approveMessage: (id) => api.approveMessage(id),
   discardMessage: (id) => api.discardMessage(id),
+  uploadAttachment: (file) => api.uploadAttachment(file),
+  attachmentEndpoint: (id) => `/api/attachments/${id}/download`,
 };
 
 export default function Page() {

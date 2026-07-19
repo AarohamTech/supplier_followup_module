@@ -12,7 +12,13 @@ import {
 } from "lucide-react";
 
 import { api } from "@/lib/api";
-import type { PortalMessage, PortalTask } from "@/lib/types";
+import type { AttachmentMeta, PortalMessage, PortalTask } from "@/lib/types";
+import {
+  AttachButton,
+  AttachmentChips,
+  AttachmentDropArea,
+  PendingAttachments,
+} from "@/components/attachments/Attachments";
 
 // ─── Normalized PO row shape (works for both EmployeePo and PortalPo) ────────
 export interface CommHubPoRow {
@@ -29,8 +35,11 @@ export interface CommHubPoRow {
 export interface CommHubAdapter {
   listPos: () => Promise<CommHubPoRow[]>;
   listMessages: (supplierPoNo: string) => Promise<PortalMessage[]>;
-  sendMessage: (supplierPoNo: string, body: string) => Promise<PortalMessage>;
+  sendMessage: (supplierPoNo: string, body: string, attachmentIds?: number[]) => Promise<PortalMessage>;
   markRead: (supplierPoNo: string) => Promise<{ marked: number }>;
+  /** Chat file uploads (drag-drop / paperclip) + the scoped download endpoint. */
+  uploadAttachment: (file: File) => Promise<AttachmentMeta>;
+  attachmentEndpoint: (id: number) => string;
   /** Optional context-panel data. */
   listMaterials?: (supplierPoNo: string) => Promise<{ material_name: string; signal?: string | null; commitment_date?: string | null }[]>;
   listTasks?: (supplierPoNo: string) => Promise<PortalTask[]>;
@@ -84,6 +93,8 @@ export default function PortalCommHub({
   const [composer, setComposer] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pendingFiles, setPendingFiles] = useState<AttachmentMeta[]>([]);
+  const [uploadingCount, setUploadingCount] = useState(0);
   const endRef = useRef<HTMLDivElement | null>(null);
 
   const counterpartyLabel = mode === "employee" ? "Supplier" : "Buyer";
@@ -180,16 +191,36 @@ export default function PortalCommHub({
 
   const send = async () => {
     const body = composer.trim();
-    if (!body || !active || sending) return;
+    if ((!body && pendingFiles.length === 0) || !active || sending || uploadingCount > 0) return;
     setSending(true);
     try {
-      const m = await adapter.sendMessage(active, body);
+      const m = await adapter.sendMessage(
+        active,
+        body || "(file attached)",
+        pendingFiles.map((f) => f.id),
+      );
       setMessages((cur) => [...cur, m]);
       setComposer("");
+      setPendingFiles([]);
     } catch (e) {
       setError((e as Error).message);
     } finally {
       setSending(false);
+    }
+  };
+
+  const addFiles = async (files: File[]) => {
+    if (!active) return;
+    setUploadingCount((n) => n + files.length);
+    for (const file of files) {
+      try {
+        const meta = await adapter.uploadAttachment(file);
+        setPendingFiles((cur) => [...cur, meta]);
+      } catch (e) {
+        setError((e as Error).message);
+      } finally {
+        setUploadingCount((n) => Math.max(0, n - 1));
+      }
     }
   };
 
@@ -279,35 +310,47 @@ export default function PortalCommHub({
                     No messages yet. Start the conversation below.
                   </EmptyState>
                 ) : (
-                  messages.map((m) => <MessageBubble key={m.id} m={m} />)
+                  messages.map((m) => (
+                    <MessageBubble key={m.id} m={m} attachmentEndpoint={adapter.attachmentEndpoint} />
+                  ))
                 )}
                 <div ref={endRef} />
               </div>
 
               {/* Composer */}
               <div className="border-t border-brand-border px-5 py-3">
-                <div className="relative">
-                  <textarea
-                    value={composer}
-                    onChange={(e) => setComposer(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && !e.shiftKey) {
-                        e.preventDefault();
-                        void send();
-                      }
-                    }}
-                    placeholder="Type your message…  (Enter to send, Shift+Enter for a new line)"
-                    className="h-24 w-full resize-none rounded-lg border border-brand-border bg-subtle p-3 pr-16 text-sm outline-none focus:border-signal-red/40 focus:bg-card"
+                <AttachmentDropArea onFiles={(files) => void addFiles(files)}>
+                  <div className="relative">
+                    <textarea
+                      value={composer}
+                      onChange={(e) => setComposer(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !e.shiftKey) {
+                          e.preventDefault();
+                          void send();
+                        }
+                      }}
+                      placeholder="Type your message…  (Enter to send, Shift+Enter for a new line; drop files to attach)"
+                      className="h-24 w-full resize-none rounded-lg border border-brand-border bg-subtle p-3 pr-24 text-sm outline-none focus:border-signal-red/40 focus:bg-card"
+                    />
+                    <div className="absolute bottom-3 right-3 flex items-center gap-1.5">
+                      <AttachButton onFiles={(files) => void addFiles(files)} disabled={sending} />
+                      <button
+                        className="rounded-md bg-signal-red p-2 text-white shadow-sm hover:opacity-90 disabled:opacity-50"
+                        disabled={(!composer.trim() && pendingFiles.length === 0) || sending || uploadingCount > 0}
+                        onClick={() => void send()}
+                        title="Send message"
+                      >
+                        {sending ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+                      </button>
+                    </div>
+                  </div>
+                  <PendingAttachments
+                    items={pendingFiles}
+                    uploading={uploadingCount}
+                    onRemove={(id) => setPendingFiles((cur) => cur.filter((f) => f.id !== id))}
                   />
-                  <button
-                    className="absolute bottom-3 right-3 rounded-md bg-signal-red p-2 text-white shadow-sm hover:opacity-90 disabled:opacity-50"
-                    disabled={!composer.trim() || sending}
-                    onClick={() => void send()}
-                    title="Send message"
-                  >
-                    {sending ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
-                  </button>
-                </div>
+                </AttachmentDropArea>
               </div>
             </>
           ) : (
@@ -447,7 +490,13 @@ function PoRow({
   );
 }
 
-function MessageBubble({ m }: { m: PortalMessage }) {
+function MessageBubble({
+  m,
+  attachmentEndpoint,
+}: {
+  m: PortalMessage;
+  attachmentEndpoint: (id: number) => string;
+}) {
   // OUTGOING (mine) → right; INCOMING → left.
   const isMine = m.mine;
   return (
@@ -463,6 +512,7 @@ function MessageBubble({ m }: { m: PortalMessage }) {
           <div className="mb-1 truncate text-xs font-semibold text-brand-dark">{m.subject}</div>
         )}
         <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-brand-dark">{m.body}</p>
+        <AttachmentChips items={m.attachments} endpointFor={attachmentEndpoint} />
         <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] text-brand-muted">
           <span>{fmtTime(m.at)}</span>
           <span>·</span>

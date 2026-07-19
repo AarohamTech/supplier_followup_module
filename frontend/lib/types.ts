@@ -721,6 +721,14 @@ export interface ThreadTableRow {
   remark?: string | null;
 }
 
+// A user-uploaded file on a message (chat / communication hub).
+export interface AttachmentMeta {
+  id: number;
+  filename: string;
+  content_type?: string | null;
+  size_bytes?: number;
+}
+
 export interface CommHubMessage {
   id: number | string;
   procurement_record_id: number | null;
@@ -751,6 +759,7 @@ export interface CommHubMessage {
     date?: string | null;
   } | null;
   error_message?: string | null;
+  attachments?: AttachmentMeta[];
   table_format?: string | null;
   table_rows?: ThreadTableRow[];
 }
@@ -1443,6 +1452,7 @@ export interface PortalPo {
   message_count: number;
   unread_inbound?: number;
   escalated: boolean;
+  po_trn_no?: string | null; // CRM PO transaction number (drives the PO PDF download)
 }
 
 // ─── Employee portal (internal employee accounts, scoped to their POs) ────────
@@ -1595,6 +1605,7 @@ export interface PortalMessage {
   mail_type?: string | null;
   status: string;
   at?: string | null;
+  attachments?: AttachmentMeta[];
 }
 
 export interface PortalPoListResponse {

@@ -6,7 +6,14 @@ import { useStore } from "@/lib/store";
 import { overdueDays } from "@/lib/format";
 import TaskCreateForm from "@/components/tasks/TaskCreateForm";
 import CustomerWorkspace from "@/components/customer-mails/CustomerWorkspace";
+import {
+  AttachButton,
+  AttachmentChips,
+  AttachmentDropArea,
+  PendingAttachments,
+} from "@/components/attachments/Attachments";
 import type {
+  AttachmentMeta,
   CommHubDashboard,
   CommHubMessage,
   CommHubPO,
@@ -76,6 +83,9 @@ export interface CommHubAdapter {
   commitments: (params: { supplier_po_no: string; supplier_name?: string }) => Promise<SupplierMaterialCommitment[]>;
   approveMessage: typeof api.approveMessage;
   discardMessage: typeof api.discardMessage;
+  /** Chat file uploads (drag-drop / paperclip) + the scoped download endpoint. */
+  uploadAttachment: (file: File) => Promise<AttachmentMeta>;
+  attachmentEndpoint: (id: number) => string;
 }
 
 export interface CommunicationHubProps {
@@ -337,6 +347,23 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
   const [composer, setComposer] = useState("");
   const [sendAsEmail, setSendAsEmail] = useState(true);
   const [replying, setReplying] = useState(false);
+  // Files staged on the composer (uploaded immediately, bound on send).
+  const [pendingFiles, setPendingFiles] = useState<AttachmentMeta[]>([]);
+  const [uploadingCount, setUploadingCount] = useState(0);
+
+  const addFiles = async (files: File[]) => {
+    setUploadingCount((n) => n + files.length);
+    for (const file of files) {
+      try {
+        const meta = await hub.uploadAttachment(file);
+        setPendingFiles((cur) => [...cur, meta]);
+      } catch (e: unknown) {
+        pushToast("err", e instanceof Error ? e.message : "Upload failed");
+      } finally {
+        setUploadingCount((n) => Math.max(0, n - 1));
+      }
+    }
+  };
   const [agentBusyThreadId, setAgentBusyThreadId] = useState<number | null>(null);
   // /hi conversation lives in a dedicated right-side chat panel.
   const [hiOpen, setHiOpen] = useState(false);
@@ -946,9 +973,10 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
   }, [hiMessages, agentBusy, hiOpen]);
 
   const handleSendReply = async () => {
-    const text = composer.trim();
-    if (!text || replying) return;
+    const text = composer.trim() || (pendingFiles.length ? "(file attached)" : "");
+    if (!text || replying || uploadingCount > 0) return;
     if (!activePo && !inOther) return;
+    const attachmentIds = pendingFiles.map((f) => f.id);
 
     // Non-PO "Other Mails" reply — threads under the supplier's no-PO conversation.
     if (inOther) {
@@ -964,8 +992,9 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
       };
       setReplying(true);
       try {
-        const res = await hub.reply({ ...params, body: text, send_email: sendAsEmail });
+        const res = await hub.reply({ ...params, body: text, send_email: sendAsEmail, attachment_ids: attachmentIds });
         setComposer("");
+        setPendingFiles([]);
         if (res.no_email_on_file) {
           pushToast("ok", "Saved (no email on file — add one in Email Master)");
         } else if (res.channel === "email") {
@@ -1003,8 +1032,10 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
         supplier_name: activePo.supplier_name,
         body: text,
         send_email: sendAsEmail,
+        attachment_ids: attachmentIds,
       });
       setComposer("");
+      setPendingFiles([]);
       if (res.no_email_on_file) {
         pushToast("ok", "Posted to supplier portal (no email on file — add one in Email Master)");
       } else if (res.channel === "email") {
@@ -1394,6 +1425,7 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
                     <MailBubble
                       key={String(m.id)}
                       mail={m}
+                      attachmentEndpoint={hub.attachmentEndpoint}
                       onAssign={
                         activePo && activeSupplier
                           ? () =>
@@ -1447,6 +1479,7 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
                     </button>
                   ))}
                 </div>
+                <AttachmentDropArea onFiles={(files) => void addFiles(files)}>
                 <div className="relative">
                   {/* @mention autocomplete dropdown (above the textarea) */}
                   {mentionQuery !== null && mentionMatches.length > 0 && (
@@ -1485,6 +1518,7 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
                     className="h-24 w-full resize-none rounded-lg border border-brand-border bg-subtle p-3 pr-28 text-sm outline-none focus:border-signal-red/40 focus:bg-card"
                   />
                   <div className="absolute bottom-3 right-3 flex items-center gap-1.5">
+                    <AttachButton onFiles={(files) => void addFiles(files)} disabled={replying} />
                     {/* HI reply + /hi agent are PO-thread features; hidden on non-PO mails. */}
                     {!inOther && (
                       <button
@@ -1497,7 +1531,7 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
                     )}
                     <button
                       className="rounded-md bg-signal-red p-2 text-white shadow-sm hover:opacity-90 disabled:opacity-50"
-                      disabled={!composer.trim() || replying || agentBusy}
+                      disabled={(!composer.trim() && pendingFiles.length === 0) || replying || agentBusy || uploadingCount > 0}
                       onClick={() => void handleSendReply()}
                       title={
                         /^\/hi\b/i.test(composer.trim())
@@ -1511,6 +1545,12 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
                     </button>
                   </div>
                 </div>
+                <PendingAttachments
+                  items={pendingFiles}
+                  uploading={uploadingCount}
+                  onRemove={(id) => setPendingFiles((cur) => cur.filter((f) => f.id !== id))}
+                />
+                </AttachmentDropArea>
                 <label className="mt-2 flex items-center gap-2 text-xs text-brand-muted">
                   <input
                     type="checkbox"
@@ -2061,7 +2101,15 @@ function EmptyState({ children, icon }: { children: React.ReactNode; icon?: Reac
 // ─────────────────────────────────────────────────────────────────────────────
 // Mail bubble
 // ─────────────────────────────────────────────────────────────────────────────
-function MailBubble({ mail, onAssign }: { mail: CommHubMessage; onAssign: () => void }) {
+function MailBubble({
+  mail,
+  onAssign,
+  attachmentEndpoint,
+}: {
+  mail: CommHubMessage;
+  onAssign: () => void;
+  attachmentEndpoint: (id: number) => string;
+}) {
   const isIncoming = mail.direction === "INCOMING";
   const tableRows = mail.table_rows ?? [];
   const bodyText = stripTableText(mail.body);
@@ -2094,6 +2142,7 @@ function MailBubble({ mail, onAssign }: { mail: CommHubMessage; onAssign: () => 
           </p>
         )}
         {tableRows.length > 0 && <ThreadMessageTable rows={tableRows} />}
+        <AttachmentChips items={mail.attachments} endpointFor={attachmentEndpoint} />
         <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] text-brand-muted">
           <span>{fmtTime(mail.sent_at ?? mail.received_at ?? mail.created_at)}</span>
           <span>·</span>

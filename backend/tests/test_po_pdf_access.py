@@ -81,6 +81,38 @@ class EmployeePoPdfTests(unittest.TestCase):
         fetch.assert_not_called()
 
 
+class SupplierPoPdfTests(unittest.TestCase):
+    def test_own_supplier_can_download_others_cannot(self):
+        from app.models import SupplierMaster
+        from app.routers import portal
+
+        with _temp_db() as db:
+            sup = SupplierMaster(supplier_name="ACME", is_active=True)
+            other = SupplierMaster(supplier_name="OTHER", is_active=True)
+            db.add_all([sup, other])
+            db.commit()
+            owner = user_service.create_user(
+                db, email="sup@acme.local", password="pw", role="supplier", supplier_id=sup.id,
+            )
+            stranger = user_service.create_user(
+                db, email="sup@other.local", password="pw", role="supplier", supplier_id=other.id,
+            )
+            db.add(ProcurementRecord(
+                crm_no="C1", supplier_po_no="PO-1", material_name="Drill",
+                supplier_name="ACME", po_trn_no=TRN,
+            ))
+            db.commit()
+
+            with patch("app.services.crm_config.get_current_crm_config", return_value=CFG), \
+                 patch("app.services.crm_ingest_service.fetch_po_pdf",
+                       return_value=(b"%PDF-fake", "application/pdf")):
+                resp = portal.po_pdf(trn_no=TRN, user=owner, db=db)
+                self.assertEqual(resp.body, b"%PDF-fake")
+                with self.assertRaises(HTTPException) as ctx:
+                    portal.po_pdf(trn_no=TRN, user=stranger, db=db)
+            self.assertEqual(ctx.exception.status_code, 404)
+
+
 class StaffPoPdfTests(unittest.TestCase):
     def test_staff_proxy_returns_pdf(self):
         with _temp_db() as db:

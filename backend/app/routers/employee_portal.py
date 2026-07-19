@@ -12,7 +12,7 @@ import re
 from datetime import date, datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
@@ -21,6 +21,7 @@ from ..core.deps import get_current_employee
 from ..database import get_db
 from ..models.communication_message import CommunicationMessage
 from ..models.communication_task import CommunicationTask
+from ..models.message_attachment import MessageAttachment
 from ..models.procurement import ProcurementRecord
 from ..models.supplier import SupplierMaster
 from ..models.user import User
@@ -37,6 +38,7 @@ from ..schemas.employee_portal import (
 )
 from ..schemas.portal import PortalMessage, PortalMessageCreate
 from ..schemas.procurement import DashboardKpis, ProcurementListOut, ProcurementBreakdown
+from ..services import attachment_service
 from ..services import communication_message_service as msg_service
 from ..services import procurement_breakdown_service as breakdown_service
 from ..services import notification_service as notif
@@ -257,6 +259,55 @@ def po_pdf(
         media_type=media_type,
         headers={"Content-Disposition": f'attachment; filename="PO-{trn_no}.pdf"'},
     )
+
+
+# ── File attachments (chat uploads, scoped to this employee) ──────────────────
+@router.post("/attachments/upload", status_code=201)
+async def upload_attachment(
+    file: UploadFile = File(...),
+    user: User = Depends(get_current_employee),
+    db: Session = Depends(get_db),
+) -> dict:
+    if not attachment_service.storage_enabled():
+        raise HTTPException(503, attachment_service.disabled_reason())
+    data = await file.read()
+    try:
+        att = attachment_service.save_upload(
+            db,
+            data=data,
+            filename=file.filename,
+            content_type=file.content_type,
+            uploaded_by_kind="employee",
+            uploaded_by_id=user.id,
+            uploaded_by_label=user.full_name or user.username or user.email,
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc))
+    return attachment_service.out(att)
+
+
+@router.get("/attachments/{attachment_id}/download")
+def download_attachment(
+    attachment_id: int,
+    user: User = Depends(get_current_employee),
+    db: Session = Depends(get_db),
+):
+    """An employee may download a file they uploaded themselves, or any file on
+    a message in a PO thread they own."""
+    from .attachments import attachment_response
+
+    att = db.get(MessageAttachment, attachment_id)
+    if att is None:
+        raise HTTPException(404, "Attachment not found")
+    allowed = att.uploaded_by_kind == "employee" and att.uploaded_by_id == user.id
+    if not allowed and att.message_id:
+        cm = db.get(CommunicationMessage, att.message_id)
+        allowed = bool(
+            cm and cm.supplier_po_no and _owned_po(db, user, cm.supplier_po_no)
+        )
+    if not allowed:
+        raise HTTPException(404, "Attachment not found")
+    return attachment_response(att)
 
 
 # ── PO Follow-ups (staff /api/procurement mirrors, scoped to owned records) ─────
@@ -481,7 +532,11 @@ def _msg_text(cm: CommunicationMessage) -> str:
     return ""
 
 
-def _msg_out(cm: CommunicationMessage, me: str | None) -> PortalMessage:
+def _msg_out(
+    cm: CommunicationMessage,
+    me: str | None,
+    attachments: list[dict] | None = None,
+) -> PortalMessage:
     mine = cm.direction == "OUTGOING"  # internal-authored (employee/staff/system)
     author = (me or "You") if mine else (cm.supplier_name or "Supplier")
     return PortalMessage(
@@ -494,6 +549,7 @@ def _msg_out(cm: CommunicationMessage, me: str | None) -> PortalMessage:
         mail_type=cm.mail_type,
         status=cm.status,
         at=cm.sent_at or cm.received_at or cm.created_at,
+        attachments=attachments or [],
     )
 
 
@@ -511,7 +567,8 @@ def list_messages(
         .order_by(CommunicationMessage.created_at.asc())
     ).all()
     visible = [m for m in rows if m.direction == "INCOMING" or m.status in _VISIBLE_OUTGOING]
-    return [_msg_out(m, user.full_name) for m in visible]
+    atts = attachment_service.for_messages(db, [m.id for m in visible])
+    return [_msg_out(m, user.full_name, atts.get(m.id)) for m in visible]
 
 
 @router.post("/pos/{supplier_po_no}/messages", response_model=PortalMessage, status_code=201)
@@ -550,6 +607,10 @@ def post_message(
         mail_type="EMPLOYEE_MESSAGE",
         sent_at=datetime.utcnow(),
     )
+    bound = attachment_service.bind(
+        db, cm.id, payload.attachment_ids,
+        expect_kind="employee", expect_uploader_id=user.id,
+    )
     notif.safe(
         notif.notify_po_owners, db,
         supplier_po_no=supplier_po_no,
@@ -561,7 +622,7 @@ def post_message(
         supplier_id=supplier.id if supplier else None,
         procurement_record_id=rec.id,
     )
-    return _msg_out(cm, user.full_name)
+    return _msg_out(cm, user.full_name, [attachment_service.out(a) for a in bound])
 
 
 @router.post("/pos/{supplier_po_no}/messages/mark-read")

@@ -21,6 +21,7 @@ from .database import Base, engine, ensure_schema, SessionLocal
 from .routers import (
     ai,
     ai_insights,
+    attachments,
     auth,
     customer_mails,
     procurement,
@@ -155,6 +156,7 @@ app.include_router(po_view.router)
 # route itself. See docs/progress.md for the permission matrix.
 _rbac = [Depends(require_writer_for_writes)]
 app.include_router(procurement.router, dependencies=_rbac)
+app.include_router(attachments.router, dependencies=_rbac)
 app.include_router(suppliers.router, dependencies=_rbac)
 app.include_router(supplier_emails.router, dependencies=_rbac)
 app.include_router(mail_drafts.router, dependencies=_rbac)

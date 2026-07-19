@@ -9,7 +9,7 @@ import logging
 import re
 from datetime import date, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
@@ -20,6 +20,7 @@ from ..database import get_db
 from ..models.asn import Asn
 from ..models.communication_message import CommunicationMessage
 from ..models.communication_task import CommunicationTask
+from ..models.message_attachment import MessageAttachment
 from ..models.procurement import ProcurementRecord
 from ..models.supplier import SupplierMaster
 from ..models.supplier_material_commitment import SupplierMaterialCommitment
@@ -40,6 +41,7 @@ from ..schemas.portal import (
 from ..services import ai_service
 from ..services import ai_tools_service
 from ..services import asn_service
+from ..services import attachment_service
 from ..services import courier_tracking_service
 from ..services import communication_message_service as msg_service
 from ..services import notification_service as notif
@@ -167,6 +169,7 @@ def list_pos(user: User = Depends(get_current_supplier), db: Session = Depends(g
         g = groups.setdefault(po, {
             "crm_no": r.crm_no,
             "po_ref": None,
+            "po_trn_no": None,
             "signals": [],
             "po_status": r.po_status,
             "earliest": None,
@@ -178,6 +181,9 @@ def list_pos(user: User = Depends(get_current_supplier), db: Session = Depends(g
         # The supplier-facing PO document reference (PoShortRefTrnNo).
         if not g["po_ref"] and getattr(r, "po_short_ref", None):
             g["po_ref"] = r.po_short_ref
+        # PO transaction number — drives the official PO PDF download.
+        if not g["po_trn_no"] and getattr(r, "po_trn_no", None):
+            g["po_trn_no"] = r.po_trn_no
         if (r.escalation_level or "NONE").upper() != "NONE":
             g["escalated"] = True
         if r.shipment_date and (g["earliest"] is None or r.shipment_date < g["earliest"]):
@@ -197,6 +203,7 @@ def list_pos(user: User = Depends(get_current_supplier), db: Session = Depends(g
             message_count=msg_counts.get(po, 0),
             unread_inbound=unread_counts.get(po, 0),
             escalated=g["escalated"],
+            po_trn_no=g["po_trn_no"],
         )
         for po, g in sorted(groups.items())
     ]
@@ -464,6 +471,92 @@ def supplier_tasks_dashboard(
     }
 
 
+@router.get("/po-pdf")
+def po_pdf(
+    trn_no: str,
+    amend_no: int = 0,
+    user: User = Depends(get_current_supplier),
+    db: Session = Depends(get_db),
+):
+    """Download the official PO PDF from the CRM for one of the supplier's own
+    POs (proxied — the CRM only accepts calls from this server). Scope boundary:
+    the transaction number must belong to a line addressed to this supplier."""
+    from fastapi.responses import Response
+
+    from ..services import crm_ingest_service
+    from ..services.crm_config import get_current_crm_config
+
+    name = _supplier_name(db, user)
+    owned = db.scalar(
+        select(func.count()).select_from(ProcurementRecord).where(
+            ProcurementRecord.po_trn_no == trn_no,
+            func.upper(ProcurementRecord.supplier_name) == (name or "").upper(),
+        )
+    ) if name else 0
+    if not owned:
+        raise HTTPException(404, "PO not found for your account")
+    cfg = get_current_crm_config(db)
+    if cfg is None:
+        raise HTTPException(503, "CRM connection is not configured")
+    try:
+        content, media_type = crm_ingest_service.fetch_po_pdf(cfg, trn_no, amend_no)
+    except RuntimeError as exc:
+        raise HTTPException(502, str(exc))
+    return Response(
+        content=content,
+        media_type=media_type,
+        headers={"Content-Disposition": f'attachment; filename="PO-{trn_no}.pdf"'},
+    )
+
+
+# ── File attachments (chat uploads, scoped to this supplier) ─────────────────
+@router.post("/attachments/upload", status_code=201)
+async def upload_attachment(
+    file: UploadFile = File(...),
+    user: User = Depends(get_current_supplier),
+    db: Session = Depends(get_db),
+) -> dict:
+    if not attachment_service.storage_enabled():
+        raise HTTPException(503, attachment_service.disabled_reason())
+    data = await file.read()
+    try:
+        att = attachment_service.save_upload(
+            db,
+            data=data,
+            filename=file.filename,
+            content_type=file.content_type,
+            uploaded_by_kind="supplier",
+            uploaded_by_id=user.id,
+            uploaded_by_label=_supplier_name(db, user) or user.email,
+            supplier_id=user.supplier_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc))
+    return attachment_service.out(att)
+
+
+@router.get("/attachments/{attachment_id}/download")
+def download_attachment(
+    attachment_id: int,
+    user: User = Depends(get_current_supplier),
+    db: Session = Depends(get_db),
+):
+    """A supplier may download a file they uploaded themselves, or any file on a
+    message in one of their own PO threads."""
+    from .attachments import attachment_response
+
+    att = db.get(MessageAttachment, attachment_id)
+    if att is None:
+        raise HTTPException(404, "Attachment not found")
+    allowed = att.supplier_id == user.supplier_id
+    if not allowed and att.message_id:
+        cm = db.get(CommunicationMessage, att.message_id)
+        allowed = bool(cm and cm.supplier_id == user.supplier_id)
+    if not allowed:
+        raise HTTPException(404, "Attachment not found")
+    return attachment_response(att)
+
+
 # ── PO messaging (shared thread with the staff Communication Hub) ─────────────
 def _message_text(cm: CommunicationMessage) -> str:
     if cm.body and cm.body.strip():
@@ -473,7 +566,11 @@ def _message_text(cm: CommunicationMessage) -> str:
     return ""
 
 
-def _to_portal_message(cm: CommunicationMessage, supplier_name: str | None) -> PortalMessage:
+def _to_portal_message(
+    cm: CommunicationMessage,
+    supplier_name: str | None,
+    attachments: list[dict] | None = None,
+) -> PortalMessage:
     mine = cm.direction == "INCOMING"  # supplier-authored
     author = (supplier_name or "You") if mine else "Procurement · Harmony × Hariom"
     return PortalMessage(
@@ -486,6 +583,7 @@ def _to_portal_message(cm: CommunicationMessage, supplier_name: str | None) -> P
         mail_type=cm.mail_type,
         status=cm.status,
         at=cm.sent_at or cm.received_at or cm.created_at,
+        attachments=attachments or [],
     )
 
 
@@ -519,7 +617,8 @@ def list_po_messages(
         cm for cm in rows
         if cm.direction == "INCOMING" or cm.status in _VISIBLE_OUTGOING
     ]
-    return [_to_portal_message(cm, name) for cm in visible]
+    atts = attachment_service.for_messages(db, [cm.id for cm in visible])
+    return [_to_portal_message(cm, name, atts.get(cm.id)) for cm in visible]
 
 
 @router.post("/pos/{supplier_po_no}/messages", response_model=PortalMessage, status_code=201)
@@ -551,6 +650,10 @@ def post_po_message(
         mail_type="PORTAL_MESSAGE",
         received_at=datetime.utcnow(),
     )
+    bound = attachment_service.bind(
+        db, cm.id, payload.attachment_ids,
+        expect_kind="supplier", expect_uploader_id=user.id,
+    )
     notif.safe(
         notif.notify_po_owners, db,
         type="SUPPLIER_MESSAGE",
@@ -561,7 +664,7 @@ def post_po_message(
         supplier_po_no=supplier_po_no,
         procurement_record_id=rec.id,
     )
-    return _to_portal_message(cm, name)
+    return _to_portal_message(cm, name, [attachment_service.out(a) for a in bound])
 
 
 @router.post("/pos/{supplier_po_no}/escalate")
