@@ -63,3 +63,6 @@ class EmployeePoMaterial(BaseModel):
     grn_qty: Optional[float] = None
     pending_qty: Optional[float] = None
     receipt_status: Optional[str] = None
+    # PO document references (drive the PO PDF download).
+    po_trn_no: Optional[str] = None
+    po_short_ref: Optional[str] = None

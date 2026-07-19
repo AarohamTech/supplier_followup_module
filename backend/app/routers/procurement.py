@@ -142,19 +142,8 @@ def list_records(
     return ProcurementListOut(total=total, page=page, size=size, items=rows)
 
 
-def _current_crm_config(db: Session):
-    """Resolve the CRM config for the current tenant context (default company =
-    legacy CRM_* settings; others = their CRM_<CODE>_* env). None when the
-    company has no CRM connection."""
-    from ..core.tenant import get_current_schema, DEFAULT_SCHEMA
-    from ..services import company_service
-    from ..services.crm_config import get_crm_config
-
-    schema = get_current_schema()
-    if schema == DEFAULT_SCHEMA:
-        return get_crm_config(str(crm_ingest_service.settings.CRM_DESK_ID or "102"), is_default=True)
-    company = company_service.get_by_schema(db, schema)
-    return get_crm_config(company.code, is_default=company.is_default) if company else None
+# Kept as a module attribute so tests can patch the tenant resolution here.
+from ..services.crm_config import get_current_crm_config as _current_crm_config  # noqa: E402
 
 
 @router.get("/po-pdf")
@@ -165,31 +154,18 @@ def po_pdf(
 ):
     """Download the PO PDF from the Hariom CRM (proxied — the CRM only accepts
     calls from this server). CompanyId is the current company's desk id."""
-    import requests
     from fastapi.responses import Response
 
     cfg = _current_crm_config(db)
     if cfg is None:
         raise HTTPException(503, "CRM connection is not configured for this company")
-
-    url = f"{cfg.base_url.rstrip('/')}/api/procurement/getpopdf"
-    params = {"CompanyId": cfg.desk_id, "TrnNo": trn_no, "AmendNo": amend_no}
-
-    def _call(token: str) -> "requests.Response":
-        return requests.get(
-            url, params=params,
-            headers={"Authorization": f"Bearer {token}"},
-            timeout=crm_ingest_service.settings.CRM_HTTP_TIMEOUT_SECONDS,
-        )
-
-    resp = _call(crm_ingest_service.get_token(cfg))
-    if resp.status_code == 401:
-        resp = _call(crm_ingest_service.get_token(cfg, force_refresh=True))
-    if resp.status_code != 200 or not resp.content:
-        raise HTTPException(502, f"CRM PO PDF fetch failed ({resp.status_code})")
+    try:
+        content, media_type = crm_ingest_service.fetch_po_pdf(cfg, trn_no, amend_no)
+    except RuntimeError as exc:
+        raise HTTPException(502, str(exc))
     return Response(
-        content=resp.content,
-        media_type=resp.headers.get("Content-Type", "application/pdf"),
+        content=content,
+        media_type=media_type,
         headers={"Content-Disposition": f'attachment; filename="PO-{trn_no}.pdf"'},
     )
 

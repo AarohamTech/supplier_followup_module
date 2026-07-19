@@ -4,6 +4,7 @@ import { useStore } from "@/lib/store";
 import { fmtDate, fmtNum, signalClass, overdueDays } from "@/lib/format";
 import { ChevronDown, ChevronRight, Mail, Sparkles, Loader2, SlidersHorizontal } from "lucide-react";
 import type { ProcurementRecord } from "@/lib/types";
+import PoPdfButton from "@/components/po/PoPdfButton";
 
 const baseGroupHeaders = [
   "",
@@ -37,7 +38,12 @@ const DETAIL_COLUMNS: DetailColumn[] = [
   { key: "signal", label: "Signal", on: true, render: (r) => <SignalBadge signal={r.signal} /> },
   { key: "qty", label: "Qty", on: true, render: (r) => <>{fmtNum(r.qty)} {r.uom}</> },
   { key: "supplier_po", label: "Supplier PO", on: true,
-    render: (r) => <span className="font-mono">{r.supplier_po_no}</span> },
+    render: (r) => (
+      <span className="inline-flex items-center gap-1">
+        <span className="font-mono">{r.supplier_po_no}</span>
+        <ScopedPoPdfButton trnNo={r.po_trn_no} fileLabel={r.po_short_ref || r.supplier_po_no} />
+      </span>
+    ) },
   { key: "supplier_po_date", label: "Supplier PO Date", on: true, render: (r) => fmtDate(r.supplier_date) },
   { key: "stock", label: "Stock", on: true, render: (r) => fmtNum(r.stock) },
   { key: "ship_date", label: "Ship Date", on: true, render: (r) => fmtDate(r.shipment_date) },
@@ -48,10 +54,32 @@ const DETAIL_COLUMNS: DetailColumn[] = [
   { key: "commitment", label: "Commitment", on: true, render: (r) => fmtDate(r.commitment_date) },
   { key: "remark", label: "Supplier Remark", on: true,
     render: (r) => <span className="line-clamp-2 max-w-[220px] text-brand-muted">{r.last_supplier_reply ?? "—"}</span> },
+  // ── opt-in extras: every remaining field the API returns ────────────────────
   { key: "crm", label: "CRM No.", on: false, render: (r) => <span className="font-mono">{r.crm_no}</span> },
+  { key: "po_ref", label: "PO Ref (doc no.)", on: false,
+    render: (r) => <span className="font-mono">{r.po_short_ref ?? "—"}</span> },
   { key: "po_status", label: "PO Status", on: false, render: (r) => r.po_status ?? "—" },
+  { key: "uom", label: "UoM", on: false, render: (r) => r.uom ?? "—" },
+  { key: "rate", label: "Rate", on: false, render: (r) => fmtNum(r.rate) },
+  { key: "lead_time", label: "Lead Time", on: false,
+    render: (r) => (r.lead_time != null ? `${r.lead_time}d` : "—") },
+  { key: "confirmed_qty", label: "Confirmed Qty", on: false, render: (r) => fmtNum(r.quantity) },
+  { key: "adv_status", label: "Adv Status", on: false, render: (r) => r.adv_status ?? "—" },
+  { key: "ordered_qty", label: "Ordered Qty", on: false, render: (r) => fmtNum(r.po_qty) },
+  { key: "grn_qty", label: "Recd (GRN)", on: false, render: (r) => fmtNum(r.grn_qty) },
+  { key: "pending_qty", label: "Pending Qty", on: false, render: (r) => fmtNum(r.pending_qty) },
+  { key: "receipt", label: "Receipt", on: false, render: (r) => <ReceiptBadge status={r.receipt_status} /> },
   { key: "followup", label: "Follow-up", on: false,
     render: (r) => (<><div className="font-medium">{r.followup_status}</div><div className="text-brand-muted">{r.escalation_level}</div></>) },
+  { key: "mail_status", label: "Mail Status", on: false, render: (r) => r.mail_status ?? "—" },
+  { key: "followup_count", label: "Follow-ups Sent", on: false, render: (r) => r.followup_count ?? 0 },
+  { key: "last_followup", label: "Last Follow-up", on: false, render: (r) => fmtDate(r.last_followup_date) },
+  { key: "next_followup", label: "Next Follow-up", on: false, render: (r) => fmtDate(r.next_followup_date) },
+  { key: "delay_reason", label: "Delay Reason", on: false,
+    render: (r) => <span className="line-clamp-2 max-w-[220px] text-brand-muted">{r.delay_reason ?? "—"}</span> },
+  { key: "po_remark", label: "PO Remark", on: false,
+    render: (r) => <span className="line-clamp-2 max-w-[220px] text-brand-muted">{r.po_remark ?? "—"}</span> },
+  { key: "updated", label: "Last Updated", on: false, render: (r) => fmtDate(r.updated_at) },
 ];
 
 const COLS_STORAGE_KEY = "po-detail-cols";
@@ -62,6 +90,36 @@ function SignalBadge({ signal }: { signal?: string | null }) {
     <span className={"inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold ring-1 " + (signalClass[s] ?? "")}>
       {s || "-"}
     </span>
+  );
+}
+
+// Receipt progress (GRN quantities from the CRM): green when fully received.
+function ReceiptBadge({ status }: { status?: string | null }) {
+  const s = (status || "").toUpperCase();
+  if (!s) return <span className="text-brand-muted">—</span>;
+  const cls =
+    s === "COMPLETED"
+      ? "bg-emerald-50 text-emerald-700 ring-emerald-100"
+      : s === "PARTIAL"
+        ? "bg-blue-50 text-blue-700 ring-blue-100"
+        : "bg-subtle text-brand-muted ring-gray-200";
+  const label = s === "COMPLETED" ? "Received" : s === "PARTIAL" ? "Partly recd" : "Awaiting";
+  return (
+    <span className={`inline-flex rounded-full px-1.5 py-0.5 text-[10px] font-semibold uppercase ring-1 ring-inset ${cls}`}>
+      {label}
+    </span>
+  );
+}
+
+// The PO PDF proxy differs by user type; the store scope knows which one we are.
+function ScopedPoPdfButton({ trnNo, fileLabel }: { trnNo?: string | null; fileLabel: string }) {
+  const scope = useStore((s) => s.scope);
+  return (
+    <PoPdfButton
+      trnNo={trnNo}
+      fileLabel={fileLabel}
+      endpoint={scope === "employee" ? "/api/eportal/po-pdf" : "/api/procurement/po-pdf"}
+    />
   );
 }
 

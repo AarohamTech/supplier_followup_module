@@ -232,7 +232,6 @@ def material_lines(
         {
             **_material(r),
             "supplier_po_no": r.supplier_po_no,
-            "po_short_ref": r.po_short_ref,
             "customer_name": r.customer_name,
             "customer_po_no": r.po_no if r.po_no != r.supplier_po_no else None,
             "customer_po_date": _as_dt(r.po_date),
@@ -242,7 +241,6 @@ def material_lines(
             "cancellation_status": r.cancellation_status,
             "escalation_level": r.escalation_level,
             "po_remark": r.po_remark,
-            "po_trn_no": r.po_trn_no,
             "closed": r.delisted_at is not None,
         }
         for r in rows
@@ -289,6 +287,9 @@ def _material(r: ProcurementRecord) -> dict[str, Any]:
         "grn_qty": float(r.grn_qty) if r.grn_qty is not None else None,
         "pending_qty": float(r.pending_qty) if r.pending_qty is not None else None,
         "receipt_status": r.receipt_status,
+        # PO document references (drive the PO PDF download in every PO table).
+        "po_trn_no": r.po_trn_no,
+        "po_short_ref": r.po_short_ref,
     }
 
 
@@ -335,6 +336,9 @@ def po_detail(
         "supplier_po_no": supplier_po_no,
         "supplier_name": rows[0].supplier_name,
         "cancellation_status": _po_cancel(rows),
+        # PO-level document reference (all lines of a PO share one transaction).
+        "po_trn_no": next((r.po_trn_no for r in rows if r.po_trn_no), None),
+        "po_short_ref": next((r.po_short_ref for r in rows if r.po_short_ref), None),
         "materials": [_material(r) for r in rows],
         "messages": [_message(m) for m in msgs],
     }

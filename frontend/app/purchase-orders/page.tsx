@@ -37,7 +37,26 @@ function fmtDate(d?: string | null) {
   return isNaN(dt.getTime()) ? "—" : dt.toLocaleDateString();
 }
 
-// Column registry — order matches the requested layout. `on` = default visible.
+// Receipt progress (GRN quantities from the CRM): green when fully received.
+function ReceiptChip({ status }: { status?: string | null }) {
+  const s = (status || "").toUpperCase();
+  if (!s) return <span className="text-brand-muted">—</span>;
+  const cls =
+    s === "COMPLETED"
+      ? "bg-emerald-50 text-emerald-700 ring-emerald-100"
+      : s === "PARTIAL"
+        ? "bg-blue-50 text-blue-700 ring-blue-100"
+        : "bg-subtle text-brand-muted ring-gray-200";
+  const label = s === "COMPLETED" ? "Received" : s === "PARTIAL" ? "Partly recd" : "Awaiting";
+  return (
+    <span className={`inline-flex rounded-full px-1.5 py-0.5 text-[10px] font-semibold uppercase ring-1 ring-inset ${cls}`}>
+      {label}
+    </span>
+  );
+}
+
+// Column registry — order matches the requested layout. `on` = default visible;
+// every field the lines API returns is offered here, extras default off.
 const COLUMNS: { key: string; label: string; on: boolean }[] = [
   { key: "customer", label: "Customer", on: true },
   { key: "customer_po", label: "Customer PO", on: true },
@@ -53,6 +72,14 @@ const COLUMNS: { key: string; label: string; on: boolean }[] = [
   { key: "commitment", label: "Commitment", on: true },
   { key: "remark", label: "Remark", on: true },
   { key: "owner", label: "Owner", on: false },
+  { key: "crm", label: "CRM No.", on: false },
+  { key: "rate", label: "Rate", on: false },
+  { key: "lead_time", label: "Lead Time", on: false },
+  { key: "ordered_qty", label: "Ordered Qty", on: false },
+  { key: "grn_qty", label: "Recd (GRN)", on: false },
+  { key: "pending_qty", label: "Pending Qty", on: false },
+  { key: "receipt", label: "Receipt", on: false },
+  { key: "escalation", label: "Escalation", on: false },
 ];
 
 const SIGNALS = ["", "GREEN", "YELLOW", "RED", "BLACK"];
@@ -292,6 +319,14 @@ export default function OrdersPage() {
                   {show("commitment") && <th className="px-3 py-2 text-right">Commitment</th>}
                   {show("remark") && <th className="px-3 py-2">Remark</th>}
                   {show("owner") && <th className="px-3 py-2">Owner</th>}
+                  {show("crm") && <th className="px-3 py-2">CRM No.</th>}
+                  {show("rate") && <th className="px-3 py-2 text-right">Rate</th>}
+                  {show("lead_time") && <th className="px-3 py-2 text-right">Lead Time</th>}
+                  {show("ordered_qty") && <th className="px-3 py-2 text-right">Ordered Qty</th>}
+                  {show("grn_qty") && <th className="px-3 py-2 text-right">Recd (GRN)</th>}
+                  {show("pending_qty") && <th className="px-3 py-2 text-right">Pending Qty</th>}
+                  {show("receipt") && <th className="px-3 py-2">Receipt</th>}
+                  {show("escalation") && <th className="px-3 py-2">Escalation</th>}
                   <th className="px-3 py-2 text-right">Cancel</th>
                 </tr>
               </thead>
@@ -371,6 +406,14 @@ export default function OrdersPage() {
                       </td>
                     )}
                     {show("owner") && <td className="px-3 py-2 whitespace-nowrap">{r.owner_emp_code || "—"}</td>}
+                    {show("crm") && <td className="px-3 py-2 whitespace-nowrap font-mono">{r.crm_no || "—"}</td>}
+                    {show("rate") && <td className="px-3 py-2 text-right tabular-nums">{r.rate != null ? r.rate.toLocaleString() : "—"}</td>}
+                    {show("lead_time") && <td className="px-3 py-2 text-right tabular-nums">{r.lead_time != null ? `${r.lead_time}d` : "—"}</td>}
+                    {show("ordered_qty") && <td className="px-3 py-2 text-right tabular-nums">{r.po_qty != null ? r.po_qty.toLocaleString() : "—"}</td>}
+                    {show("grn_qty") && <td className="px-3 py-2 text-right tabular-nums">{r.grn_qty != null ? r.grn_qty.toLocaleString() : "—"}</td>}
+                    {show("pending_qty") && <td className="px-3 py-2 text-right tabular-nums">{r.pending_qty != null ? r.pending_qty.toLocaleString() : "—"}</td>}
+                    {show("receipt") && <td className="px-3 py-2"><ReceiptChip status={r.receipt_status} /></td>}
+                    {show("escalation") && <td className="px-3 py-2 whitespace-nowrap">{r.escalation_level || "—"}</td>}
                     <td className="px-3 py-2 text-right">
                       {r.closed ? (
                         <span className="text-brand-muted">—</span>

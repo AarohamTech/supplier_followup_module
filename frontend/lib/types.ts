@@ -31,6 +31,18 @@ export interface ProcurementRecord {
   customer_po_no?: string | null; // mirror of po_no exposed by the API
   po_date?: string | null; // end-customer PO date
 
+  // PO document references (CRM): po_short_ref is the number the supplier
+  // knows; po_trn_no is the transaction number (drives the PO PDF download).
+  po_short_ref?: string | null;
+  po_trn_no?: string | null;
+  po_remark?: string | null;
+  // Receipt quantities from the CRM (GRN progress).
+  po_type?: string | null;
+  po_qty?: number | null;
+  grn_qty?: number | null;
+  pending_qty?: number | null;
+  receipt_status?: string | null;
+
   followup_status: string;
   mail_status: string;
   followup_count: number;
@@ -1505,6 +1517,9 @@ export interface PoDetail {
   supplier_po_no: string;
   supplier_name?: string | null;
   cancellation_status?: string | null;
+  // PO-level document reference (all lines of a PO share one transaction).
+  po_trn_no?: string | null;
+  po_short_ref?: string | null;
   materials: EmployeePoMaterial[];
   messages: PoMessage[];
 }
@@ -1527,6 +1542,9 @@ export interface EmployeePoMaterial {
   grn_qty?: number | null;
   pending_qty?: number | null;
   receipt_status?: string | null;
+  // PO document references (drive the PO PDF download).
+  po_trn_no?: string | null;
+  po_short_ref?: string | null;
 }
 
 export interface EmployeeCredential {

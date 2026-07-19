@@ -1,10 +1,11 @@
 "use client";
 
-import { Fragment, useState } from "react";
-import { Ban, ChevronDown, ChevronRight, Loader2 } from "lucide-react";
+import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
+import { Ban, ChevronDown, ChevronRight, Loader2, SlidersHorizontal } from "lucide-react";
 
 import { overdueDays } from "@/lib/format";
-import type { EmployeePo, PoDetail, PoMessage } from "@/lib/types";
+import type { EmployeePo, EmployeePoMaterial, PoDetail, PoMessage } from "@/lib/types";
+import PoPdfButton from "@/components/po/PoPdfButton";
 
 const SIGNAL_CLASS: Record<string, string> = {
   GREEN: "bg-emerald-50 text-emerald-700 ring-emerald-100",
@@ -58,6 +59,41 @@ function poKey(p: EmployeePo): string {
   return `${(p.supplier_name || "").toUpperCase()}|${p.supplier_po_no}`;
 }
 
+// Material detail columns — every field the PO detail API returns is offered;
+// `on` = default visible. Visibility is user-toggleable and persisted.
+interface MaterialColumn {
+  key: string;
+  label: string;
+  on: boolean;
+  render: (m: EmployeePoMaterial) => ReactNode;
+}
+
+const MATERIAL_COLUMNS: MaterialColumn[] = [
+  { key: "material", label: "Material", on: true,
+    render: (m) => <span className="text-brand-dark">{m.material_name}</span> },
+  { key: "uom", label: "UoM", on: true, render: (m) => m.uom || "—" },
+  { key: "qty", label: "Qty", on: true, render: (m) => m.qty ?? m.po_qty ?? "—" },
+  { key: "grn_qty", label: "Recd (GRN)", on: true, render: (m) => m.grn_qty ?? "—" },
+  { key: "pending_qty", label: "Pending", on: true, render: (m) => m.pending_qty ?? "—" },
+  { key: "receipt", label: "Receipt", on: true, render: (m) => <ReceiptChip status={m.receipt_status} /> },
+  { key: "signal", label: "Signal", on: true, render: (m) => <SignalChip signal={m.signal} /> },
+  { key: "ship_date", label: "Ship Date", on: true, render: (m) => fmtDate(m.shipment_date) },
+  { key: "overdue", label: "Overdue", on: true,
+    render: (m) => overdueDays(m.shipment_date) > 0
+      ? <span className="font-semibold text-signal-red">{overdueDays(m.shipment_date)}d</span>
+      : <span className="text-brand-muted">—</span> },
+  { key: "commitment", label: "Commitment", on: true, render: (m) => fmtDate(m.commitment_date) },
+  { key: "ordered_qty", label: "Ordered Qty", on: false, render: (m) => m.po_qty ?? "—" },
+  { key: "rate", label: "Rate", on: false, render: (m) => m.rate ?? "—" },
+  { key: "lead_time", label: "Lead Time", on: false,
+    render: (m) => (m.lead_time != null ? `${m.lead_time}d` : "—") },
+  { key: "po_status", label: "PO Status", on: false, render: (m) => m.po_status || "—" },
+  { key: "crm", label: "CRM No.", on: false, render: (m) => m.crm_no || "—" },
+  { key: "supplier", label: "Supplier", on: false, render: (m) => m.supplier_name || "—" },
+];
+
+const MATERIAL_COLS_KEY = "eportal.poMaterialCols.v1";
+
 function MessageRow({ m }: { m: PoMessage }) {
   const inbound = m.direction === "INCOMING";
   const when = inbound ? m.received_at || m.created_at : m.sent_at || m.created_at;
@@ -85,10 +121,12 @@ export default function PoExpandableTable({
   pos,
   loadDetail,
   requestCancel,
+  pdfEndpoint = "/api/eportal/po-pdf",
 }: {
   pos: EmployeePo[];
   loadDetail: (po: EmployeePo) => Promise<PoDetail>;
   requestCancel: (po: EmployeePo, remark: string) => Promise<void>;
+  pdfEndpoint?: string;
 }) {
   const [open, setOpen] = useState<string | null>(null);
   const [detail, setDetail] = useState<Record<string, PoDetail>>({});
@@ -98,6 +136,30 @@ export default function PoExpandableTable({
   const [cancelRemark, setCancelRemark] = useState("");
   const [requesting, setRequesting] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
+
+  // Material detail column visibility (persisted). Default = every `on` flag.
+  const [visibleCols, setVisibleCols] = useState<Set<string>>(
+    () => new Set(MATERIAL_COLUMNS.filter((c) => c.on).map((c) => c.key)),
+  );
+  const [colMenuOpen, setColMenuOpen] = useState(false);
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem(MATERIAL_COLS_KEY);
+      if (saved) setVisibleCols(new Set(JSON.parse(saved) as string[]));
+    } catch { /* ignore */ }
+  }, []);
+  const toggleCol = (key: string) =>
+    setVisibleCols((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      try { window.localStorage.setItem(MATERIAL_COLS_KEY, JSON.stringify([...next])); } catch { /* ignore */ }
+      return next;
+    });
+  const activeCols = useMemo(
+    () => MATERIAL_COLUMNS.filter((c) => visibleCols.has(c.key)),
+    [visibleCols],
+  );
 
   const cancelStatusOf = (p: EmployeePo): string =>
     (cancelOverride[poKey(p)] ?? p.cancellation_status ?? "").toUpperCase();
@@ -145,6 +207,44 @@ export default function PoExpandableTable({
   return (
     <>
       <div className="card overflow-x-auto">
+        <div className="flex items-center justify-end border-b border-brand-border px-3 py-1.5">
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setColMenuOpen((v) => !v)}
+              className="inline-flex items-center gap-1.5 rounded-md border border-brand-border px-2.5 py-1 text-xs font-medium text-brand-dark hover:bg-subtle"
+              title="Show / hide material columns"
+            >
+              <SlidersHorizontal size={13} /> Columns
+            </button>
+            {colMenuOpen && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setColMenuOpen(false)} aria-hidden />
+                <div className="absolute right-0 z-20 mt-1 w-56 rounded-md border border-brand-border bg-card p-2 shadow-lg">
+                  <div className="mb-1 px-1 text-[10px] font-semibold uppercase tracking-wider text-brand-muted">
+                    Material columns
+                  </div>
+                  <div className="max-h-72 overflow-y-auto">
+                    {MATERIAL_COLUMNS.map((c) => (
+                      <label
+                        key={c.key}
+                        className="flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-xs hover:bg-subtle"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={visibleCols.has(c.key)}
+                          onChange={() => toggleCol(c.key)}
+                          className="accent-signal-red"
+                        />
+                        {c.label}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
         <table className="w-full min-w-[760px] text-sm">
           <thead className="bg-subtle text-left text-[11px] uppercase tracking-wider text-brand-muted">
             <tr>
@@ -223,42 +323,34 @@ export default function PoExpandableTable({
                           <div className="space-y-4">
                             {/* Materials */}
                             <div>
-                              <div className="mb-1 text-[11px] font-semibold uppercase text-brand-muted">Materials</div>
+                              <div className="mb-1 flex items-center gap-2 text-[11px] font-semibold uppercase text-brand-muted">
+                                Materials
+                                {d.po_trn_no && (
+                                  <span className="inline-flex items-center gap-1 normal-case">
+                                    <PoPdfButton
+                                      trnNo={d.po_trn_no}
+                                      fileLabel={d.po_short_ref || d.supplier_po_no}
+                                      endpoint={pdfEndpoint}
+                                    />
+                                    <span className="text-[10px] font-normal text-brand-muted">PO PDF</span>
+                                  </span>
+                                )}
+                              </div>
                               {d.materials.length ? (
                                 <table className="w-full text-xs">
                                   <thead className="text-left text-[10px] uppercase text-brand-muted">
                                     <tr>
-                                      <th className="px-2 py-1">Material</th>
-                                      <th className="px-2 py-1">UoM</th>
-                                      <th className="px-2 py-1">Qty</th>
-                                      <th className="px-2 py-1">Recd (GRN)</th>
-                                      <th className="px-2 py-1">Pending</th>
-                                      <th className="px-2 py-1">Receipt</th>
-                                      <th className="px-2 py-1">Signal</th>
-                                      <th className="px-2 py-1">Ship Date</th>
-                                      <th className="px-2 py-1">Overdue</th>
-                                      <th className="px-2 py-1">Commitment</th>
+                                      {activeCols.map((c) => (
+                                        <th key={c.key} className="px-2 py-1 whitespace-nowrap">{c.label}</th>
+                                      ))}
                                     </tr>
                                   </thead>
                                   <tbody>
                                     {d.materials.map((m) => (
                                       <tr key={m.procurement_record_id} className="border-t border-brand-border/60">
-                                        <td className="px-2 py-1 text-brand-dark">{m.material_name}</td>
-                                        <td className="px-2 py-1">{m.uom || "—"}</td>
-                                        <td className="px-2 py-1">{m.qty ?? m.po_qty ?? "—"}</td>
-                                        <td className="px-2 py-1">{m.grn_qty ?? "—"}</td>
-                                        <td className="px-2 py-1">{m.pending_qty ?? "—"}</td>
-                                        <td className="px-2 py-1"><ReceiptChip status={m.receipt_status} /></td>
-                                        <td className="px-2 py-1"><SignalChip signal={m.signal} /></td>
-                                        <td className="px-2 py-1">{fmtDate(m.shipment_date)}</td>
-                                        <td className="px-2 py-1">
-                                          {overdueDays(m.shipment_date) > 0 ? (
-                                            <span className="font-semibold text-signal-red">{overdueDays(m.shipment_date)}d</span>
-                                          ) : (
-                                            <span className="text-brand-muted">—</span>
-                                          )}
-                                        </td>
-                                        <td className="px-2 py-1">{fmtDate(m.commitment_date)}</td>
+                                        {activeCols.map((c) => (
+                                          <td key={c.key} className="px-2 py-1">{c.render(m)}</td>
+                                        ))}
                                       </tr>
                                     ))}
                                   </tbody>

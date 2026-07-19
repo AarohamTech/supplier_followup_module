@@ -306,6 +306,28 @@ def _qty_probe_for_run(cfg: CrmConfig) -> str | None:
         return None
 
 
+# ── PO PDF (getpopdf) ─────────────────────────────────────────────────────────
+def fetch_po_pdf(cfg: CrmConfig, trn_no: str, amend_no: int = 0) -> tuple[bytes, str]:
+    """Download a PO PDF from the CRM (proxied — the CRM only accepts calls from
+    this server). Returns (content, media_type); raises RuntimeError on failure."""
+    url = f"{cfg.base_url.rstrip('/')}/api/procurement/getpopdf"
+    params = {"CompanyId": cfg.desk_id, "TrnNo": trn_no, "AmendNo": amend_no}
+
+    def _call(token: str) -> requests.Response:
+        return requests.get(
+            url, params=params,
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=settings.CRM_HTTP_TIMEOUT_SECONDS,
+        )
+
+    resp = _call(get_token(cfg))
+    if resp.status_code == 401:
+        resp = _call(get_token(cfg, force_refresh=True))
+    if resp.status_code != 200 or not resp.content:
+        raise RuntimeError(f"CRM PO PDF fetch failed ({resp.status_code})")
+    return resp.content, resp.headers.get("Content-Type", "application/pdf")
+
+
 # ── quantity sync (getpendingpolist) ─────────────────────────────────────────
 def fetch_qty_list(cfg: CrmConfig) -> list[dict[str, Any]]:
     """Fetch the pending-PO-list feed — the PUBLIC endpoint confirmed live in the

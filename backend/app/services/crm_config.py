@@ -49,6 +49,20 @@ def _env(code: str, name: str) -> str:
     return (_company_env().get(f"CRM_{code}_{name}") or "").strip()
 
 
+def get_current_crm_config(db) -> CrmConfig | None:
+    """Resolve the CRM config for the CURRENT tenant context (default company =
+    legacy CRM_* settings; others = their CRM_<CODE>_* env). None when the
+    company has no CRM connection. Lazy imports avoid service import cycles."""
+    from ..core.tenant import get_current_schema, DEFAULT_SCHEMA
+    from . import company_service
+
+    schema = get_current_schema()
+    if schema == DEFAULT_SCHEMA:
+        return get_crm_config(str(settings.CRM_DESK_ID or "102"), is_default=True)
+    company = company_service.get_by_schema(db, schema)
+    return get_crm_config(company.code, is_default=company.is_default) if company else None
+
+
 def get_crm_config(code: str, *, is_default: bool) -> CrmConfig | None:
     if is_default:
         desk = str(settings.CRM_DESK_ID or "").strip()
