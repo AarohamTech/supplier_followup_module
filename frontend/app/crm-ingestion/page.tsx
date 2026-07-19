@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Database, Loader2, RefreshCw } from "lucide-react";
+import { Database, Loader2, RefreshCw, Scale } from "lucide-react";
 
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
@@ -26,6 +26,8 @@ export default function CrmIngestionPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [probe, setProbe] = useState<{ result: string; live: boolean } | null>(null);
+  const [probing, setProbing] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -65,6 +67,17 @@ export default function CrmIngestionPage() {
     }
   };
 
+  const checkQtyApi = async () => {
+    setProbing(true);
+    try {
+      setProbe(await api.crmQtyApiProbe());
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setProbing(false);
+    }
+  };
+
   const last = logs[0];
   const totalAdded = logs.reduce((a, l) => a + (l.created || 0), 0);
   const totalChanged = logs.reduce((a, l) => a + (l.updated || 0), 0);
@@ -100,6 +113,38 @@ export default function CrmIngestionPage() {
           <div className="text-xs text-brand-muted">Changed (last {logs.length})</div>
           <div className="text-2xl font-semibold text-blue-600">{totalChanged}</div>
         </div>
+      </div>
+
+      <div className="card p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 text-sm font-semibold">
+              <Scale size={15} className="text-brand-muted" /> Quantity API (GRN receipts)
+            </div>
+            <p className="mt-1 text-xs text-brand-muted">
+              Hariom&apos;s newer desk API carries the received quantities (PoQty / GrnQty / PendQty).
+              Until Hariom IT exposes it publicly, the Recd / Pending columns on Orders stay empty.
+              This checks it live from the server; the same check also runs hourly with each ingest.
+            </p>
+          </div>
+          <button onClick={checkQtyApi} disabled={probing} className="btn-primary shrink-0">
+            {probing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />} Check availability
+          </button>
+        </div>
+        {probe && (
+          <div className="mt-3 space-y-2">
+            <span
+              className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                probe.live ? "bg-emerald-50 text-emerald-700" : "bg-subtle text-brand-muted"
+              }`}
+            >
+              {probe.live ? "LIVE — quantities are reachable" : "Not exposed yet"}
+            </span>
+            <pre className="overflow-x-auto whitespace-pre-wrap rounded-md bg-subtle px-3 py-2 text-[11px] text-brand-muted">
+              {probe.result}
+            </pre>
+          </div>
+        )}
       </div>
 
       <div className="card overflow-x-auto">

@@ -187,6 +187,11 @@ export const api = {
   crmIngestionLogs: (limit = 50) =>
     http<CrmIngestLog[]>(`/api/procurement/crm-ingestion-logs?limit=${limit}`),
 
+  // Admin-only live check of Hariom's newer quantity API (PoQty/GrnQty/PendQty),
+  // run from the server — the only host the CRM accepts calls from.
+  crmQtyApiProbe: () =>
+    http<{ result: string; live: boolean }>("/api/procurement/crm-quantity-api-probe"),
+
   listSuppliers: () => http<SupplierMaster[]>("/api/suppliers"),
   getSupplier: (id: number) => http<SupplierMaster>(`/api/suppliers/${id}`),
   updateSupplier: (id: number, body: Partial<SupplierMaster>) =>

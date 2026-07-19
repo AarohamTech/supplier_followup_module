@@ -142,6 +142,21 @@ def list_records(
     return ProcurementListOut(total=total, page=page, size=size, items=rows)
 
 
+def _current_crm_config(db: Session):
+    """Resolve the CRM config for the current tenant context (default company =
+    legacy CRM_* settings; others = their CRM_<CODE>_* env). None when the
+    company has no CRM connection."""
+    from ..core.tenant import get_current_schema, DEFAULT_SCHEMA
+    from ..services import company_service
+    from ..services.crm_config import get_crm_config
+
+    schema = get_current_schema()
+    if schema == DEFAULT_SCHEMA:
+        return get_crm_config(str(crm_ingest_service.settings.CRM_DESK_ID or "102"), is_default=True)
+    company = company_service.get_by_schema(db, schema)
+    return get_crm_config(company.code, is_default=company.is_default) if company else None
+
+
 @router.get("/po-pdf")
 def po_pdf(
     trn_no: str = Query(..., description="PO transaction number (po_trn_no / CRM PoRefTrnNo)"),
@@ -152,16 +167,8 @@ def po_pdf(
     calls from this server). CompanyId is the current company's desk id."""
     import requests
     from fastapi.responses import Response
-    from ..core.tenant import get_current_schema, DEFAULT_SCHEMA
-    from ..services import company_service
-    from ..services.crm_config import get_crm_config
 
-    schema = get_current_schema()
-    if schema == DEFAULT_SCHEMA:
-        cfg = get_crm_config(str(crm_ingest_service.settings.CRM_DESK_ID or "102"), is_default=True)
-    else:
-        company = company_service.get_by_schema(db, schema)
-        cfg = get_crm_config(company.code, is_default=company.is_default) if company else None
+    cfg = _current_crm_config(db)
     if cfg is None:
         raise HTTPException(503, "CRM connection is not configured for this company")
 
@@ -272,6 +279,19 @@ def crm_ingestion_logs(
     return list(
         db.scalars(select(CrmIngestLog).order_by(CrmIngestLog.ran_at.desc()).limit(limit)).all()
     )
+
+
+@router.get("/crm-quantity-api-probe", dependencies=[Depends(require_admin)])
+def crm_quantity_api_probe(db: Session = Depends(get_db)) -> dict[str, Any]:
+    """Live check — from this server, the only host the CRM accepts — whether
+    Hariom's newer desk API (the one carrying PoQty/GrnQty/PendQty) is exposed
+    yet. Until it is, the Recd/Pending columns stay empty because the classic
+    pending-desk feed has no quantity fields."""
+    cfg = _current_crm_config(db)
+    if cfg is None:
+        raise HTTPException(503, "CRM connection is not configured for this company")
+    result = crm_ingest_service.probe_qty_api(cfg)
+    return {"result": result, "live": "HTTP 200" in result}
 
 
 @router.get("/{rec_id}", response_model=ProcurementOut)

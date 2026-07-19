@@ -145,14 +145,23 @@ def fetch_desk(cfg: CrmConfig) -> list[dict[str, Any]]:
         resp = _call(get_token(cfg, force_refresh=True))
     resp.raise_for_status()
     data = resp.json()
+    rows = _unwrap_rows(data)
+    if rows is None:
+        raise RuntimeError(f"CRM desk feed returned {type(data).__name__}, expected a list")
+    _log_row_keys(rows)
+    return rows
+
+
+def _unwrap_rows(data: Any) -> list | None:
+    """The CRM wraps list payloads in assorted envelope keys; return the list,
+    or None when no list is found."""
+    if isinstance(data, list):
+        return data
     if isinstance(data, dict):
         for key in ("data", "Data", "result", "Result", "items", "Items"):
             if isinstance(data.get(key), list):
                 return data[key]
-    if not isinstance(data, list):
-        raise RuntimeError(f"CRM desk feed returned {type(data).__name__}, expected a list")
-    _log_row_keys(data)
-    return data
+    return None
 
 
 _row_keys_logged = False
@@ -216,6 +225,79 @@ def _log_row_keys(data: list[dict[str, Any]]) -> None:
         return
     log.info("[crm] desk row keys: %s", sorted(data[0].keys()))
     _row_keys_logged = True
+
+
+# ── quantity-API probe ────────────────────────────────────────────────────────
+# Hariom's NEWER desk API carries the receipt quantities (PoQty/GrnQty/PendQty)
+# and the customer-unlinked direct POs; the classic feed above has neither. As of
+# 2026-07-10 it was LAN-only inside Hariom (10.10.1.18), so the GRN columns stay
+# empty until Hariom IT (Vinayak) exposes it publicly. The probe re-checks it
+# from this server — the only host the CRM accepts calls from — so the admin
+# panel shows the moment it becomes reachable. Variants cover the unknown desk-id
+# convention (path segment like GetPendingUserDesk vs CompanyId query like
+# getpopdf).
+QTY_API_VARIANTS = (
+    "api/crmappservices/getpendinguserdesk/{desk}",
+    "api/crmappservices/getpendinguserdesk?CompanyId={desk}",
+    "api/crmappservices/getpendinguserdesk",
+)
+_QTY_PROBE_KEYS = ("PoQty", "GrnQty", "PendQty", "PoType")
+_QTY_PROBE_INTERVAL_SECONDS = 3600.0
+_qty_probe_last: dict[str, float] = {}
+
+
+def probe_qty_api(cfg: CrmConfig) -> str:
+    """Try each known variant of the newer quantity API with the desk credentials;
+    return a one-line verdict per variant (HTTP status; on 200: row count and
+    which quantity keys are present). Diagnostic only — never raises."""
+    base = cfg.base_url.rstrip("/")
+    parts: list[str] = []
+    for variant in QTY_API_VARIANTS:
+        url = f"{base}/{variant.format(desk=cfg.desk_id)}"
+        try:
+            resp = requests.get(
+                url,
+                headers={"Authorization": f"Bearer {get_token(cfg)}", "Accept": "application/json"},
+                timeout=min(8.0, float(settings.CRM_HTTP_TIMEOUT_SECONDS)),
+            )
+        except Exception as exc:  # noqa: BLE001
+            parts.append(f"{variant} -> unreachable ({type(exc).__name__})")
+            continue
+        if resp.status_code != 200:
+            parts.append(f"{variant} -> HTTP {resp.status_code}")
+            continue
+        try:
+            rows = _unwrap_rows(resp.json())
+        except ValueError:
+            rows = None
+        if rows is None:
+            parts.append(f"{variant} -> HTTP 200 (unexpected body)")
+            continue
+        first = rows[0] if rows and isinstance(rows[0], dict) else {}
+        have = [k for k in _QTY_PROBE_KEYS if k in first]
+        line = f"{variant} -> HTTP 200 rows={len(rows)} qty_keys={','.join(have) or 'none'}"
+        if have:
+            line += f" keys={sorted(first)[:40]}"
+        parts.append(line)
+    return "qty-api probe: " + " | ".join(parts)
+
+
+def _qty_probe_for_run(cfg: CrmConfig) -> str | None:
+    """Probe at most once per hour per desk (it adds a few outbound calls to the
+    ingest tick); the verdict rides along in the ingest-log message so it is
+    readable from the admin CRM Ingestion page."""
+    if not settings.CRM_QTY_PROBE_ENABLED:
+        return None
+    key = f"{cfg.base_url}|{cfg.desk_id}"
+    now = time.time()
+    if now - _qty_probe_last.get(key, 0.0) < _QTY_PROBE_INTERVAL_SECONDS:
+        return None
+    _qty_probe_last[key] = now
+    try:
+        return probe_qty_api(cfg)
+    except Exception:  # noqa: BLE001 — diagnostics must never break ingest
+        log.exception("[crm] qty-api probe failed (ignored)")
+        return None
 
 
 def _emp_code(value: Any) -> str | None:
@@ -708,10 +790,14 @@ def poll_and_ingest(
         raise
 
     duration_ms = int((time.time() - t0) * 1000)
+    message = _feed_profile(feed)
+    probe = _qty_probe_for_run(cfg)
+    if probe:
+        message = f"{message} || {probe}"[:6000]
     _log_run(status="OK", trigger=trigger, desk=str(label),
              fetched=len(feed), generated=len(generated),
              created=created, updated=updated, skipped=skipped, errors=0,
-             duration_ms=duration_ms, message=_feed_profile(feed))
+             duration_ms=duration_ms, message=message)
     if created or updated:
         _auto_send_after_ingest(db)
 
