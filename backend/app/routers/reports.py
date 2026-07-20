@@ -350,6 +350,7 @@ def _pending_po_rows(db: Session, clause: Any, cap: int = _ROW_CAP) -> list[dict
             "material_name": r.material_name,
             "qty": float(r.qty) if r.qty is not None else None,
             "uom": r.uom,
+            "rate": float(r.rate) if r.rate is not None else None,
             "stock": float(r.stock) if r.stock is not None else None,
             "signal": r.signal,
             "po_status": r.po_status,
@@ -628,7 +629,7 @@ def _xlsx_response(data: bytes, filename: str) -> StreamingResponse:
 
 
 _PENDING_PO_HEADERS = [
-    "PO No", "Supplier", "Material", "Qty", "UOM", "Stock", "Signal", "PO Status",
+    "PO No", "Supplier", "Material", "Qty", "UOM", "Rate", "Stock", "Signal", "PO Status",
     "Customer", "Customer PO No", "Customer PO Date", "PO Date",
     "Shipment Date", "Days Overdue", "Follow-ups", "Commitment Date", "Escalation",
 ]
@@ -641,7 +642,7 @@ _OPEN_TASK_HEADERS = [
 def _pending_po_sheet_rows(rows: list[dict[str, Any]]) -> list[list[Any]]:
     return [
         [r["supplier_po_no"], r["supplier_name"], r["material_name"], r["qty"], r["uom"],
-         r.get("stock"), r["signal"], r["po_status"],
+         r.get("rate"), r.get("stock"), r["signal"], r["po_status"],
          r.get("customer_name"), r.get("customer_po_no"), r.get("customer_po_date"),
          r.get("supplier_date"),
          r["shipment_date"], r["days_overdue"],

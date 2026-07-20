@@ -61,7 +61,7 @@ const DETAIL_COLUMNS: DetailColumn[] = [
     render: (r) => <span className="font-mono">{r.po_short_ref ?? "—"}</span> },
   { key: "po_status", label: "PO Status", on: false, render: (r) => r.po_status ?? "—" },
   { key: "uom", label: "UoM", on: false, render: (r) => r.uom ?? "—" },
-  { key: "rate", label: "Rate", on: false, render: (r) => fmtNum(r.rate) },
+  { key: "rate", label: "Rate", on: true, render: (r) => fmtNum(r.rate) },
   { key: "lead_time", label: "Lead Time", on: false,
     render: (r) => (r.lead_time != null ? `${r.lead_time}d` : "—") },
   { key: "confirmed_qty", label: "Confirmed Qty", on: false, render: (r) => fmtNum(r.quantity) },
@@ -83,7 +83,8 @@ const DETAIL_COLUMNS: DetailColumn[] = [
   { key: "updated", label: "Last Updated", on: false, render: (r) => fmtDate(r.updated_at) },
 ];
 
-const COLS_STORAGE_KEY = "po-detail-cols";
+// v2: Rate became default-visible (client: "we not showing rates anywhere").
+const COLS_STORAGE_KEY = "po-detail-cols.v2";
 
 function SignalBadge({ signal }: { signal?: string | null }) {
   const s = (signal || "").toUpperCase();

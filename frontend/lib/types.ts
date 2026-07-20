@@ -463,6 +463,7 @@ export interface WorkloadPendingPo {
   material_name: string;
   qty?: number | null;
   uom?: string | null;
+  rate?: number | null;
   signal?: string | null;
   po_status?: string | null;
   shipment_date?: string | null;

@@ -8,7 +8,8 @@ import type { OrderLine } from "@/lib/types";
 import Pager from "@/components/ui/Pager";
 
 const SIZE = 50;
-const COLS_KEY = "eportal.orders.visibleCols.v1";
+// v2: Rate became default-visible (client: "we not showing rates anywhere").
+const COLS_KEY = "eportal.orders.visibleCols.v2";
 
 const SIGNAL_CLASS: Record<string, string> = {
   GREEN: "bg-emerald-50 text-emerald-700 ring-emerald-100",
@@ -69,7 +70,7 @@ const COLUMNS: { key: string; label: string; on: boolean }[] = [
   { key: "remark", label: "Customer Remark", on: true },
   { key: "supplier_remark", label: "Supplier Remark", on: true },
   { key: "crm", label: "CRM No.", on: false },
-  { key: "rate", label: "Rate", on: false },
+  { key: "rate", label: "Rate", on: true },
   { key: "lead_time", label: "Lead Time", on: false },
   { key: "ordered_qty", label: "Ordered Qty", on: false },
   { key: "grn_qty", label: "Recd (GRN)", on: false },

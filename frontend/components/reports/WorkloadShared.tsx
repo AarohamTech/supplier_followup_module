@@ -153,6 +153,7 @@ export function PendingPoTable({ rows, showSupplier }: { rows: WorkloadPendingPo
               <th className="px-3 py-2 font-semibold">Customer PO</th>
               <th className="px-3 py-2 font-semibold">Signal</th>
               <th className="px-3 py-2 text-right font-semibold">Qty</th>
+              <th className="px-3 py-2 text-right font-semibold">Rate</th>
               <th className="px-3 py-2 text-right font-semibold">Stock</th>
               <th className="px-3 py-2 font-semibold">Status</th>
               <th className="px-3 py-2 text-right font-semibold">PO date</th>
@@ -182,6 +183,9 @@ export function PendingPoTable({ rows, showSupplier }: { rows: WorkloadPendingPo
                 </td>
                 <td className="px-3 py-2 text-right tabular-nums text-brand-dark">
                   {r.qty != null ? `${r.qty.toLocaleString()}${r.uom ? ` ${r.uom}` : ""}` : "—"}
+                </td>
+                <td className="px-3 py-2 text-right tabular-nums text-brand-dark">
+                  {r.rate != null ? r.rate.toLocaleString() : "—"}
                 </td>
                 <td className="px-3 py-2 text-right tabular-nums text-brand-dark">
                   {r.stock != null ? r.stock.toLocaleString() : "—"}

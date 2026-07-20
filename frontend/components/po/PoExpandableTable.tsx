@@ -83,7 +83,7 @@ const MATERIAL_COLUMNS: MaterialColumn[] = [
       : <span className="text-brand-muted">—</span> },
   { key: "commitment", label: "Commitment", on: true, render: (m) => fmtDate(m.commitment_date) },
   { key: "ordered_qty", label: "Ordered Qty", on: false, render: (m) => m.po_qty ?? "—" },
-  { key: "rate", label: "Rate", on: false, render: (m) => m.rate ?? "—" },
+  { key: "rate", label: "Rate", on: true, render: (m) => m.rate ?? "—" },
   { key: "lead_time", label: "Lead Time", on: false,
     render: (m) => (m.lead_time != null ? `${m.lead_time}d` : "—") },
   { key: "po_status", label: "PO Status", on: false, render: (m) => m.po_status || "—" },
@@ -91,7 +91,8 @@ const MATERIAL_COLUMNS: MaterialColumn[] = [
   { key: "supplier", label: "Supplier", on: false, render: (m) => m.supplier_name || "—" },
 ];
 
-const MATERIAL_COLS_KEY = "eportal.poMaterialCols.v1";
+// v2: Rate became default-visible (client: "we not showing rates anywhere").
+const MATERIAL_COLS_KEY = "eportal.poMaterialCols.v2";
 
 function MessageRow({ m }: { m: PoMessage }) {
   const inbound = m.direction === "INCOMING";
