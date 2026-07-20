@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import io
 from datetime import datetime, timedelta
-from typing import Any
+from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -333,14 +333,14 @@ def _days_overdue(dt: datetime | None) -> int | None:
     return delta if delta > 0 else 0
 
 
-def _pending_po_rows(db: Session, clause: Any) -> list[dict[str, Any]]:
+def _pending_po_rows(db: Session, clause: Any, cap: int = _ROW_CAP) -> list[dict[str, Any]]:
     R = ProcurementRecord
     pending = (R.po_status.is_(None)) | (func.upper(R.po_status).notin_(_DELIVERED_STATUS))
     rows = db.scalars(
         # delisted = the line left the CRM pending desk (received/closed) — not pending.
         select(R).where(clause, pending, R.delisted_at.is_(None))
         .order_by(R.shipment_date.asc().nullslast())
-        .limit(_ROW_CAP)
+        .limit(cap)
     ).all()
     return [
         {
@@ -541,9 +541,43 @@ def _supplier_detail(db: Session, supplier_id: int) -> dict[str, Any]:
     }
 
 
+def _customer_detail(db: Session, name: str, signal: str | None = None) -> dict[str, Any]:
+    """Per-customer drill-down: signal rollup + the actual PO lines (optionally
+    narrowed to one signal — 'clicking the red count shows the red POs')."""
+    key = (name or "").strip().upper()
+    R = ProcurementRecord
+    clause = func.upper(R.customer_name) == key
+    if not key or not db.scalar(select(func.count(R.id)).where(clause)):
+        raise HTTPException(404, "Customer not found")
+    po_row = db.execute(select(*_po_measures()).where(clause)).one()
+    po_d = _po_dict(po_row)
+    nsup = db.scalar(select(func.count(func.distinct(R.supplier_name))).where(clause))
+    sig = (signal or "").strip().upper() or None
+    pending_clause = clause & (func.upper(R.signal) == sig) if sig else clause
+    return {
+        "customer_name": (name or "").strip(),
+        "worst_signal": next(
+            (c for c in ("BLACK", "RED", "YELLOW", "GREEN") if po_d[c.lower()] > 0), None
+        ),
+        "suppliers": _one(nsup),
+        "pos": po_d,
+        "signal_filter": sig,
+        # Customers can exceed the default cap (500+ lines) — raise it so the
+        # drill-down and its export are complete.
+        "pending_pos": _pending_po_rows(db, pending_clause, cap=2000),
+    }
+
+
 @router.get("/workload/users/{user_id}")
 def workload_user_detail(user_id: int, db: Session = Depends(get_db)) -> dict[str, Any]:
     return _user_detail(db, user_id)
+
+
+@router.get("/workload/customer-detail")
+def workload_customer_detail(
+    name: str, signal: Optional[str] = None, db: Session = Depends(get_db)
+) -> dict[str, Any]:
+    return _customer_detail(db, name, signal)
 
 
 @router.get("/workload/suppliers/{supplier_id}")
@@ -678,13 +712,15 @@ def workload_export(db: Session = Depends(get_db)) -> StreamingResponse:
             for s in data["suppliers"]
         ],
     )
+    # Per client feedback (2026-07-20): no "Overdue" column here — the signal
+    # split (Green/Yellow/Red/Black) is the language the client thinks in.
     _add_sheet(
         wb, "Customers",
         ["Customer", "Worst Signal", "Suppliers", "PO Lines", "Pending POs",
-         "Overdue POs", "Green", "Yellow", "Red", "Black"],
+         "Green", "Yellow", "Red", "Black"],
         [
             [c["customer_name"], c["worst_signal"], c["suppliers"], c["pos"]["total"],
-             c["pos"]["pending"], c["pos"]["overdue"], c["pos"]["green"],
+             c["pos"]["pending"], c["pos"]["green"],
              c["pos"]["yellow"], c["pos"]["red"], c["pos"]["black"]]
             for c in data.get("customers", [])
         ],
@@ -734,6 +770,32 @@ def workload_user_export(user_id: int, db: Session = Depends(get_db)) -> Streami
     ]
     slug = "".join(ch for ch in (u["name"] or "user") if ch.isalnum() or ch in " -_").strip().replace(" ", "-")[:40]
     return _xlsx_response(_entity_workbook(d, rows), f"workload-{slug or 'user'}.xlsx")
+
+
+@router.get("/workload/customer-detail/export")
+def workload_customer_export(
+    name: str, signal: Optional[str] = None, db: Session = Depends(get_db)
+) -> StreamingResponse:
+    from openpyxl import Workbook
+
+    d = _customer_detail(db, name, signal)
+    p = d["pos"]
+    wb = Workbook()
+    _add_sheet(wb, "Summary", ["Metric", "Value"], [
+        ["Customer", d["customer_name"]], ["Generated", datetime.utcnow()],
+        ["Worst signal", d["worst_signal"]], ["Suppliers", d["suppliers"]],
+        ["PO lines", p["total"]], ["Pending POs", p["pending"]],
+        ["Green / Yellow / Red / Black",
+         f'{p["green"]} / {p["yellow"]} / {p["red"]} / {p["black"]}'],
+        ["Signal filter", d["signal_filter"] or "ALL"],
+    ])
+    _add_sheet(wb, "PO Lines", _PENDING_PO_HEADERS,
+               _pending_po_sheet_rows(d["pending_pos"]))
+    slug = "".join(
+        ch for ch in (d["customer_name"] or "customer") if ch.isalnum() or ch in " -_"
+    ).strip().replace(" ", "-")[:40]
+    suffix = f"-{d['signal_filter'].lower()}" if d["signal_filter"] else ""
+    return _xlsx_response(_workbook_bytes(wb), f"workload-{slug or 'customer'}{suffix}.xlsx")
 
 
 @router.get("/workload/suppliers/{supplier_id}/export")

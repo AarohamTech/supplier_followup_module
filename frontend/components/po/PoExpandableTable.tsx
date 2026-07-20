@@ -5,7 +5,6 @@ import { Ban, ChevronDown, ChevronRight, Loader2, SlidersHorizontal } from "luci
 
 import { overdueDays } from "@/lib/format";
 import type { EmployeePo, EmployeePoMaterial, PoDetail, PoMessage } from "@/lib/types";
-import PoPdfButton from "@/components/po/PoPdfButton";
 
 const SIGNAL_CLASS: Record<string, string> = {
   GREEN: "bg-emerald-50 text-emerald-700 ring-emerald-100",
@@ -121,12 +120,10 @@ export default function PoExpandableTable({
   pos,
   loadDetail,
   requestCancel,
-  pdfEndpoint = "/api/eportal/po-pdf",
 }: {
   pos: EmployeePo[];
   loadDetail: (po: EmployeePo) => Promise<PoDetail>;
   requestCancel: (po: EmployeePo, remark: string) => Promise<void>;
-  pdfEndpoint?: string;
 }) {
   const [open, setOpen] = useState<string | null>(null);
   const [detail, setDetail] = useState<Record<string, PoDetail>>({});
@@ -323,19 +320,9 @@ export default function PoExpandableTable({
                           <div className="space-y-4">
                             {/* Materials */}
                             <div>
-                              <div className="mb-1 flex items-center gap-2 text-[11px] font-semibold uppercase text-brand-muted">
-                                Materials
-                                {d.po_trn_no && (
-                                  <span className="inline-flex items-center gap-1 normal-case">
-                                    <PoPdfButton
-                                      trnNo={d.po_trn_no}
-                                      fileLabel={d.po_short_ref || d.supplier_po_no}
-                                      endpoint={pdfEndpoint}
-                                    />
-                                    <span className="text-[10px] font-normal text-brand-muted">PO PDF</span>
-                                  </span>
-                                )}
-                              </div>
+                              {/* No PO-PDF button here — the official PO document is
+                                  admin/supplier-only per client decision (2026-07-20). */}
+                              <div className="mb-1 text-[11px] font-semibold uppercase text-brand-muted">Materials</div>
                               {d.materials.length ? (
                                 <table className="w-full text-xs">
                                   <thead className="text-left text-[10px] uppercase text-brand-muted">

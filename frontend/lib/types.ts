@@ -430,6 +430,15 @@ export interface WorkloadCustomerRow {
   po_lines: number;
 }
 
+export interface WorkloadCustomerDetail {
+  customer_name: string;
+  worst_signal?: string | null;
+  suppliers: number;
+  pos: WorkloadPoStats;
+  signal_filter?: string | null;
+  pending_pos: WorkloadPendingPo[];
+}
+
 export interface WorkloadReport {
   overall: {
     pos: WorkloadPoStats;
@@ -1502,7 +1511,8 @@ export interface OrderLine extends EmployeePoMaterial {
   owner_emp_code?: string | null;
   cancellation_status?: string | null;
   escalation_level?: string | null;
-  po_remark?: string | null;
+  po_remark?: string | null; // CRM feed remark — shown as "Customer Remark"
+  last_supplier_reply?: string | null;
   po_trn_no?: string | null; // CRM PO transaction number (drives the PO PDF download)
   closed?: boolean; // delisted from the CRM pending desk (received/closed)
 }

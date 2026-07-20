@@ -240,7 +240,10 @@ def material_lines(
             "owner_emp_code": r.owner_emp_code,
             "cancellation_status": r.cancellation_status,
             "escalation_level": r.escalation_level,
+            # po_remark = the remark from the CRM feed (shown as "Customer
+            # Remark"); last_supplier_reply = what the supplier last said.
             "po_remark": r.po_remark,
+            "last_supplier_reply": r.last_supplier_reply,
             "closed": r.delisted_at is not None,
         }
         for r in rows

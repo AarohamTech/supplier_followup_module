@@ -70,7 +70,8 @@ const COLUMNS: { key: string; label: string; on: boolean }[] = [
   { key: "status", label: "Status", on: true },
   { key: "ship_date", label: "Ship Date", on: true },
   { key: "commitment", label: "Commitment", on: true },
-  { key: "remark", label: "Remark", on: true },
+  { key: "remark", label: "Customer Remark", on: true },
+  { key: "supplier_remark", label: "Supplier Remark", on: true },
   { key: "owner", label: "Owner", on: false },
   { key: "crm", label: "CRM No.", on: false },
   { key: "rate", label: "Rate", on: false },
@@ -317,7 +318,8 @@ export default function OrdersPage() {
                   {show("status") && <th className="px-3 py-2">Status</th>}
                   {show("ship_date") && <th className="px-3 py-2 text-right">Ship Date</th>}
                   {show("commitment") && <th className="px-3 py-2 text-right">Commitment</th>}
-                  {show("remark") && <th className="px-3 py-2">Remark</th>}
+                  {show("remark") && <th className="px-3 py-2">Customer Remark</th>}
+                  {show("supplier_remark") && <th className="px-3 py-2">Supplier Remark</th>}
                   {show("owner") && <th className="px-3 py-2">Owner</th>}
                   {show("crm") && <th className="px-3 py-2">CRM No.</th>}
                   {show("rate") && <th className="px-3 py-2 text-right">Rate</th>}
@@ -403,6 +405,11 @@ export default function OrdersPage() {
                     {show("remark") && (
                       <td className="max-w-[180px] px-3 py-2">
                         <div className="truncate" title={r.po_remark || undefined}>{r.po_remark || "—"}</div>
+                      </td>
+                    )}
+                    {show("supplier_remark") && (
+                      <td className="max-w-[180px] px-3 py-2">
+                        <div className="truncate" title={r.last_supplier_reply || undefined}>{r.last_supplier_reply || "—"}</div>
                       </td>
                     )}
                     {show("owner") && <td className="px-3 py-2 whitespace-nowrap">{r.owner_emp_code || "—"}</td>}

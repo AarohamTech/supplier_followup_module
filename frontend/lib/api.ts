@@ -31,6 +31,7 @@ import type {
   WorkloadReport,
   WorkloadSupplierDetail,
   WorkloadUserDetail,
+  WorkloadCustomerDetail,
   CommunicationDashboard,
   PortalTaskDashboard,
   CommHubDashboard,
@@ -983,10 +984,16 @@ export const api = {
     http<WorkloadUserDetail>(`/api/reports/workload/users/${userId}`),
   workloadSupplierDetail: (supplierId: number) =>
     http<WorkloadSupplierDetail>(`/api/reports/workload/suppliers/${supplierId}`),
+  workloadCustomerDetail: (name: string, signal?: string) =>
+    http<WorkloadCustomerDetail>(
+      `/api/reports/workload/customer-detail?name=${encodeURIComponent(name)}${signal ? `&signal=${encodeURIComponent(signal)}` : ""}`,
+    ),
   workloadExportUrl: () => `/api/reports/workload/export`,
   workloadUserExportUrl: (userId: number) => `/api/reports/workload/users/${userId}/export`,
   workloadSupplierExportUrl: (supplierId: number) =>
     `/api/reports/workload/suppliers/${supplierId}/export`,
+  workloadCustomerExportUrl: (name: string, signal?: string) =>
+    `/api/reports/workload/customer-detail/export?name=${encodeURIComponent(name)}${signal ? `&signal=${encodeURIComponent(signal)}` : ""}`,
 
   // ─── Supplier portal (supplier accounts only) ─────────────────────────
   portalMe: () => http<PortalMe>("/api/portal/me"),

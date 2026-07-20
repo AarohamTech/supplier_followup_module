@@ -224,41 +224,8 @@ def request_po_cancel(
     return result
 
 
-@router.get("/po-pdf")
-def po_pdf(
-    trn_no: str,
-    amend_no: int = 0,
-    user: User = Depends(get_current_employee),
-    db: Session = Depends(get_db),
-):
-    """Download the PO PDF from the Hariom CRM for one of the employee's own POs
-    (proxied — the CRM only accepts calls from this server). Scope boundary: the
-    transaction number must belong to a line the employee owns."""
-    from fastapi.responses import Response
-
-    from ..services import crm_ingest_service
-    from ..services.crm_config import get_current_crm_config
-
-    owned = db.scalar(
-        select(func.count()).select_from(ProcurementRecord).where(
-            ProcurementRecord.po_trn_no == trn_no,
-            ProcurementRecord.owner_emp_code == user.emp_code,
-        )
-    )
-    if not owned:
-        raise HTTPException(404, "PO not found among your assigned POs")
-    cfg = get_current_crm_config(db)
-    if cfg is None:
-        raise HTTPException(503, "CRM connection is not configured for this company")
-    try:
-        content, media_type = crm_ingest_service.fetch_po_pdf(cfg, trn_no, amend_no)
-    except RuntimeError as exc:
-        raise HTTPException(502, str(exc))
-    return Response(
-        content=content,
-        media_type=media_type,
-        headers={"Content-Disposition": f'attachment; filename="PO-{trn_no}.pdf"'},
-    )
+# NOTE: the employee /po-pdf route was removed per client decision (2026-07-20):
+# the official PO document is only for admins and the supplier it belongs to.
 
 
 # ── File attachments (chat uploads, scoped to this employee) ──────────────────

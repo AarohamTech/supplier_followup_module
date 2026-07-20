@@ -146,14 +146,16 @@ def list_records(
 from ..services.crm_config import get_current_crm_config as _current_crm_config  # noqa: E402
 
 
-@router.get("/po-pdf")
+@router.get("/po-pdf", dependencies=[Depends(require_admin)])
 def po_pdf(
     trn_no: str = Query(..., description="PO transaction number (po_trn_no / CRM PoRefTrnNo)"),
     amend_no: int = Query(0, ge=0),
     db: Session = Depends(get_db),
 ):
     """Download the PO PDF from the Hariom CRM (proxied — the CRM only accepts
-    calls from this server). CompanyId is the current company's desk id."""
+    calls from this server). Per client decision (2026-07-20): the official PO
+    document is for ADMINS and the SUPPLIER it belongs to — not other internal
+    users, so this route is admin-gated and the employee route was removed."""
     from fastapi.responses import Response
 
     cfg = _current_crm_config(db)

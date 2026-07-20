@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState, Fragment, type ReactNode } from "react";
 import { useStore } from "@/lib/store";
+import { useAuth } from "@/lib/auth";
 import { fmtDate, fmtNum, signalClass, overdueDays } from "@/lib/format";
 import { ChevronDown, ChevronRight, Mail, Sparkles, Loader2, SlidersHorizontal } from "lucide-react";
 import type { ProcurementRecord } from "@/lib/types";
@@ -77,7 +78,7 @@ const DETAIL_COLUMNS: DetailColumn[] = [
   { key: "next_followup", label: "Next Follow-up", on: false, render: (r) => fmtDate(r.next_followup_date) },
   { key: "delay_reason", label: "Delay Reason", on: false,
     render: (r) => <span className="line-clamp-2 max-w-[220px] text-brand-muted">{r.delay_reason ?? "—"}</span> },
-  { key: "po_remark", label: "PO Remark", on: false,
+  { key: "po_remark", label: "Customer Remark", on: false,
     render: (r) => <span className="line-clamp-2 max-w-[220px] text-brand-muted">{r.po_remark ?? "—"}</span> },
   { key: "updated", label: "Last Updated", on: false, render: (r) => fmtDate(r.updated_at) },
 ];
@@ -111,16 +112,13 @@ function ReceiptBadge({ status }: { status?: string | null }) {
   );
 }
 
-// The PO PDF proxy differs by user type; the store scope knows which one we are.
+// Client decision (2026-07-20): the official PO PDF is only for admins (and
+// suppliers in their portal) — hide it for employees and non-admin staff.
 function ScopedPoPdfButton({ trnNo, fileLabel }: { trnNo?: string | null; fileLabel: string }) {
   const scope = useStore((s) => s.scope);
-  return (
-    <PoPdfButton
-      trnNo={trnNo}
-      fileLabel={fileLabel}
-      endpoint={scope === "employee" ? "/api/eportal/po-pdf" : "/api/procurement/po-pdf"}
-    />
-  );
+  const { hasRole } = useAuth();
+  if (scope === "employee" || !hasRole("admin")) return null;
+  return <PoPdfButton trnNo={trnNo} fileLabel={fileLabel} endpoint="/api/procurement/po-pdf" />;
 }
 
 const SIGNAL_RANK: Record<string, number> = { GREEN: 1, YELLOW: 2, RED: 3, BLACK: 4 };

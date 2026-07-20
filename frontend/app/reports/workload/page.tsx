@@ -101,6 +101,10 @@ export default function WorkloadReportPage() {
 
   const openUser = (id: number) => router.push(`/reports/workload/user/${id}`);
   const openSupplier = (id: number) => router.push(`/reports/workload/supplier/${id}`);
+  const openCustomer = (name: string, signal?: string) =>
+    router.push(
+      `/reports/workload/customer?name=${encodeURIComponent(name)}${signal ? `&signal=${signal}` : ""}`,
+    );
 
   return (
     <div className="space-y-4">
@@ -362,7 +366,7 @@ export default function WorkloadReportPage() {
         <section className="card overflow-hidden">
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-brand-border px-4 py-3">
             <p className="text-xs text-brand-muted">
-              PO lines grouped by customer (from the CRM feed). Empty until customer fields are ingested.
+              PO lines grouped by customer — click a row for all its POs, or a signal count for just those (with export).
             </p>
             <div className="relative">
               <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-brand-muted" />
@@ -383,33 +387,56 @@ export default function WorkloadReportPage() {
                   <th className="px-3 py-2 text-right font-semibold">Suppliers</th>
                   <th className="px-3 py-2 text-right font-semibold">PO lines</th>
                   <th className="px-3 py-2 text-right font-semibold">Pending POs</th>
-                  <th className="px-3 py-2 text-right font-semibold">Overdue POs</th>
+                  <th className="px-3 py-2 text-right font-semibold">Green POs</th>
                   <th className="px-3 py-2 text-right font-semibold">Red POs</th>
                   <th className="px-3 py-2 text-right font-semibold">Black POs</th>
+                  <th className="w-8 px-2 py-2" aria-hidden />
                 </tr>
               </thead>
               <tbody className="divide-y divide-brand-border">
-                {customers.map((c) => (
-                  <tr key={c.customer_name} className="hover:bg-subtle/50">
-                    <td className="px-4 py-2 font-medium text-brand-dark">{c.customer_name}</td>
-                    <td className="px-3 py-2">
-                      {c.worst_signal ? (
-                        <span className={`badge ${signalChip(c.worst_signal)}`}>{c.worst_signal}</span>
-                      ) : (
-                        <span className="text-brand-muted">—</span>
-                      )}
-                    </td>
-                    <td className="px-3 py-2 text-right"><Num v={c.suppliers} /></td>
-                    <td className="px-3 py-2 text-right"><Num v={c.po_lines} /></td>
-                    <td className="px-3 py-2 text-right"><Num v={c.pos.pending} /></td>
-                    <td className="px-3 py-2 text-right"><Num v={c.pos.overdue} warn /></td>
-                    <td className="px-3 py-2 text-right"><Num v={c.pos.red} warn /></td>
-                    <td className="px-3 py-2 text-right"><Num v={c.pos.black} warn /></td>
-                  </tr>
-                ))}
+                {customers.map((c) => {
+                  // Signal count cells deep-link to the drill-down pre-filtered
+                  // to that signal ("the red count shows the red POs").
+                  const cell = (v: number, signal?: string, warn?: boolean) => (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openCustomer(c.customer_name, signal);
+                      }}
+                      className="w-full rounded px-1 text-right hover:bg-red-50/60"
+                      title={signal ? `Show ${signal} POs for ${c.customer_name}` : `Show all POs for ${c.customer_name}`}
+                    >
+                      <Num v={v} warn={warn} />
+                    </button>
+                  );
+                  return (
+                    <tr
+                      key={c.customer_name}
+                      onClick={() => openCustomer(c.customer_name)}
+                      className="cursor-pointer hover:bg-subtle/50"
+                      title="Open all POs for this customer"
+                    >
+                      <td className="px-4 py-2 font-medium text-brand-dark">{c.customer_name}</td>
+                      <td className="px-3 py-2">
+                        {c.worst_signal ? (
+                          <span className={`badge ${signalChip(c.worst_signal)}`}>{c.worst_signal}</span>
+                        ) : (
+                          <span className="text-brand-muted">—</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-right"><Num v={c.suppliers} /></td>
+                      <td className="px-3 py-2 text-right">{cell(c.po_lines)}</td>
+                      <td className="px-3 py-2 text-right">{cell(c.pos.pending)}</td>
+                      <td className="px-3 py-2 text-right">{cell(c.pos.green, "GREEN")}</td>
+                      <td className="px-3 py-2 text-right">{cell(c.pos.red, "RED", true)}</td>
+                      <td className="px-3 py-2 text-right">{cell(c.pos.black, "BLACK", true)}</td>
+                      <td className="px-2 py-2 text-brand-muted"><ChevronRight size={14} /></td>
+                    </tr>
+                  );
+                })}
                 {customers.length === 0 && (
                   <tr>
-                    <td colSpan={8} className="px-4 py-8 text-center text-brand-muted">
+                    <td colSpan={9} className="px-4 py-8 text-center text-brand-muted">
                       No customers yet — customer fields populate on the next CRM ingest.
                     </td>
                   </tr>

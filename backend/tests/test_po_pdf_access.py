@@ -1,9 +1,9 @@
-"""PO PDF download access: staff proxy + the employee-scoped eportal route.
+"""PO PDF download access.
 
-The PDF must be reachable by every internal user type: any staff role hits
-/api/procurement/po-pdf (router-level read RBAC), employees hit
-/api/eportal/po-pdf which additionally enforces the own-PO boundary
-(po_trn_no must belong to a line the employee owns).
+Client decision (2026-07-20): the official PO document is only for ADMINS and
+the SUPPLIER it belongs to. The staff route is admin-gated at the route level,
+the employee route no longer exists, and the supplier route enforces the
+own-PO boundary (po_trn_no must belong to a line addressed to that supplier).
 """
 import os
 import unittest
@@ -60,25 +60,17 @@ def _seed(db):
 
 
 class EmployeePoPdfTests(unittest.TestCase):
-    def test_owner_can_download(self):
-        with _temp_db() as db:
-            e1, _ = _seed(db)
-            with patch("app.services.crm_config.get_current_crm_config", return_value=CFG), \
-                 patch("app.services.crm_ingest_service.fetch_po_pdf",
-                       return_value=(b"%PDF-fake", "application/pdf")) as fetch:
-                resp = employee_portal.po_pdf(trn_no=TRN, user=e1, db=db)
-        self.assertEqual(resp.body, b"%PDF-fake")
-        self.assertIn("PO-", resp.headers["Content-Disposition"])
-        fetch.assert_called_once_with(CFG, TRN, 0)
+    def test_employee_route_no_longer_exists(self):
+        # Client decision 2026-07-20: employees must NOT be able to fetch PO PDFs.
+        self.assertFalse(hasattr(employee_portal, "po_pdf"))
 
-    def test_non_owner_gets_404(self):
-        with _temp_db() as db:
-            _, e2 = _seed(db)
-            with patch("app.services.crm_ingest_service.fetch_po_pdf") as fetch:
-                with self.assertRaises(HTTPException) as ctx:
-                    employee_portal.po_pdf(trn_no=TRN, user=e2, db=db)
-        self.assertEqual(ctx.exception.status_code, 404)
-        fetch.assert_not_called()
+    def test_staff_route_is_admin_gated(self):
+        from app.routers.procurement import router as proc_router
+        from app.core.deps import require_admin
+
+        route = next(r for r in proc_router.routes if getattr(r, "path", "") == "/api/procurement/po-pdf")
+        dep_calls = [d.dependency for d in getattr(route, "dependencies", [])]
+        self.assertIn(require_admin, dep_calls)
 
 
 class SupplierPoPdfTests(unittest.TestCase):
