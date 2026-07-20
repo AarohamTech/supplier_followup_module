@@ -101,7 +101,7 @@ export function BlackFollowupsPanel({
     setLoading(true);
     setError(null);
     adapter
-      .list(100)
+      .list(300) // route cap — every live black PO must appear, not the first 100
       .then((r) => {
         setItems(r.items);
         setChasing(r.chasing);

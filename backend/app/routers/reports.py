@@ -47,28 +47,41 @@ def _one(x: Any) -> int:
 
 
 def _po_measures() -> list[Any]:
-    """Shared per-group PO aggregate columns (order matters — unpacked below)."""
+    """Shared per-group PO aggregate columns (order matters — unpacked below).
+
+    Every measure counts LIVE lines only (delisted_at IS NULL): a line the CRM
+    dropped from its pending desk is received/closed history, and counting it
+    made the signal tiles wildly overstate reality (client 2026-07-20: "we have
+    around 10 black POs" while the report claimed hundreds)."""
     R = ProcurementRecord
     today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    live = R.delisted_at.is_(None)
     pending = case(
-        (R.po_status.is_(None), 1),
-        (func.upper(R.po_status).notin_(_DELIVERED_STATUS), 1),
+        (live, case(
+            (R.po_status.is_(None), 1),
+            (func.upper(R.po_status).notin_(_DELIVERED_STATUS), 1),
+            else_=0,
+        )),
         else_=0,
     )
     overdue = case(
-        (func.coalesce(R.shipment_date, today) < today, 1),
+        (live, case((func.coalesce(R.shipment_date, today) < today, 1), else_=0)),
         else_=0,
     )
     sig = func.upper(func.coalesce(R.signal, ""))
+
+    def _sig_count(name: str):
+        return func.sum(case((live, case((sig == name, 1), else_=0)), else_=0))
+
     return [
-        func.count(R.id),
+        func.sum(case((live, 1), else_=0)),
         func.sum(pending),
         func.sum(overdue),
-        func.sum(case((sig == "GREEN", 1), else_=0)),
-        func.sum(case((sig == "YELLOW", 1), else_=0)),
-        func.sum(case((sig == "RED", 1), else_=0)),
-        func.sum(case((sig == "BLACK", 1), else_=0)),
-        func.avg(func.coalesce(R.followup_count, 0)),
+        _sig_count("GREEN"),
+        _sig_count("YELLOW"),
+        _sig_count("RED"),
+        _sig_count("BLACK"),
+        func.avg(case((live, func.coalesce(R.followup_count, 0)), else_=None)),
     ]
 
 
@@ -261,7 +274,7 @@ def workload_report(db: Session = Depends(get_db)) -> dict[str, Any]:
                 R.customer_name,
                 func.count(func.distinct(R.supplier_name)),
                 func.count(R.id),
-            ).where(*_has_customer).group_by(R.customer_name)
+            ).where(*_has_customer, R.delisted_at.is_(None)).group_by(R.customer_name)
         ).all()
     }
     customer_rows = []

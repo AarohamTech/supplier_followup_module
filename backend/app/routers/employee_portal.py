@@ -372,18 +372,20 @@ def procurement_dashboard(
     today = date.today()
     start = datetime.combine(today, datetime.min.time())
     end = datetime.combine(today, datetime.max.time())
+    # Live lines only — delisted (received/closed on the CRM side) is history.
     owned = R.owner_emp_code == user.emp_code
+    live = R.delisted_at.is_(None)
 
     row = db.execute(
         select(
-            func.count().filter(owned),
-            func.count().filter(owned, R.signal == "GREEN"),
-            func.count().filter(owned, R.signal == "YELLOW"),
-            func.count().filter(owned, R.signal == "RED"),
-            func.count().filter(owned, R.signal == "BLACK"),
-            func.count().filter(owned, R.shipment_date < start),
-            func.count().filter(owned, R.shipment_date >= start, R.shipment_date < end),
-            func.count().filter(owned, R.ai_required.is_(True)),
+            func.count().filter(owned, live),
+            func.count().filter(owned, live, R.signal == "GREEN"),
+            func.count().filter(owned, live, R.signal == "YELLOW"),
+            func.count().filter(owned, live, R.signal == "RED"),
+            func.count().filter(owned, live, R.signal == "BLACK"),
+            func.count().filter(owned, live, R.shipment_date < start),
+            func.count().filter(owned, live, R.shipment_date >= start, R.shipment_date < end),
+            func.count().filter(owned, live, R.ai_required.is_(True)),
         )
     ).one()
 

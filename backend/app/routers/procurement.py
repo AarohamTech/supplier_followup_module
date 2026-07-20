@@ -35,12 +35,14 @@ def dashboard(db: Session = Depends(get_db), owner_emp_code: Optional[str] = Non
 
     # Optional employee scope: every KPI is counted only within the selected
     # employee's owned POs (mirrors the /breakdown + list owner_emp_code filter),
-    # so the whole dashboard re-scopes from one control.
+    # so the whole dashboard re-scopes from one control. Every KPI counts LIVE
+    # lines only — delisted (received/closed on the CRM side) rows are history.
     owner = (R.owner_emp_code == owner_emp_code) if owner_emp_code else None
+    live = R.delisted_at.is_(None)
 
     def cnt(*conds):
-        all_conds = list(conds) + ([owner] if owner is not None else [])
-        return func.count().filter(*all_conds) if all_conds else func.count()
+        all_conds = list(conds) + [live] + ([owner] if owner is not None else [])
+        return func.count().filter(*all_conds)
 
     # Single round-trip: conditional COUNT(*) FILTER(...) instead of 8 queries —
     # the DB is cross-region, so collapsing round-trips is the main win.

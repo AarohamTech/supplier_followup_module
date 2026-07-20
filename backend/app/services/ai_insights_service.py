@@ -326,11 +326,20 @@ def list_black_followups(db: Session, *, limit: int = 100) -> list[dict[str, Any
     Powers the "Black Follow-up" page: shows how the AI is auto-communicating
     on the most critical POs and whether a commitment date has been captured
     (the AI keeps chasing until it has one)."""
-    payload = po_followup_service.list_po_groups(db, size=500)
-    groups = [
-        g for g in payload.get("items", [])
-        if (g.get("overall_signal") or "").upper() == "BLACK"
-    ]
+    # Fetch EVERY black group: list_po_groups clamps size to 200, so page
+    # through until exhausted (client 2026-07-20: "system must follow up all
+    # blacks, but only ~10 are being chased"). Filtering signal=BLACK at the SQL
+    # level also keeps the page count tiny.
+    groups: list[dict[str, Any]] = []
+    page = 1
+    while True:
+        payload = po_followup_service.list_po_groups(db, signal="BLACK", page=page, size=200)
+        items = payload.get("items", [])
+        groups.extend(items)
+        if not items or len(groups) >= int(payload.get("total") or 0):
+            break
+        page += 1
+    groups = [g for g in groups if (g.get("overall_signal") or "").upper() == "BLACK"]
     # Client decision (2026-07-20): don't chase EVERY black PO — only the ones
     # still awaiting material. A black PO whose lines are all received
     # (receipt_status COMPLETED), cancel-requested/cancelled, or delisted from

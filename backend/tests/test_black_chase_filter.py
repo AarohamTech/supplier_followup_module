@@ -51,6 +51,19 @@ class BlackChaseFilterTests(unittest.TestCase):
             self.assertNotIn("PO-RECEIVED", pos)
             self.assertNotIn("PO-CANCELREQ", pos)
 
+    def test_more_than_200_blacks_are_all_listed(self):
+        # list_po_groups clamps size to 200 — the black list must page through,
+        # not silently stop at the first 200 groups.
+        with _temp_db() as db:
+            for i in range(205):
+                db.add(ProcurementRecord(
+                    crm_no=f"C{i}", supplier_po_no=f"PO-{i:04d}", material_name=f"M{i}",
+                    supplier_name="ACME", signal="BLACK",
+                ))
+            db.commit()
+            items = ai_insights_service.list_black_followups(db, limit=300)
+            self.assertEqual(len(items), 205)
+
     def test_mixed_po_with_one_pending_line_is_still_chased(self):
         with _temp_db() as db:
             _black_line(db, "PO-MIX", receipt_status="COMPLETED")
