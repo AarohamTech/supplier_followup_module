@@ -24,6 +24,51 @@ class PoCancelIn(BaseModel):
     remark: str | None = None
 
 
+@router.get("/cancel-requests")
+def cancel_requests(db: Session = Depends(get_db)) -> dict:
+    items = po_view_service.cancel_requests(db)
+    return {"items": items, "total": len(items)}
+
+
+@router.get("/cancel-requests/export")
+def cancel_requests_export(db: Session = Depends(get_db)):
+    from io import BytesIO
+
+    from fastapi.responses import StreamingResponse
+    from openpyxl import Workbook
+    from openpyxl.styles import Font
+
+    items = po_view_service.cancel_requests(db)
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Cancel Requests"
+    headers = [
+        "PO No", "PO Ref", "Supplier", "Material", "Qty", "UOM", "Customer",
+        "Status", "Requested By", "Requested At", "Reason", "Closed",
+    ]
+    ws.append(headers)
+    for c in ws[1]:
+        c.font = Font(bold=True)
+    for r in items:
+        at = r["cancel_requested_at"]
+        ws.append([
+            r["supplier_po_no"], r["po_short_ref"], r["supplier_name"],
+            r["material_name"], r["qty"], r["uom"], r["customer_name"],
+            r["cancellation_status"], r["cancel_requested_by"],
+            at.strftime("%Y-%m-%d %H:%M") if isinstance(at, datetime) else at,
+            r["cancel_remark"], "YES" if r["closed"] else "",
+        ])
+    ws.freeze_panes = "A2"
+    buf = BytesIO()
+    wb.save(buf)
+    stamp = date.today().isoformat()
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="po-cancel-requests-{stamp}.xlsx"'},
+    )
+
+
 @router.get("/pos")
 def list_pos(
     db: Session = Depends(get_db),

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   Activity,
+  Ban,
   BarChart3,
   ClipboardList,
   Database,
@@ -54,6 +55,7 @@ const groups: { label: string; items: NavItem[] }[] = [
     items: [
       { href: "/black-followups", label: "Black Follow-ups", icon: ShieldAlert },
       { href: "/purchase-orders", label: "Orders", icon: ClipboardList, minRole: "admin" },
+      { href: "/cancel-requests", label: "Cancel Requests", icon: Ban, minRole: "admin" },
       { href: "/po-followups", label: "PO Follow-ups", icon: FileSpreadsheet },
       { href: "/suppliers", label: "Supplier Master", icon: Users },
       { href: "/emails", label: "Email Master", icon: Mail },

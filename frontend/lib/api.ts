@@ -32,6 +32,7 @@ import type {
   WorkloadSupplierDetail,
   WorkloadUserDetail,
   WorkloadCustomerDetail,
+  PoCancelRequestRow,
   CommunicationDashboard,
   PortalTaskDashboard,
   CommHubDashboard,
@@ -188,6 +189,11 @@ export const api = {
   // Admin-only CRM fetch history (added/changed per fetch).
   crmIngestionLogs: (limit = 50) =>
     http<CrmIngestLog[]>(`/api/procurement/crm-ingestion-logs?limit=${limit}`),
+
+  // Admin-only: every PO line with a cancellation request (+ Excel export URL).
+  poViewCancelRequests: () =>
+    http<{ items: PoCancelRequestRow[]; total: number }>("/api/po-view/cancel-requests"),
+  poViewCancelRequestsExportUrl: () => "/api/po-view/cancel-requests/export",
 
   // Admin-only live check of Hariom's newer quantity API (PoQty/GrnQty/PendQty),
   // run from the server — the only host the CRM accepts calls from.
@@ -1145,6 +1151,36 @@ export const api = {
       }`,
       { method: "POST", body: JSON.stringify({ remark: remark || null }) },
     ),
+  // Employee "My Workload" — the admin per-user workload detail, for the caller.
+  eportalWorkload: () => http<WorkloadUserDetail>("/api/eportal/workload"),
+  eportalWorkloadExportUrl: () => "/api/eportal/workload/export",
+
+  // Employee "My Orders" — admin Orders shape, hard-scoped server-side.
+  eportalOrders: (params: {
+    search?: string;
+    signal?: string;
+    po_status?: string;
+    date_from?: string;
+    date_to?: string;
+    include_closed?: boolean;
+    page?: number;
+    size?: number;
+  } = {}) => {
+    const q = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== "") q.append(k, String(v));
+    });
+    const qs = q.toString();
+    return http<{ items: OrderLine[]; total: number; page: number; size: number }>(
+      `/api/eportal/orders${qs ? `?${qs}` : ""}`,
+    );
+  },
+  eportalOrderLineCancel: (recordId: number, remark?: string) =>
+    http<{ ok?: boolean }>(`/api/eportal/orders/${recordId}/request-cancel`, {
+      method: "POST",
+      body: JSON.stringify({ remark: remark || null }),
+    }),
+
   eportalPoMessages: (supplierPoNo: string) =>
     http<PortalMessage[]>(`/api/eportal/pos/${encodeURIComponent(supplierPoNo)}/messages`),
   eportalSendMessage: (supplierPoNo: string, body: string, subject?: string, attachmentIds?: number[]) =>

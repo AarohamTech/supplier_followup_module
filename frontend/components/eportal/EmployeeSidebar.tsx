@@ -2,19 +2,21 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, FileSpreadsheet, Inbox, MessagesSquare, ListChecks, ListFilter, Send, Truck, X } from "lucide-react";
+import { ClipboardList, LayoutDashboard, FileSpreadsheet, Inbox, MessagesSquare, ListChecks, ListFilter, PieChart, Send, Truck, X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
 const items = [
   { href: "/eportal", label: "Dashboard", icon: LayoutDashboard },
   { href: "/eportal/pos", label: "My Purchase Orders", icon: FileSpreadsheet },
+  { href: "/eportal/orders", label: "My Orders", icon: ClipboardList },
   { href: "/eportal/followups", label: "Black Follow-ups", icon: ListFilter },
   { href: "/eportal/tasks", label: "My Tasks", icon: ListChecks },
   { href: "/eportal/communication", label: "Communication", icon: MessagesSquare },
   { href: "/eportal/compose", label: "Compose Mail", icon: Send },
   { href: "/eportal/shipments", label: "My Shipments", icon: Truck },
   { href: "/eportal/mails", label: "My Customer Mails", icon: Inbox },
+  { href: "/eportal/workload", label: "My Workload", icon: PieChart },
 ];
 
 function isActive(path: string, href: string) {

@@ -228,6 +228,87 @@ def request_po_cancel(
 # the official PO document is only for admins and the supplier it belongs to.
 
 
+# ── "My Orders" — the admin Orders page, hard-scoped to the employee ──────────
+class PoCancelIn(BaseModel):
+    remark: Optional[str] = None
+
+
+@router.get("/orders")
+def list_orders(
+    user: User = Depends(get_current_employee),
+    db: Session = Depends(get_db),
+    search: Optional[str] = None,
+    signal: Optional[str] = None,
+    po_status: Optional[str] = None,
+    supplier_name: Optional[str] = None,
+    date_from: Optional[date] = None,
+    date_to: Optional[date] = None,
+    include_closed: bool = False,
+    page: int = 1,
+    size: int = 50,
+) -> dict:
+    """Material-wise PO lines (same shape/filters as admin /api/po-view/lines),
+    every query pinned to the employee's own owner_emp_code."""
+    if not user.emp_code:
+        return {"items": [], "total": 0, "page": page, "size": size}
+    page = max(1, page)
+    size = max(1, min(size, 200))
+    items, total = po_view_service.material_lines(
+        db, search=search, owner_emp_code=user.emp_code, signal=signal,
+        po_status=po_status, supplier_name=supplier_name,
+        date_from=datetime.combine(date_from, datetime.min.time()) if date_from else None,
+        date_to=datetime.combine(date_to, datetime.max.time()) if date_to else None,
+        include_closed=include_closed, page=page, size=size,
+    )
+    return {"items": items, "total": total, "page": page, "size": size}
+
+
+@router.post("/orders/{record_id}/request-cancel")
+def request_order_line_cancel(
+    record_id: int,
+    payload: PoCancelIn | None = None,
+    user: User = Depends(get_current_employee),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Material-wise cancellation on one of the employee's OWN lines (mirrors
+    the admin line cancel; ownership is the authorization)."""
+    rec = db.get(ProcurementRecord, record_id)
+    if rec is None or rec.owner_emp_code != user.emp_code:
+        raise HTTPException(404, "PO line not found among your assigned POs")
+    result = po_cancel_service.request_line_cancellation(
+        db,
+        record_id=record_id,
+        requested_by=user.emp_code or user.email,
+        remark=payload.remark if payload else None,
+    )
+    if result is None:
+        raise HTTPException(404, "PO line not found")
+    return result
+
+
+# ── "My Workload" — the admin per-user workload report, for the caller ────────
+@router.get("/workload")
+def my_workload(
+    user: User = Depends(get_current_employee),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Same payload as admin /api/reports/workload/users/{id}, always for the
+    logged-in employee — their POs, tasks, throughput and breakdowns."""
+    from .reports import _user_detail
+
+    return _user_detail(db, user.id)
+
+
+@router.get("/workload/export")
+def my_workload_export(
+    user: User = Depends(get_current_employee),
+    db: Session = Depends(get_db),
+):
+    from .reports import workload_user_export
+
+    return workload_user_export(user_id=user.id, db=db)
+
+
 # ── File attachments (chat uploads, scoped to this employee) ──────────────────
 @router.post("/attachments/upload", status_code=201)
 async def upload_attachment(

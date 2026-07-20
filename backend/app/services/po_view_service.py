@@ -296,6 +296,35 @@ def _material(r: ProcurementRecord) -> dict[str, Any]:
     }
 
 
+def cancel_requests(db: Session) -> list[dict[str, Any]]:
+    """Every PO line where a cancellation was ever requested (PENDING = awaiting
+    ERP confirmation, CANCELLED = confirmed), newest request first — the admin
+    'Cancel Requests' page and its export."""
+    R = ProcurementRecord
+    rows = db.scalars(
+        select(R).where(R.cancellation_status.isnot(None))
+        .order_by(R.cancel_requested_at.desc().nullslast(), R.id.desc())
+    ).all()
+    return [
+        {
+            "procurement_record_id": r.id,
+            "supplier_po_no": r.supplier_po_no,
+            "po_short_ref": r.po_short_ref,
+            "supplier_name": r.supplier_name,
+            "material_name": r.material_name,
+            "qty": float(r.qty) if r.qty is not None else None,
+            "uom": r.uom,
+            "customer_name": r.customer_name,
+            "cancellation_status": r.cancellation_status,
+            "cancel_requested_by": r.cancel_requested_by,
+            "cancel_requested_at": _as_dt(r.cancel_requested_at),
+            "cancel_remark": r.cancel_remark,
+            "closed": r.delisted_at is not None,
+        }
+        for r in rows
+    ]
+
+
 def _message(m: CommunicationMessage) -> dict[str, Any]:
     return {
         "id": m.id,

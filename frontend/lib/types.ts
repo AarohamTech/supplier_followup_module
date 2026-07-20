@@ -1517,6 +1517,23 @@ export interface OrderLine extends EmployeePoMaterial {
   closed?: boolean; // delisted from the CRM pending desk (received/closed)
 }
 
+// One row on the admin "Cancel Requests" page.
+export interface PoCancelRequestRow {
+  procurement_record_id: number;
+  supplier_po_no?: string | null;
+  po_short_ref?: string | null;
+  supplier_name?: string | null;
+  material_name: string;
+  qty?: number | null;
+  uom?: string | null;
+  customer_name?: string | null;
+  cancellation_status: string;
+  cancel_requested_by?: string | null;
+  cancel_requested_at?: string | null;
+  cancel_remark?: string | null;
+  closed?: boolean;
+}
+
 // One communication message on a PO (for the PO detail view).
 export interface PoMessage {
   id: number;
