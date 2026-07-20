@@ -63,6 +63,9 @@ def list_mails(
     search: str | None = Query(default=None),
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
+    # Same customer / non-customer split as the admin workspace ("Other Mails"),
+    # still inside the employee's own scope.
+    scope: str = Query(default="customer", pattern="^(customer|other)$"),
 ) -> dict:
     rows, total = customer_mail_service.list_mails(
         db,
@@ -70,6 +73,7 @@ def list_mails(
         search=search,
         limit=limit,
         offset=offset,
+        scope=scope,
         owned_po_nos=_owned_po_set(db, user),
         assigned_names=_assigned_names(user),
     )

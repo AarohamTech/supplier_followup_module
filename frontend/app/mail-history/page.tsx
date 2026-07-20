@@ -21,6 +21,7 @@ const adminHub: CommHubAdapter = {
   updateTask: (id, body) => api.hubUpdateTask(id, body),
   aiReply: (id) => api.hubAiReply(id),
   reply: (body) => api.hubReply(body),
+  replyOutlook: (body) => api.hubReplyOutlook(body),
   escalate: (id) => api.hubEscalate(id),
   agent: (body) => api.hubAgent(body),
   agentHistory: (id) => api.hubAgentHistory(id),

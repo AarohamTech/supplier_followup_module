@@ -469,6 +469,23 @@ export const api = {
       { method: "POST", body: JSON.stringify(body) },
     ),
 
+  // "Send by Outlook": log the reply + get to/cc/subject/body for a mailto compose.
+  hubReplyOutlook: (body: {
+    procurement_record_id?: number | null;
+    supplier_po_no?: string | null;
+    supplier_id?: number | null;
+    supplier_name?: string | null;
+    subject?: string;
+    non_po_subject?: string | null;
+    body: string;
+    send_email?: boolean;
+    attachment_ids?: number[];
+  }) =>
+    http<{ ok: boolean; message_id: number; to: string[]; cc: string[]; subject: string; body: string; no_email_on_file: boolean }>(
+      "/api/communication-hub/reply-outlook",
+      { method: "POST", body: JSON.stringify(body) },
+    ),
+
   // Staff chat-file upload (bind the returned id to a message on send).
   uploadAttachment: (file: File) => {
     const body = new FormData();
@@ -1019,6 +1036,12 @@ export const api = {
       `/api/portal/pos/${encodeURIComponent(supplierPoNo)}/escalate`,
       { method: "POST", body: JSON.stringify({ reason: reason || null }) },
     ),
+  // Supplier-raised issue → task for the buyer team.
+  portalRaiseIssue: (body: { subject: string; description?: string; supplier_po_no?: string | null }) =>
+    http<{ ok: boolean; task_id: number }>("/api/portal/issues", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
   // Read-only Task Manager view (backend nulls internal fields server-side).
   portalTasks: () => http<CommunicationTask[]>("/api/portal/tasks"),
   portalTasksDashboard: () => http<PortalTaskDashboard>("/api/portal/tasks/dashboard"),
@@ -1088,7 +1111,7 @@ export const api = {
   eportalGetAsn: (id: number) => http<Asn>(`/api/eportal/asns/${id}`),
   eportalRefreshAsnTracking: (id: number) =>
     http<Asn>(`/api/eportal/asns/${id}/refresh-tracking`, { method: "POST" }),
-  eportalListMails: (params: { search?: string; status?: string; limit?: number } = {}) => {
+  eportalListMails: (params: { search?: string; status?: string; limit?: number; scope?: "customer" | "other" } = {}) => {
     const q = new URLSearchParams();
     Object.entries(params).forEach(([k, v]) => {
       if (v !== undefined && v !== null && v !== "") q.append(k, String(v));
@@ -1315,6 +1338,22 @@ export const api = {
   }) =>
     http<{ ok: boolean; message_id: number; channel: "email" | "portal"; sent: boolean; emailed_to: string[]; no_email_on_file: boolean }>(
       "/api/eportal/hub/reply",
+      { method: "POST", body: JSON.stringify(body) },
+    ),
+
+  eportalHubReplyOutlook: (body: {
+    procurement_record_id?: number | null;
+    supplier_po_no?: string | null;
+    supplier_id?: number | null;
+    supplier_name?: string | null;
+    subject?: string;
+    non_po_subject?: string | null;
+    body: string;
+    send_email?: boolean;
+    attachment_ids?: number[];
+  }) =>
+    http<{ ok: boolean; message_id: number; to: string[]; cc: string[]; subject: string; body: string; no_email_on_file: boolean }>(
+      "/api/eportal/hub/reply-outlook",
       { method: "POST", body: JSON.stringify(body) },
     ),
 

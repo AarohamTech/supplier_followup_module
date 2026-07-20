@@ -514,6 +514,8 @@ def create_po_followup_mail(
     db.add(history)
     db.flush()
     msg = _queue_history_for_auto_send(db, history)
+    if resolved_mail_type == "PO_FOLLOWUP_GREEN" and msg is not None:
+        _attach_po_pdf_to_green_ack(db, msg, group)
 
     for rid in group["procurement_record_ids"]:
         rec = db.get(ProcurementRecord, rid)
@@ -566,6 +568,55 @@ def create_po_followup_mail(
         body_html=body_html,
         materials=group["materials"],
         notes=notes,
+    )
+
+
+def _attach_po_pdf_to_green_ack(db: Session, msg: Any, group: dict[str, Any]) -> None:
+    """Client decision (2026-07-20): the GREEN acknowledgement mail carries the
+    official PO PDF for the supplier, and the internal PO owners are notified.
+    Best-effort — a CRM or storage hiccup must never block the ACK itself."""
+    from . import attachment_service
+    from . import notification_service as notif
+    from .crm_config import get_current_crm_config
+
+    attached = False
+    try:
+        if attachment_service.storage_enabled():
+            trn = db.scalar(
+                select(ProcurementRecord.po_trn_no).where(
+                    ProcurementRecord.supplier_po_no == group["supplier_po_no"],
+                    ProcurementRecord.po_trn_no.isnot(None),
+                ).limit(1)
+            )
+            cfg = get_current_crm_config(db) if trn else None
+            if trn and cfg:
+                from . import crm_ingest_service
+
+                content, media = crm_ingest_service.fetch_po_pdf(cfg, trn)
+                att = attachment_service.save_upload(
+                    db, data=content,
+                    filename=f"PO-{group['supplier_po_no']}.pdf",
+                    content_type=media,
+                    uploaded_by_kind="system", uploaded_by_id=None,
+                    uploaded_by_label="green-ack",
+                    commit=False,
+                )
+                attachment_service.bind(db, msg.id, [att.id], commit=False)
+                attached = True
+    except Exception:  # noqa: BLE001
+        log.exception("green-ack PO PDF attach failed (ACK still goes out)")
+
+    notif.safe(
+        notif.notify_po_owners, db,
+        type="GREEN_ACK_SENT",
+        title=f"Green acknowledgement queued for PO {group['supplier_po_no']}",
+        body=(
+            f"To {group.get('supplier_name') or 'supplier'}"
+            + (" — official PO PDF attached." if attached else ".")
+        ),
+        link="/mail-history",
+        supplier_id=group.get("supplier_id"),
+        supplier_po_no=group.get("supplier_po_no"),
     )
 
 

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, FileSpreadsheet, MessagesSquare, ListChecks, Sparkles, Truck, X } from "lucide-react";
+import { AlertCircle, LayoutDashboard, FileSpreadsheet, MessagesSquare, ListChecks, Sparkles, Truck, X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
@@ -12,6 +12,7 @@ const items = [
   { href: "/portal/pos", label: "My Purchase Orders", icon: FileSpreadsheet },
   { href: "/portal/tasks", label: "Tasks", icon: ListChecks },
   { href: "/portal/communication", label: "Communication Hub", icon: MessagesSquare },
+  { href: "/portal/issues", label: "Raise an Issue", icon: AlertCircle },
   { href: "/portal/asn", label: "ASN Portal", icon: Truck },
 ];
 

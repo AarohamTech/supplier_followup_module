@@ -298,6 +298,28 @@ def supplier_scorecards(
 
 
 # ── Black follow-ups (autonomous AI chase view) ──────────────────────────────
+def _black_still_chaseworthy(db: Session, group: dict[str, Any]) -> bool:
+    """True when at least one line of the black PO still needs chasing —
+    i.e. not received, not cancel-requested, not delisted."""
+    from ..models.procurement import ProcurementRecord as R
+    from sqlalchemy import func as _f
+
+    po = group.get("supplier_po_no")
+    if not po:
+        return False
+    stmt = select(R).where(R.supplier_po_no == po)
+    name = (group.get("supplier_name") or "").strip()
+    if name:
+        stmt = stmt.where(_f.upper(R.supplier_name) == name.upper())
+    rows = db.scalars(stmt).all()
+    return any(
+        r.delisted_at is None
+        and r.cancellation_status is None
+        and (r.receipt_status or "").upper() != "COMPLETED"
+        for r in rows
+    )
+
+
 def list_black_followups(db: Session, *, limit: int = 100) -> list[dict[str, Any]]:
     """BLACK-signal POs with their full message thread + commitment status.
 
@@ -309,6 +331,11 @@ def list_black_followups(db: Session, *, limit: int = 100) -> list[dict[str, Any
         g for g in payload.get("items", [])
         if (g.get("overall_signal") or "").upper() == "BLACK"
     ]
+    # Client decision (2026-07-20): don't chase EVERY black PO — only the ones
+    # still awaiting material. A black PO whose lines are all received
+    # (receipt_status COMPLETED), cancel-requested/cancelled, or delisted from
+    # the CRM pending desk has nothing left to chase.
+    groups = [g for g in groups if _black_still_chaseworthy(db, g)]
     now = datetime.utcnow()
     out: list[dict[str, Any]] = []
 

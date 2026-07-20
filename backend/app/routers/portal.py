@@ -667,6 +667,67 @@ def post_po_message(
     return _to_portal_message(cm, name, [attachment_service.out(a) for a in bound])
 
 
+class PortalIssueIn(BaseModel):
+    subject: str = Field(min_length=3, max_length=200)
+    description: str | None = Field(default=None, max_length=2000)
+    supplier_po_no: str | None = None
+
+
+@router.post("/issues", status_code=201)
+def raise_issue(
+    payload: PortalIssueIn,
+    user: User = Depends(get_current_supplier),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Supplier-raised issue (client feedback 2026-07-20 item 2): opens a task
+    for the buyer team — routed to the PO's desk owner when a PO is given —
+    and fires a bell notification. Lighter than an escalation: no PO flagging."""
+    name = _supplier_name(db, user)
+    rec = None
+    if payload.supplier_po_no:
+        rec = _po_is_owned(db, name, payload.supplier_po_no)
+        if rec is None:
+            raise HTTPException(404, "PO not found for your account")
+
+    owner = None
+    if rec is not None and rec.owner_emp_code:
+        owner = db.scalar(
+            select(User).where(
+                User.emp_code == rec.owner_emp_code, User.is_active.is_(True)
+            )
+        )
+    subject = payload.subject.strip()
+    task = CommunicationTask(
+        supplier_id=user.supplier_id,
+        supplier_name=name,
+        supplier_po_no=payload.supplier_po_no,
+        procurement_record_id=rec.id if rec else None,
+        title=f"Supplier issue: {subject}",
+        description=(payload.description or "").strip() or subject,
+        task_source="SUPPLIER",
+        priority="MEDIUM",
+        status="TODO",
+        assigned_to_user_id=owner.id if owner else None,
+        assigned_to=(owner.full_name or owner.username) if owner else None,
+        assigned_by="Supplier Portal",
+    )
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+
+    notif.safe(
+        notif.notify_po_owners, db,
+        type="SUPPLIER_ISSUE",
+        title=f"Issue raised by {name or 'a supplier'}: {subject[:80]}",
+        body=(payload.description or subject)[:140],
+        link="/tasks",
+        supplier_id=user.supplier_id,
+        supplier_po_no=payload.supplier_po_no,
+        procurement_record_id=rec.id if rec else None,
+    )
+    return {"ok": True, "task_id": task.id}
+
+
 @router.post("/pos/{supplier_po_no}/escalate")
 def escalate_po(
     supplier_po_no: str,

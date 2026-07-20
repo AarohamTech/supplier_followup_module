@@ -18,6 +18,8 @@ export default function EmployeeMailsPage() {
   const [searchInput, setSearchInput] = useState("");
   const search = useDebouncedValue(searchInput, 350);
   const [activeTab, setActiveTab] = useState(QUEUE_TABS[0].key);
+  // Same customer / non-customer split as the admin workspace, employee-scoped.
+  const [mailScope, setMailScope] = useState<"customer" | "other">("customer");
 
   const [items, setItems] = useState<CustomerMail[]>([]);
   const [loadingList, setLoadingList] = useState(false);
@@ -33,7 +35,7 @@ export default function EmployeeMailsPage() {
     let cancelled = false;
     setLoadingList(true);
     api
-      .eportalListMails({ search: search || undefined, limit: 200 })
+      .eportalListMails({ search: search || undefined, limit: 200, scope: mailScope })
       .then((res) => {
         if (!cancelled) setItems(res.items);
       })
@@ -46,7 +48,7 @@ export default function EmployeeMailsPage() {
     return () => {
       cancelled = true;
     };
-  }, [search]);
+  }, [search, mailScope]);
 
   useEffect(() => {
     setSelectedId((prev) =>
@@ -143,12 +145,28 @@ export default function EmployeeMailsPage() {
       <PageHeader
         className="mb-3"
         title="My Customer Mails"
-        description="Customer emails linked to your POs or allocated to you."
+        description="Customer and other emails linked to your POs or allocated to you."
         icon={Inbox}
         tone="red"
         actions={
           <>
             {toast && <span className="rounded-md bg-brand-dark px-3 py-1.5 text-xs text-white">{toast}</span>}
+            <div className="inline-flex shrink-0 rounded-lg border border-brand-border bg-subtle p-0.5 text-xs font-semibold">
+              <button
+                type="button"
+                onClick={() => setMailScope("customer")}
+                className={`rounded-md px-3 py-1.5 transition ${mailScope === "customer" ? "bg-card text-signal-red shadow-sm" : "text-brand-muted hover:text-brand-dark"}`}
+              >
+                Customers
+              </button>
+              <button
+                type="button"
+                onClick={() => setMailScope("other")}
+                className={`rounded-md px-3 py-1.5 transition ${mailScope === "other" ? "bg-card text-signal-red shadow-sm" : "text-brand-muted hover:text-brand-dark"}`}
+              >
+                Other Mails
+              </button>
+            </div>
             {selected && (
               <button
                 type="button"

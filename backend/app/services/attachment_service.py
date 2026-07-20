@@ -80,6 +80,7 @@ def save_upload(
     uploaded_by_id: int | None,
     uploaded_by_label: str | None = None,
     supplier_id: int | None = None,
+    commit: bool = True,
 ) -> MessageAttachment:
     """Store the bytes in the bucket and create an unbound attachment row.
 
@@ -112,8 +113,11 @@ def save_upload(
         supplier_id=supplier_id,
     )
     db.add(att)
-    db.commit()
-    db.refresh(att)
+    if commit:
+        db.commit()
+        db.refresh(att)
+    else:
+        db.flush()
     return att
 
 

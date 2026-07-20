@@ -712,6 +712,35 @@ def reply_now(
     return hub.reply_now(payload=payload, db=db)
 
 
+@router.post("/reply-outlook")
+def reply_outlook(
+    payload: hub.HubReplyIn,
+    user: User = Depends(get_current_employee),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Same shape as admin /reply-outlook; 404 if the PO/supplier is out of scope."""
+    is_non_po = bool(
+        payload.non_po_subject
+        and not payload.supplier_po_no
+        and payload.procurement_record_id is None
+    )
+    if is_non_po:
+        name = _owned_supplier_name(
+            db, user.emp_code,
+            supplier_id=payload.supplier_id, supplier_name=payload.supplier_name,
+        )
+        if name is None:
+            raise HTTPException(404, "Mail not found for your account")
+    else:
+        _resolve_scoped_po(
+            db,
+            user.emp_code,
+            supplier_po_no=payload.supplier_po_no,
+            procurement_record_id=payload.procurement_record_id,
+        )
+    return hub.reply_outlook(payload=payload, db=db)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # 10. Escalate — 404 if record's PO not in scope
 # ─────────────────────────────────────────────────────────────────────────────

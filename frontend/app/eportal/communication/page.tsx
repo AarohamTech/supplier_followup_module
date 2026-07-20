@@ -20,6 +20,7 @@ const employeeHub: CommHubAdapter = {
   updateTask: (id, body) => api.eportalHubUpdateTask(id, body),
   aiReply: (id) => api.eportalHubAiReply(id),
   reply: (body) => api.eportalHubReply(body),
+  replyOutlook: (body) => api.eportalHubReplyOutlook(body),
   escalate: (id) => api.eportalHubEscalate(id),
   agent: (body) => api.eportalHubAgent(body),
   agentHistory: (id) => api.eportalHubAgentHistory(id),

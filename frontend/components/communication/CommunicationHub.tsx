@@ -72,6 +72,7 @@ export interface CommHubAdapter {
   updateTask: typeof api.hubUpdateTask;
   aiReply: typeof api.hubAiReply;
   reply: typeof api.hubReply;
+  replyOutlook: typeof api.hubReplyOutlook;
   escalate: typeof api.hubEscalate;
   agent: typeof api.hubAgent;
   agentHistory: typeof api.hubAgentHistory;
@@ -1051,6 +1052,53 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
     }
   };
 
+  // "Send by Outlook": log the reply server-side, then open the user's own mail
+  // client with a prefilled compose (they press Send in Outlook themselves).
+  const handleOutlookReply = async () => {
+    const text = composer.trim();
+    if (!text || replying) return;
+    if (!activePo && !inOther) return;
+    if (/^\/hi\b/i.test(text)) return;
+    const params = activePo
+      ? {
+          procurement_record_id: activePo.procurement_record_id,
+          supplier_po_no: activePo.supplier_po_no,
+          supplier_id: activePo.supplier_id,
+          supplier_name: activePo.supplier_name,
+        }
+      : {
+          supplier_id: thread?.supplier_id ?? selectedSupplierId,
+          supplier_name: thread?.supplier_name ?? selectedSupplierName,
+          non_po_subject: selectedOtherKey,
+        };
+    setReplying(true);
+    try {
+      const res = await hub.replyOutlook({
+        ...params,
+        body: text,
+        attachment_ids: pendingFiles.map((f) => f.id),
+      });
+      const qs = [
+        res.cc?.length ? `cc=${encodeURIComponent(res.cc.join(","))}` : null,
+        `subject=${encodeURIComponent(res.subject)}`,
+        `body=${encodeURIComponent(res.body)}`,
+      ].filter(Boolean).join("&");
+      window.location.href = `mailto:${encodeURIComponent((res.to || []).join(","))}?${qs}`;
+      setComposer("");
+      if (pendingFiles.length) {
+        pushToast("ok", "Opened in Outlook — attach the files there too (they stay on the portal copy)");
+      } else {
+        pushToast("ok", "Opened in Outlook — press Send there");
+      }
+      setPendingFiles([]);
+      if (activePo) await loadThread(activePo.procurement_record_id);
+    } catch (e: unknown) {
+      pushToast("err", e instanceof Error ? e.message : "Could not open Outlook");
+    } finally {
+      setReplying(false);
+    }
+  };
+
   const onPoMail = () => {
     if (!activePo) return;
     selectPoGroup({ supplier_name: activePo.supplier_name, supplier_po_no: activePo.supplier_po_no });
@@ -1519,6 +1567,14 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
                   />
                   <div className="absolute bottom-3 right-3 flex items-center gap-1.5">
                     <AttachButton onFiles={(files) => void addFiles(files)} disabled={replying} />
+                    <button
+                      onClick={() => void handleOutlookReply()}
+                      disabled={!composer.trim() || replying || /^\/hi\b/i.test(composer.trim())}
+                      className="inline-flex items-center gap-1 rounded-md border border-brand-border px-2.5 py-1.5 text-xs font-semibold text-brand-dark hover:bg-subtle disabled:opacity-50"
+                      title="Open this reply in Outlook (your own mail app) instead of sending from here"
+                    >
+                      <Mail size={13} /> Outlook
+                    </button>
                     {/* HI reply + /hi agent are PO-thread features; hidden on non-PO mails. */}
                     {!inOther && (
                       <button

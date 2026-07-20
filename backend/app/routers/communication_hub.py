@@ -1480,6 +1480,77 @@ class HubReplyIn(BaseModel):
     attachment_ids: list[int] = []
 
 
+@router.post("/reply-outlook", dependencies=[Depends(require_manager)])
+def reply_outlook(payload: HubReplyIn, db: Session = Depends(get_db)) -> dict[str, Any]:
+    """'Send by Outlook': record the reply (MAILTO_OPENED — it still shows in
+    the supplier's portal thread and this Hub) and hand back the resolved
+    to/cc/subject/body so the browser can open the user's own Outlook with a
+    prefilled compose. The user presses Send in Outlook themselves."""
+    body = (payload.body or "").strip()
+    if not body:
+        raise HTTPException(422, "Message body is required")
+
+    rec = (
+        db.get(ProcurementRecord, payload.procurement_record_id)
+        if payload.procurement_record_id
+        else None
+    )
+    supplier_po_no = payload.supplier_po_no or (rec.supplier_po_no if rec else None)
+    supplier_name = payload.supplier_name or (rec.supplier_name if rec else None)
+    supplier_id = payload.supplier_id
+    if supplier_id is None and supplier_name:
+        supplier_id = msg_service.resolve_supplier_id_by_name(db, supplier_name)
+
+    to_emails: list[str] = []
+    cc_emails: list[str] = []
+    if supplier_id is not None:
+        mapping = db.scalar(
+            select(SupplierEmail).where(
+                SupplierEmail.supplier_id == supplier_id,
+                SupplierEmail.is_active.is_(True),
+            )
+        )
+        if mapping:
+            to_emails = [e for e in (mapping.to_emails or []) if e]
+            cc_emails = [e for e in (mapping.cc_emails or []) if e]
+
+    if payload.subject and payload.subject.strip():
+        subject = payload.subject.strip()
+    elif supplier_po_no:
+        subject = f"Re: PO {supplier_po_no}"
+    elif payload.non_po_subject:
+        subject = msg_service.reply_subject(payload.non_po_subject)
+    else:
+        subject = "Message from Procurement"
+
+    msg = msg_service.create_message(
+        db,
+        direction="OUTGOING",
+        status="MAILTO_OPENED",
+        supplier_id=supplier_id,
+        supplier_name=supplier_name,
+        procurement_record_id=rec.id if rec else None,
+        supplier_po_no=supplier_po_no,
+        subject=subject,
+        body=body,
+        to_emails=to_emails,
+        cc_emails=cc_emails,
+        mail_type="HUB_REPLY_OUTLOOK",
+        sent_at=datetime.utcnow(),
+        commit=True,
+    )
+    attachment_service.bind(db, msg.id, payload.attachment_ids)
+    return {
+        "ok": True,
+        "message_id": msg.id,
+        "to": to_emails,
+        "cc": cc_emails,
+        "subject": subject,
+        "body": body,
+        "no_email_on_file": not to_emails,
+    }
+
+
 @router.post("/reply", dependencies=[Depends(require_manager)])
 def reply_now(payload: HubReplyIn, db: Session = Depends(get_db)) -> dict[str, Any]:
     """Staff reply on a PO thread. Always lands in the supplier's portal thread;
