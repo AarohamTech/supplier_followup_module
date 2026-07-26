@@ -6,7 +6,7 @@
 # Run:  powershell -ExecutionPolicy Bypass -File backend\enable_auto_followups_on_box.ps1
 # Box IP is DYNAMIC - if the connection times out, update it from the AWS console.
 $ErrorActionPreference = "Stop"
-$BoxHost = "ubuntu@13.207.55.174"
+$BoxHost = "ubuntu@13.206.119.190"
 $Pem = "$env:USERPROFILE\Downloads\MUMBAI_SERVER.pem"
 
 # NOTE: no double quotes inside the remote block (PowerShell mangles them).

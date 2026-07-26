@@ -7,7 +7,7 @@
 # The box IP is DYNAMIC — if the connection times out, replace it with the
 # current public IP from the AWS console (EC2 -> instance -> Public IPv4).
 $ErrorActionPreference = "Stop"
-$BoxHost = "ubuntu@13.207.55.174"
+$BoxHost = "ubuntu@13.206.119.190"
 $Pem = "$env:USERPROFILE\Downloads\MUMBAI_SERVER.pem"
 
 $envFile = Join-Path $PSScriptRoot ".env"
