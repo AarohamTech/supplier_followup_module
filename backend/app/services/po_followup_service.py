@@ -124,8 +124,9 @@ class BulkGroupContext:
     per-group queries when many groups are built at once.
 
     Building N groups used to cost 3N round trips (commitments + supplier +
-    mapping). Against a cross-region database that dominated the Black
-    Follow-ups page. With a context the same N groups cost 3 queries total.
+    mapping). Each is fast on its own (~2ms, the DB is in the same region as
+    the box) — it is the sheer count that hurt: 633 black groups meant ~1900
+    round trips per pass. With a context the same N groups cost 3 queries.
     """
 
     __slots__ = ("_by_po_supplier", "_by_po", "_supplier_meta")

@@ -99,7 +99,8 @@ class BlackChaseFilterTests(unittest.TestCase):
     def test_query_count_does_not_scale_with_po_count(self):
         # Regression guard: the page used to issue ~3 queries per group plus one
         # per group for the chase filter plus one per thread, and rebuilt every
-        # group once per 200-row page. Against a cross-region DB that was 20s+.
+        # group once per 200-row page — 8333 queries / 20s for 633 black POs.
+        # No single query was slow (~2ms each); the COUNT was the whole problem.
         # Query count must stay flat as the number of black POs grows.
         from sqlalchemy import event
 
