@@ -298,26 +298,71 @@ def supplier_scorecards(
 
 
 # ── Black follow-ups (autonomous AI chase view) ──────────────────────────────
-def _black_still_chaseworthy(db: Session, group: dict[str, Any]) -> bool:
-    """True when at least one line of the black PO still needs chasing —
-    i.e. not received, not cancel-requested, not delisted."""
-    from ..models.procurement import ProcurementRecord as R
-    from sqlalchemy import func as _f
-
-    po = group.get("supplier_po_no")
-    if not po:
-        return False
-    stmt = select(R).where(R.supplier_po_no == po)
-    name = (group.get("supplier_name") or "").strip()
-    if name:
-        stmt = stmt.where(_f.upper(R.supplier_name) == name.upper())
-    rows = db.scalars(stmt).all()
-    return any(
-        r.delisted_at is None
-        and r.cancellation_status is None
-        and (r.receipt_status or "").upper() != "COMPLETED"
-        for r in rows
+def _chase_key(group: dict[str, Any]) -> tuple[str, str]:
+    """PO numbers are recycled across suppliers, so a black PO is identified by
+    (supplier, PO) — never the PO number alone."""
+    return (
+        (group.get("supplier_name") or "").strip().upper(),
+        (group.get("supplier_po_no") or "").strip(),
     )
+
+
+def _line_still_needs_chasing(rec: ProcurementRecord) -> bool:
+    return (
+        rec.delisted_at is None
+        and rec.cancellation_status is None
+        and (rec.receipt_status or "").upper() != "COMPLETED"
+    )
+
+
+def _black_chaseworthy_map(
+    db: Session, groups: list[dict[str, Any]]
+) -> dict[tuple[str, str], bool]:
+    """Chaseworthiness for every group in ONE query.
+
+    A group is chaseworthy when at least one of its lines is still pending —
+    not received, not cancel-requested, not delisted. Previously this ran a
+    query per group, which dominated the Black Follow-ups page.
+    """
+    po_numbers = {
+        (g.get("supplier_po_no") or "").strip()
+        for g in groups
+        if (g.get("supplier_po_no") or "").strip()
+    }
+    if not po_numbers:
+        return {}
+
+    rows = db.scalars(
+        select(ProcurementRecord).where(ProcurementRecord.supplier_po_no.in_(po_numbers))
+    ).all()
+
+    # Bucket by (supplier, PO) and, separately, by PO alone so a group with no
+    # supplier name still sees every line on that PO — matching the old
+    # per-group query, which only constrained supplier when it had one.
+    by_key: dict[tuple[str, str], bool] = {}
+    by_po: dict[str, bool] = {}
+    for rec in rows:
+        pending = _line_still_needs_chasing(rec)
+        po = (rec.supplier_po_no or "").strip()
+        key = ((rec.supplier_name or "").strip().upper(), po)
+        by_key[key] = by_key.get(key, False) or pending
+        by_po[po] = by_po.get(po, False) or pending
+
+    out: dict[tuple[str, str], bool] = {}
+    for g in groups:
+        supplier, po = _chase_key(g)
+        if not po:
+            out[(supplier, po)] = False
+        elif supplier:
+            out[(supplier, po)] = by_key.get((supplier, po), False)
+        else:
+            out[(supplier, po)] = by_po.get(po, False)
+    return out
+
+
+def _black_still_chaseworthy(db: Session, group: dict[str, Any]) -> bool:
+    """Single-group form, kept for callers outside the list view."""
+    return _black_chaseworthy_map(db, [group]).get(_chase_key(group), False)
 
 
 def list_black_followups(db: Session, *, limit: int = 100) -> list[dict[str, Any]]:
@@ -326,39 +371,40 @@ def list_black_followups(db: Session, *, limit: int = 100) -> list[dict[str, Any
     Powers the "Black Follow-up" page: shows how the AI is auto-communicating
     on the most critical POs and whether a commitment date has been captured
     (the AI keeps chasing until it has one)."""
-    # Fetch EVERY black group: list_po_groups clamps size to 200, so page
-    # through until exhausted (client 2026-07-20: "system must follow up all
-    # blacks, but only ~10 are being chased"). Filtering signal=BLACK at the SQL
-    # level also keeps the page count tiny.
-    groups: list[dict[str, Any]] = []
-    page = 1
-    while True:
-        payload = po_followup_service.list_po_groups(db, signal="BLACK", page=page, size=200)
-        items = payload.get("items", [])
-        groups.extend(items)
-        if not items or len(groups) >= int(payload.get("total") or 0):
-            break
-        page += 1
+    # Fetch EVERY black group (client 2026-07-20: "system must follow up all
+    # blacks, but only ~10 are being chased"). build_all_po_groups returns the
+    # whole set in one pass — paging through list_po_groups instead would
+    # rebuild every group once per page, since it only slices at the end.
+    groups: list[dict[str, Any]] = po_followup_service.build_all_po_groups(db, signal="BLACK")
     groups = [g for g in groups if (g.get("overall_signal") or "").upper() == "BLACK"]
     # Client decision (2026-07-20): don't chase EVERY black PO — only the ones
     # still awaiting material. A black PO whose lines are all received
     # (receipt_status COMPLETED), cancel-requested/cancelled, or delisted from
     # the CRM pending desk has nothing left to chase.
-    groups = [g for g in groups if _black_still_chaseworthy(db, g)]
+    chaseworthy = _black_chaseworthy_map(db, groups)
+    groups = [g for g in groups if chaseworthy.get(_chase_key(g), False)]
     now = datetime.utcnow()
     out: list[dict[str, Any]] = []
 
-    for g in groups[:limit]:
+    # Prefetch every thread in one query rather than one per PO.
+    visible = groups[:limit]
+    thread_pos = {
+        (g.get("supplier_po_no") or "").strip()
+        for g in visible
+        if (g.get("supplier_po_no") or "").strip()
+    }
+    msgs_by_po: dict[str, list[CommunicationMessage]] = {}
+    if thread_pos:
+        for m in db.scalars(
+            select(CommunicationMessage)
+            .where(CommunicationMessage.supplier_po_no.in_(thread_pos))
+            .order_by(CommunicationMessage.created_at.asc())
+        ).all():
+            msgs_by_po.setdefault((m.supplier_po_no or "").strip(), []).append(m)
+
+    for g in visible:
         po = g.get("supplier_po_no")
-        msgs = (
-            db.scalars(
-                select(CommunicationMessage)
-                .where(CommunicationMessage.supplier_po_no == po)
-                .order_by(CommunicationMessage.created_at.asc())
-            ).all()
-            if po
-            else []
-        )
+        msgs = msgs_by_po.get((po or "").strip(), []) if po else []
         thread = [
             {
                 "id": m.id,

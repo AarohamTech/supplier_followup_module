@@ -119,6 +119,118 @@ def _load_commitments(
     return by_key
 
 
+class BulkGroupContext:
+    """Prefetched lookups so :func:`build_po_group_payload` can skip its three
+    per-group queries when many groups are built at once.
+
+    Building N groups used to cost 3N round trips (commitments + supplier +
+    mapping). Against a cross-region database that dominated the Black
+    Follow-ups page. With a context the same N groups cost 3 queries total.
+    """
+
+    __slots__ = ("_by_po_supplier", "_by_po", "_supplier_meta")
+
+    def __init__(
+        self,
+        by_po_supplier: dict[tuple[str, str], dict[tuple[str, str], SupplierMaterialCommitment]],
+        by_po: dict[str, dict[tuple[str, str], SupplierMaterialCommitment]],
+        supplier_meta: dict[str, tuple],
+    ) -> None:
+        self._by_po_supplier = by_po_supplier
+        self._by_po = by_po
+        self._supplier_meta = supplier_meta
+
+    def commitments(
+        self, supplier_po_no: str, supplier_name: Optional[str]
+    ) -> dict[tuple[str, str], SupplierMaterialCommitment]:
+        # Mirrors _load_commitments: scoped to the supplier when we know it
+        # (PO numbers are recycled across suppliers), otherwise every row on
+        # that PO regardless of supplier.
+        if supplier_name:
+            key = (supplier_po_no, supplier_name.strip().upper())
+            return self._by_po_supplier.get(key, {})
+        return self._by_po.get(supplier_po_no, {})
+
+    def supplier_meta(self, supplier_name: Optional[str]) -> tuple:
+        if not supplier_name:
+            return None, [], [], [], [], False
+        return self._supplier_meta.get(
+            supplier_name.strip().upper(), (None, [], [], [], [], False)
+        )
+
+
+def build_bulk_group_context(
+    db: Session, records: Iterable[ProcurementRecord]
+) -> BulkGroupContext:
+    """Load every commitment and supplier mapping the given records need, in
+    three queries instead of three per group."""
+    records = list(records)
+    po_numbers = {
+        (r.supplier_po_no or "").strip() for r in records if (r.supplier_po_no or "").strip()
+    }
+    names = {
+        (r.supplier_name or "").strip().upper() for r in records if (r.supplier_name or "").strip()
+    }
+
+    by_po_supplier: dict[tuple[str, str], dict[tuple[str, str], SupplierMaterialCommitment]] = {}
+    by_po: dict[str, dict[tuple[str, str], SupplierMaterialCommitment]] = {}
+    if po_numbers:
+        rows = db.scalars(
+            select(SupplierMaterialCommitment)
+            .where(SupplierMaterialCommitment.supplier_po_no.in_(po_numbers))
+            .order_by(SupplierMaterialCommitment.updated_at.desc())
+        ).all()
+        for row in rows:
+            if not _is_valid_commitment_row(row):
+                continue
+            mat_key = (
+                (row.material_code or "").strip().upper(),
+                (row.material_name or "").strip().upper(),
+            )
+            po = (row.supplier_po_no or "").strip()
+            # Newest-first ordering means the first write wins, matching
+            # _load_commitments' behaviour exactly.
+            by_po_supplier.setdefault(
+                (po, (row.supplier_name or "").strip().upper()), {}
+            ).setdefault(mat_key, row)
+            by_po.setdefault(po, {}).setdefault(mat_key, row)
+
+    supplier_meta: dict[str, tuple] = {}
+    if names:
+        suppliers = db.scalars(
+            select(SupplierMaster).where(
+                func.upper(SupplierMaster.supplier_name).in_(names)
+            )
+        ).all()
+        by_upper: dict[str, SupplierMaster] = {}
+        for sup in suppliers:
+            by_upper.setdefault((sup.supplier_name or "").strip().upper(), sup)
+        mapping_by_supplier: dict[int, SupplierEmail] = {}
+        if suppliers:
+            for mapping in db.scalars(
+                select(SupplierEmail).where(
+                    SupplierEmail.supplier_id.in_([s.id for s in suppliers]),
+                    SupplierEmail.is_active.is_(True),
+                )
+            ).all():
+                mapping_by_supplier.setdefault(mapping.supplier_id, mapping)
+        for upper, sup in by_upper.items():
+            mapping = mapping_by_supplier.get(sup.id)
+            if mapping is None:
+                supplier_meta[upper] = (sup.id, [], [], [], [], False)
+            else:
+                supplier_meta[upper] = (
+                    sup.id,
+                    list(mapping.to_emails or []),
+                    list(mapping.cc_emails or []),
+                    list(mapping.bcc_emails or []),
+                    list(mapping.escalation_emails or []),
+                    True,
+                )
+
+    return BulkGroupContext(by_po_supplier, by_po, supplier_meta)
+
+
 def _commitment_for_record(
     rec: ProcurementRecord,
     commitments: dict[tuple[str, str], SupplierMaterialCommitment],
@@ -200,15 +312,25 @@ def build_po_group_payload(
     records: list[ProcurementRecord],
     supplier_name: Optional[str],
     supplier_po_no: str,
+    *,
+    ctx: Optional[BulkGroupContext] = None,
 ) -> dict[str, Any]:
-    """Common shape used by both the list aggregator and the detail endpoint."""
+    """Common shape used by both the list aggregator and the detail endpoint.
+
+    Pass ``ctx`` when building many groups to serve commitments and supplier
+    mappings from a prefetch instead of querying per group.
+    """
     if not records:
         return {}
 
     sorted_records = sorted(
         records, key=lambda r: (r.shipment_date or datetime.max, r.material_name or "")
     )
-    commitments = _load_commitments(db, supplier_po_no, supplier_name)
+    commitments = (
+        ctx.commitments(supplier_po_no, supplier_name)
+        if ctx is not None
+        else _load_commitments(db, supplier_po_no, supplier_name)
+    )
     materials = [
         _material_line(rec, _commitment_for_record(rec, commitments))
         for rec in sorted_records
@@ -232,7 +354,11 @@ def build_po_group_payload(
         bcc_emails,
         escalation_emails,
         mapping_active,
-    ) = _supplier_meta(db, supplier_name)
+    ) = (
+        ctx.supplier_meta(supplier_name)
+        if ctx is not None
+        else _supplier_meta(db, supplier_name)
+    )
 
     return {
         "supplier_id": supplier_id,
@@ -255,16 +381,20 @@ def build_po_group_payload(
     }
 
 
-def list_po_groups(
+def build_all_po_groups(
     db: Session,
     *,
     signal: Optional[str] = None,
     supplier_name: Optional[str] = None,
     supplier_po_no: Optional[str] = None,
     search: Optional[str] = None,
-    page: int = 1,
-    size: int = 25,
-) -> dict[str, Any]:
+) -> list[dict[str, Any]]:
+    """Every matching PO group, sorted, with no pagination applied.
+
+    :func:`list_po_groups` builds the full set before slicing anyway, so a
+    caller that wants everything should use this rather than paging — paging
+    through list_po_groups rebuilds the whole set on every page.
+    """
     stmt = select(ProcurementRecord)
     if signal:
         stmt = stmt.where(func.upper(ProcurementRecord.signal) == signal.strip().upper())
@@ -293,12 +423,13 @@ def list_po_groups(
             continue
         buckets.setdefault(_group_key(rec), []).append(rec)
 
+    ctx = build_bulk_group_context(db, records)
     groups: list[dict[str, Any]] = []
     for (_, _), items in buckets.items():
         first = items[0]
         groups.append(
             build_po_group_payload(
-                db, items, first.supplier_name, first.supplier_po_no
+                db, items, first.supplier_name, first.supplier_po_no, ctx=ctx
             )
         )
 
@@ -309,6 +440,26 @@ def list_po_groups(
             g.get("earliest_due_date") or "9999-99-99",
             g.get("supplier_name") or "",
         )
+    )
+    return groups
+
+
+def list_po_groups(
+    db: Session,
+    *,
+    signal: Optional[str] = None,
+    supplier_name: Optional[str] = None,
+    supplier_po_no: Optional[str] = None,
+    search: Optional[str] = None,
+    page: int = 1,
+    size: int = 25,
+) -> dict[str, Any]:
+    groups = build_all_po_groups(
+        db,
+        signal=signal,
+        supplier_name=supplier_name,
+        supplier_po_no=supplier_po_no,
+        search=search,
     )
 
     total = len(groups)
