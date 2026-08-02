@@ -60,7 +60,6 @@ function ReceiptChip({ status }: { status?: string | null }) {
 // every field the lines API returns is offered here, extras default off.
 const COLUMNS: { key: string; label: string; on: boolean }[] = [
   { key: "customer", label: "Customer", on: true },
-  { key: "customer_po", label: "Customer PO", on: true },
   { key: "material", label: "Material", on: true },
   { key: "qty", label: "Qty", on: true },
   { key: "vendor_po", label: "Vendor PO No.", on: true },
@@ -308,7 +307,6 @@ export default function OrdersPage() {
               <thead className="bg-subtle text-left text-[10px] uppercase tracking-wider text-brand-muted">
                 <tr>
                   {show("customer") && <th className="px-3 py-2">Customer</th>}
-                  {show("customer_po") && <th className="px-3 py-2">Customer PO</th>}
                   {show("material") && <th className="px-3 py-2">Material</th>}
                   {show("qty") && <th className="px-3 py-2 text-right">Qty</th>}
                   {show("vendor_po") && <th className="px-3 py-2">Vendor PO No.</th>}
@@ -348,12 +346,6 @@ export default function OrdersPage() {
                             Direct PO
                           </span>
                         )}
-                      </td>
-                    )}
-                    {show("customer_po") && (
-                      <td className="max-w-[140px] px-3 py-2">
-                        <div className="truncate" title={r.customer_po_no || undefined}>{r.customer_po_no || "—"}</div>
-                        {r.customer_po_date && <div className="text-[10px] text-brand-muted">{fmtDate(r.customer_po_date)}</div>}
                       </td>
                     )}
                     {show("material") && (
