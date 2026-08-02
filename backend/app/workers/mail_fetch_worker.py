@@ -156,6 +156,10 @@ def _process_one(
         supplier_po_no=parsed.get("supplier_po_no"),
         subject=subject,
         body=body,
+        # Scope PO matching to the sender's supplier — the CRM PO counter is
+        # recycled, so an unscoped match can link the reply to another
+        # supplier's PO with the same number.
+        supplier_name=supplier_name,
     )
 
     # Mails from unknown senders (no supplier mapping AND no PO match) are
@@ -222,7 +226,10 @@ def _process_one(
         or (parseaddr(from_header)[0] or None)
         or (sender_domain or None),
         procurement_record_id=rec.id if rec else None,
-        supplier_po_no=parsed.get("supplier_po_no") or (rec.supplier_po_no if rec else None),
+        # The resolved record is authoritative: the parsed number may be the
+        # supplier's own document reference (e.g. 2627-001703), which is NOT a
+        # thread key. Only fall back to the raw parse when nothing resolved.
+        supplier_po_no=(rec.supplier_po_no if rec else None) or parsed.get("supplier_po_no"),
         subject=subject,
         body=body,
         sender_email=sender_email,

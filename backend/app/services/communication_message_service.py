@@ -81,13 +81,44 @@ def find_procurement_record(
     supplier_po_no: str | None,
     subject: str | None,
     body: str | None,
+    supplier_name: str | None = None,
 ) -> Optional[ProcurementRecord]:
-    """Best-effort match: supplier_po_no first; otherwise scan subject+body for any known PO no."""
+    """Best-effort match of an incoming mail to a procurement record.
+
+    The CRM PoNo counter (`supplier_po_no`) is recycled across suppliers, so
+    every match is scoped to the sender's supplier when it is known. Suppliers
+    usually quote their own PO document number (`po_short_ref`, e.g.
+    2627-001703) rather than our internal counter, so that reference is matched
+    too — and first, since it is the more specific number.
+    """
+
+    def _scoped(stmt):
+        if supplier_name and supplier_name.strip():
+            stmt = stmt.where(
+                func.upper(ProcurementRecord.supplier_name)
+                == supplier_name.strip().upper()
+            )
+        return stmt
+
+    # The parsed "PO number" may be either our counter or the supplier's own
+    # document reference — try both, most specific first.
     if supplier_po_no:
+        hint = supplier_po_no.strip()
         rec = db.scalar(
-            select(ProcurementRecord)
-            .where(ProcurementRecord.supplier_po_no == supplier_po_no)
-            .order_by(ProcurementRecord.created_at.desc())
+            _scoped(
+                select(ProcurementRecord).where(
+                    func.upper(ProcurementRecord.po_short_ref) == hint.upper()
+                )
+            ).order_by(ProcurementRecord.created_at.desc())
+        )
+        if rec:
+            return rec
+        rec = db.scalar(
+            _scoped(
+                select(ProcurementRecord).where(
+                    ProcurementRecord.supplier_po_no == hint
+                )
+            ).order_by(ProcurementRecord.created_at.desc())
         )
         if rec:
             return rec
@@ -96,21 +127,31 @@ def find_procurement_record(
     if not haystack:
         return None
 
-    candidates = db.scalars(
-        select(ProcurementRecord.supplier_po_no).distinct()
+    ref_candidates = db.scalars(
+        _scoped(select(ProcurementRecord.po_short_ref)).distinct()
+    ).all()
+    po_candidates = db.scalars(
+        _scoped(select(ProcurementRecord.supplier_po_no)).distinct()
     ).all()
     haystack_upper = haystack.upper()
-    # Longest PO first so a longer PO wins over a shorter one it contains, and
+    # Document references first (longer + globally distinctive), then counters.
+    # Longest first so a longer number wins over a shorter one it contains, and
     # require a standalone-token match (not embedded inside a longer string) to
     # avoid linking a reply to the wrong PO (e.g. "PO-12" inside "PO-1234").
-    for po in sorted((p for p in candidates if p), key=len, reverse=True):
-        pattern = r"(?<![A-Za-z0-9])" + re.escape(po.upper()) + r"(?![A-Za-z0-9])"
-        if re.search(pattern, haystack_upper):
-            return db.scalar(
-                select(ProcurementRecord)
-                .where(ProcurementRecord.supplier_po_no == po)
-                .order_by(ProcurementRecord.created_at.desc())
-            )
+    scan_plan = [
+        (ref_candidates, ProcurementRecord.po_short_ref, True),
+        (po_candidates, ProcurementRecord.supplier_po_no, False),
+    ]
+    for candidates, column, upper_match in scan_plan:
+        for po in sorted((p for p in candidates if p), key=len, reverse=True):
+            pattern = r"(?<![A-Za-z0-9])" + re.escape(po.upper()) + r"(?![A-Za-z0-9])"
+            if re.search(pattern, haystack_upper):
+                col = func.upper(column) if upper_match else column
+                val = po.upper() if upper_match else po
+                return db.scalar(
+                    _scoped(select(ProcurementRecord).where(col == val))
+                    .order_by(ProcurementRecord.created_at.desc())
+                )
     return None
 
 

@@ -22,7 +22,7 @@ from __future__ import annotations
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select, tuple_
 from sqlalchemy.orm import Session
 
 from ..core.deps import get_current_employee
@@ -50,21 +50,6 @@ router = APIRouter(prefix="/api/eportal/hub", tags=["employee-portal-hub"])
 # ─────────────────────────────────────────────────────────────────────────────
 # Scope helpers (the security boundary)
 # ─────────────────────────────────────────────────────────────────────────────
-def _owned_po_set(db: Session, emp_code: Optional[str]) -> set[str]:
-    """Distinct supplier_po_no values the employee owns (owner_emp_code match)."""
-    if not emp_code:
-        return set()
-    rows = db.scalars(
-        select(ProcurementRecord.supplier_po_no)
-        .where(
-            ProcurementRecord.owner_emp_code == emp_code,
-            ProcurementRecord.supplier_po_no.isnot(None),
-        )
-        .distinct()
-    ).all()
-    return {po for po in rows if po}
-
-
 def _owned_supplier_names(db: Session, emp_code: Optional[str]) -> set[str]:
     """Uppercased supplier names that have ≥1 in-scope PO."""
     if not emp_code:
@@ -92,17 +77,58 @@ def _emp_records(db: Session, emp_code: Optional[str]) -> list[ProcurementRecord
     )
 
 
-def _po_in_scope(db: Session, emp_code: Optional[str], supplier_po_no: Optional[str]) -> bool:
-    if not emp_code or not supplier_po_no:
-        return False
-    return db.scalar(
-        select(ProcurementRecord.id)
+def _owned_po_pairs(db: Session, emp_code: Optional[str]) -> set[tuple[str, str]]:
+    """(UPPER(supplier_name), supplier_po_no) pairs the employee owns.
+
+    The CRM PoNo counter is recycled across suppliers, so a bare counter is NOT
+    an identity — scope filters must always pair it with the supplier."""
+    if not emp_code:
+        return set()
+    rows = db.execute(
+        select(ProcurementRecord.supplier_name, ProcurementRecord.supplier_po_no)
         .where(
             ProcurementRecord.owner_emp_code == emp_code,
-            ProcurementRecord.supplier_po_no == supplier_po_no,
+            ProcurementRecord.supplier_po_no.isnot(None),
+            ProcurementRecord.supplier_name.isnot(None),
         )
-        .limit(1)
-    ) is not None
+        .distinct()
+    ).all()
+    return {(n.strip().upper(), po) for n, po in rows if n and n.strip() and po}
+
+
+def _pair_clause(name_col, po_col, pairs: set[tuple[str, str]]):
+    """SQL clause matching (supplier_name, supplier_po_no) against owned pairs.
+
+    Rows with no supplier_name (legacy tasks etc.) are accepted by bare counter —
+    they can't be pair-matched, and dropping them would hide the employee's own
+    older data."""
+    counters = {po for _, po in pairs}
+    return or_(
+        tuple_(func.upper(name_col), po_col).in_(sorted(pairs)),
+        (name_col.is_(None)) & (po_col.in_(sorted(counters))),
+    )
+
+
+def _po_in_scope(
+    db: Session,
+    emp_code: Optional[str],
+    supplier_po_no: Optional[str],
+    supplier_name: Optional[str] = None,
+) -> bool:
+    if not emp_code or not supplier_po_no:
+        return False
+    stmt = select(ProcurementRecord.id).where(
+        ProcurementRecord.owner_emp_code == emp_code,
+        ProcurementRecord.supplier_po_no == supplier_po_no,
+    )
+    # Pair the recycled counter with the supplier whenever the caller knows it,
+    # so owning supplier A's PO 001249 never grants supplier B's PO 001249.
+    if supplier_name and supplier_name.strip():
+        stmt = stmt.where(
+            func.upper(ProcurementRecord.supplier_name)
+            == supplier_name.strip().upper()
+        )
+    return db.scalar(stmt.limit(1)) is not None
 
 
 def _record_in_scope(
@@ -114,10 +140,13 @@ def _record_in_scope(
     rec = db.get(ProcurementRecord, procurement_record_id)
     if rec is None:
         return None
-    # The record itself may be owned, or it shares a PO with an owned record.
+    # The record itself may be owned, or it shares a PO with an owned record —
+    # same supplier only; the counter alone is shared across suppliers.
     if rec.owner_emp_code == emp_code:
         return rec
-    if rec.supplier_po_no and _po_in_scope(db, emp_code, rec.supplier_po_no):
+    if rec.supplier_po_no and _po_in_scope(
+        db, emp_code, rec.supplier_po_no, rec.supplier_name
+    ):
         return rec
     return None
 
@@ -128,16 +157,22 @@ def _resolve_scoped_po(
     *,
     supplier_po_no: Optional[str],
     procurement_record_id: Optional[int],
+    supplier_name: Optional[str] = None,
 ) -> str:
     """Resolve the supplier_po_no for a thread/action request and assert scope.
 
     Raises 404 (never leaks existence) when the resolved PO is not owned.
+    Scope is checked as a (supplier, PO) pair whenever the supplier is known —
+    from the record itself or the caller — because PO counters are recycled.
     """
     po_no = supplier_po_no
-    if po_no is None and procurement_record_id is not None:
+    name = supplier_name
+    if procurement_record_id is not None:
         rec = db.get(ProcurementRecord, procurement_record_id)
-        po_no = rec.supplier_po_no if rec else None
-    if not po_no or not _po_in_scope(db, emp_code, po_no):
+        if rec:
+            po_no = po_no or rec.supplier_po_no
+            name = name or rec.supplier_name
+    if not po_no or not _po_in_scope(db, emp_code, po_no, name):
         raise HTTPException(404, "PO not found for your account")
     return po_no
 
@@ -173,6 +208,13 @@ def dashboard(
     """Same shape as admin /dashboard, aggregated over the employee's POs only."""
     records = _emp_records(db, user.emp_code)
     owned_pos = {r.supplier_po_no for r in records if r.supplier_po_no}
+    # (supplier, PO) pairs — the counter alone is recycled across suppliers, so
+    # count queries must never filter by bare supplier_po_no.
+    owned_pairs = {
+        (r.supplier_name.strip().upper(), r.supplier_po_no)
+        for r in records
+        if r.supplier_po_no and r.supplier_name and r.supplier_name.strip()
+    }
     supplier_names = {
         r.supplier_name.strip().upper()
         for r in records
@@ -182,14 +224,17 @@ def dashboard(
         r.supplier_id for r in records if getattr(r, "supplier_id", None) is not None
     }
 
-    # Mail history scoped to the employee's PO numbers.
+    # Mail history scoped to the employee's (supplier, PO) pairs.
     draft_mails = 0
     sent_mails = 0
-    if owned_pos:
+    if owned_pairs:
+        mail_pair = _pair_clause(
+            MailHistory.supplier_name, MailHistory.supplier_po_no, owned_pairs
+        )
         draft_mails = int(
             db.execute(
                 select(func.count(MailHistory.id)).where(
-                    MailHistory.supplier_po_no.in_(owned_pos),
+                    mail_pair,
                     MailHistory.sent_status == "DRAFT",
                 )
             ).scalar_one()
@@ -198,7 +243,7 @@ def dashboard(
         sent_mails = int(
             db.execute(
                 select(func.count(MailHistory.id)).where(
-                    MailHistory.supplier_po_no.in_(owned_pos),
+                    mail_pair,
                     MailHistory.sent_status != "DRAFT",
                 )
             ).scalar_one()
@@ -208,11 +253,14 @@ def dashboard(
     open_tasks = 0
     critical_escalations = 0
     waiting_supplier = 0
-    if owned_pos:
+    if owned_pairs:
+        task_pair = _pair_clause(
+            CommunicationTask.supplier_name, CommunicationTask.supplier_po_no, owned_pairs
+        )
         open_tasks = int(
             db.execute(
                 select(func.count(CommunicationTask.id)).where(
-                    CommunicationTask.supplier_po_no.in_(owned_pos),
+                    task_pair,
                     CommunicationTask.status != "DONE",
                 )
             ).scalar_one()
@@ -221,7 +269,7 @@ def dashboard(
         critical_escalations = int(
             db.execute(
                 select(func.count(CommunicationTask.id)).where(
-                    CommunicationTask.supplier_po_no.in_(owned_pos),
+                    task_pair,
                     CommunicationTask.signal == "BLACK",
                 )
             ).scalar_one()
@@ -230,7 +278,7 @@ def dashboard(
         waiting_supplier = int(
             db.execute(
                 select(func.count(CommunicationTask.id)).where(
-                    CommunicationTask.supplier_po_no.in_(owned_pos),
+                    task_pair,
                     CommunicationTask.status == "WAITING_SUPPLIER",
                 )
             ).scalar_one()
@@ -246,13 +294,17 @@ def dashboard(
     )
 
     unread_inbound = 0
-    if owned_pos:
+    if owned_pairs:
         unread_inbound = int(
             db.execute(
                 select(func.count(CommunicationMessage.id)).where(
                     CommunicationMessage.direction == "INCOMING",
                     CommunicationMessage.read_at.is_(None),
-                    CommunicationMessage.supplier_po_no.in_(owned_pos),
+                    _pair_clause(
+                        CommunicationMessage.supplier_name,
+                        CommunicationMessage.supplier_po_no,
+                        owned_pairs,
+                    ),
                 )
             ).scalar_one()
             or 0
@@ -361,6 +413,7 @@ def _build_scoped_supplier_entry(
         open_task_count = int(
             db.execute(
                 select(func.count(CommunicationTask.id)).where(
+                    func.upper(CommunicationTask.supplier_name) == upper,
                     CommunicationTask.supplier_po_no.in_(owned_pos),
                     CommunicationTask.status != "DONE",
                 )
@@ -372,6 +425,7 @@ def _build_scoped_supplier_entry(
                 select(func.count(CommunicationMessage.id)).where(
                     CommunicationMessage.direction == "INCOMING",
                     CommunicationMessage.read_at.is_(None),
+                    func.upper(CommunicationMessage.supplier_name) == upper,
                     CommunicationMessage.supplier_po_no.in_(owned_pos),
                 )
             ).scalar_one()
@@ -519,11 +573,13 @@ def get_thread(
         user.emp_code,
         supplier_po_no=supplier_po_no,
         procurement_record_id=procurement_record_id,
+        supplier_name=supplier_name,
     )
     return hub.get_thread(
         supplier_id=supplier_id,
         procurement_record_id=procurement_record_id,
         supplier_po_no=po_no,
+        supplier_name=supplier_name,
         db=db,
     )
 
@@ -553,10 +609,13 @@ def mark_thread_read(
         user.emp_code,
         supplier_po_no=supplier_po_no,
         procurement_record_id=procurement_record_id,
+        supplier_name=supplier_name,
     )
     return hub.mark_thread_read(
         supplier_po_no=po_no,
         procurement_record_id=procurement_record_id,
+        supplier_id=supplier_id,
+        supplier_name=supplier_name,
         db=db,
     )
 
@@ -576,18 +635,24 @@ def get_tasks(
 
     When a specific PO is requested it must be in scope (else 404). When no PO is
     given, results are restricted to the union of the employee's owned POs."""
-    owned_pos = _owned_po_set(db, user.emp_code)
+    owned_pairs = _owned_po_pairs(db, user.emp_code)
     empty = {"todo": [], "waiting_supplier": [], "in_progress": [], "done": []}
-    if not owned_pos:
+    if not owned_pairs:
         return empty
 
     po_no = supplier_po_no
-    if po_no is None and procurement_record_id is not None:
+    po_supplier: Optional[str] = None
+    if procurement_record_id is not None:
         rec = db.get(ProcurementRecord, procurement_record_id)
-        po_no = rec.supplier_po_no if rec else None
+        if rec:
+            po_no = po_no or rec.supplier_po_no
+            po_supplier = rec.supplier_name
+    if po_supplier is None and supplier_id is not None:
+        master = db.get(SupplierMaster, supplier_id)
+        po_supplier = master.supplier_name if master else None
 
     if po_no is not None:
-        if po_no not in owned_pos:
+        if not _po_in_scope(db, user.emp_code, po_no, po_supplier):
             raise HTTPException(404, "PO not found for your account")
         return hub.get_hub_tasks(
             supplier_id=supplier_id,
@@ -596,10 +661,16 @@ def get_tasks(
             db=db,
         )
 
-    # No specific PO → all tasks across the employee's owned POs.
+    # No specific PO → all tasks across the employee's owned (supplier, PO) pairs.
     all_tasks = db.scalars(
         select(CommunicationTask)
-        .where(CommunicationTask.supplier_po_no.in_(owned_pos))
+        .where(
+            _pair_clause(
+                CommunicationTask.supplier_name,
+                CommunicationTask.supplier_po_no,
+                owned_pairs,
+            )
+        )
         .order_by(CommunicationTask.created_at.desc())
     ).all()
     grouped: dict[str, list[dict[str, Any]]] = {
@@ -634,9 +705,10 @@ def create_task(
     """Create a task on an in-scope PO. Validates scope BEFORE delegating to the
     shared staff create logic (so assignee resolution / activity log are identical
     to the admin hub). Returns the admin task dict shape."""
-    owned_pos = _owned_po_set(db, user.emp_code)
     if payload.supplier_po_no:
-        if payload.supplier_po_no not in owned_pos:
+        if not _po_in_scope(
+            db, user.emp_code, payload.supplier_po_no, payload.supplier_name
+        ):
             raise HTTPException(404, "PO not found for your account")
     elif payload.assigned_to_user_id is None:
         # Personal task with no PO → pin to the employee so it stays in scope.
@@ -657,9 +729,11 @@ def update_task(
 ) -> dict[str, Any]:
     """Update a task on an in-scope PO. 404 if the task's PO is not owned (or the
     task does not exist). Delegates to the shared staff update logic."""
-    owned_pos = _owned_po_set(db, user.emp_code)
     row = db.get(CommunicationTask, task_id)
-    if row is None or not (row.supplier_po_no and row.supplier_po_no in owned_pos):
+    if row is None or not (
+        row.supplier_po_no
+        and _po_in_scope(db, user.emp_code, row.supplier_po_no, row.supplier_name)
+    ):
         raise HTTPException(404, "Task not found for your account")
     updated = comm.update_task(task_id=task_id, payload=payload, db=db, actor=user)
     return hub._task_dict(updated)
@@ -708,6 +782,7 @@ def reply_now(
             user.emp_code,
             supplier_po_no=payload.supplier_po_no,
             procurement_record_id=payload.procurement_record_id,
+            supplier_name=payload.supplier_name,
         )
     return hub.reply_now(payload=payload, db=db)
 
@@ -737,6 +812,7 @@ def reply_outlook(
             user.emp_code,
             supplier_po_no=payload.supplier_po_no,
             procurement_record_id=payload.procurement_record_id,
+            supplier_name=payload.supplier_name,
         )
     return hub.reply_outlook(payload=payload, db=db)
 
@@ -767,7 +843,9 @@ def send_mail_now(
 ) -> dict[str, Any]:
     """Same shape as admin /send-mail; 404 if the mail's PO is not in scope."""
     history = db.get(MailHistory, mail_history_id)
-    if history is None or not _po_in_scope(db, user.emp_code, history.supplier_po_no):
+    if history is None or not _po_in_scope(
+        db, user.emp_code, history.supplier_po_no, history.supplier_name
+    ):
         raise HTTPException(404, "MailHistory not found")
     return hub.send_mail_now(mail_history_id=mail_history_id, db=db)
 
@@ -806,7 +884,9 @@ def _scoped_message_or_404(
     db: Session, emp_code: Optional[str], message_id: int
 ) -> CommunicationMessage:
     msg = db.get(CommunicationMessage, message_id)
-    if msg is None or not _po_in_scope(db, emp_code, msg.supplier_po_no):
+    if msg is None or not _po_in_scope(
+        db, emp_code, msg.supplier_po_no, msg.supplier_name
+    ):
         raise HTTPException(404, "Message not found")
     return msg
 
@@ -823,7 +903,7 @@ def list_commitments(
 ) -> list[dict[str, Any]]:
     """Supplier commitments for an in-scope PO (same shape as the po-followups
     commitments endpoint). 404 if the PO is not owned."""
-    if not _po_in_scope(db, user.emp_code, supplier_po_no):
+    if not _po_in_scope(db, user.emp_code, supplier_po_no, supplier_name):
         raise HTTPException(404, "PO not found for your account")
     return po_followup_service.list_commitments(
         db, supplier_po_no=supplier_po_no, supplier_name=supplier_name

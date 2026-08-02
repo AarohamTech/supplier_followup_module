@@ -101,6 +101,13 @@ def sent_feed(
 # ─────────────────────────────────────────────────────────────────────────────
 # Signal display helpers (read-only mapping, no business logic)
 # ─────────────────────────────────────────────────────────────────────────────
+def _po_display(rec: ProcurementRecord) -> str | None:
+    """Supplier-facing PO number for subjects/bodies: the PO document reference
+    (CRM PoShortRefTrnNo, e.g. 2627-001703) when present, else the internal
+    counter. The counter is recycled across suppliers and means nothing to them."""
+    return rec.po_short_ref or rec.supplier_po_no
+
+
 _SIGNAL_RANK: dict[str, int] = {"GREEN": 1, "YELLOW": 2, "RED": 3, "BLACK": 4}
 _HEALTH: dict[str, int] = {"GREEN": 88, "YELLOW": 65, "RED": 35, "BLACK": 12}
 _RISK_LEVEL: dict[str, str] = {
@@ -510,7 +517,7 @@ def _pos_for_supplier(
                     CommunicationMessage.procurement_record_id.in_(record_ids)
                     if record_ids
                     else False,
-                    CommunicationMessage.supplier_po_no == po_no,
+                    _msg_po_clause(po_no, supplier_name, supplier_id),
                 ),
             )
         ).scalar_one() or 0
@@ -528,7 +535,7 @@ def _pos_for_supplier(
                     CommunicationMessage.procurement_record_id.in_(record_ids)
                     if record_ids
                     else False,
-                    CommunicationMessage.supplier_po_no == po_no,
+                    _msg_po_clause(po_no, supplier_name, supplier_id),
                 ),
             )
             .order_by(CommunicationMessage.created_at.desc())
@@ -542,6 +549,8 @@ def _pos_for_supplier(
                 "supplier_id": supplier_id or group.get("supplier_id"),
                 "supplier_name": supplier_name,
                 "supplier_po_no": po_no,
+                # Supplier-facing PO document number (CRM PoShortRefTrnNo).
+                "po_ref": group.get("po_ref"),
                 "material_name": f"ALL MATERIALS ({group['material_count']})",
                 "qty": sum(
                     (float(m.get("po_qty")) for m in group["materials"] if m.get("po_qty") is not None),
@@ -601,6 +610,14 @@ def get_thread(
     selected_rec: Optional[ProcurementRecord] = None
     po_scoped_record_ids: list[int] = []
 
+    # The supplier this thread request is about — the CRM PoNo counter is
+    # recycled across suppliers, so PO-number filters below must stay paired
+    # with a supplier or threads of unrelated suppliers bleed into each other.
+    req_name: Optional[str] = (supplier_name or "").strip() or None
+    if req_name is None and supplier_id is not None:
+        _sup = db.get(SupplierMaster, supplier_id)
+        req_name = _sup.supplier_name if _sup else None
+
     if procurement_record_id is not None:
         selected_rec = db.get(ProcurementRecord, procurement_record_id)
         if selected_rec and selected_rec.supplier_po_no:
@@ -630,17 +647,12 @@ def get_thread(
             )
     elif procurement_record_id is not None:
         stmt = stmt.where(MailHistory.procurement_record_id == procurement_record_id)
-    elif supplier_id is not None and supplier_po_no:
-        sup = db.get(SupplierMaster, supplier_id)
-        if sup:
-            stmt = stmt.where(
-                func.upper(MailHistory.supplier_name) == sup.supplier_name.strip().upper(),
-                MailHistory.supplier_po_no == supplier_po_no,
-            )
-        else:
-            stmt = stmt.where(MailHistory.supplier_po_no == supplier_po_no)
     elif supplier_po_no:
         stmt = stmt.where(MailHistory.supplier_po_no == supplier_po_no)
+        if req_name:
+            stmt = stmt.where(
+                func.upper(MailHistory.supplier_name) == req_name.strip().upper()
+            )
     else:
         return _empty_thread(supplier_id, procurement_record_id, supplier_po_no)
 
@@ -668,7 +680,7 @@ def get_thread(
     else:
         # No procurement record and no legacy mail history — fall back to
         # communication_messages so newly-fetched supplier replies still surface.
-        fallback = _load_comm_messages(db, procurement_record_id, supplier_po_no)
+        fallback = _load_comm_messages(db, procurement_record_id, supplier_po_no, req_name)
         if not fallback:
             return _empty_thread(supplier_id, procurement_record_id, supplier_po_no)
         first = fallback[0]
@@ -716,7 +728,7 @@ def get_thread(
     ]
 
     # Merge CommunicationMessage rows (new pipeline) for the same PO/record.
-    comm_msgs = _load_comm_messages(db, rec_id, s_po_no)
+    comm_msgs = _load_comm_messages(db, rec_id, s_po_no, sname or req_name)
     cm_attachments = attachment_service.for_messages(db, [cm.id for cm in comm_msgs])
     for cm in comm_msgs:
         reply_rows = _reply_message_table_rows(cm.body)
@@ -787,6 +799,10 @@ def get_thread(
         "supplier_name": sname,
         "procurement_record_id": rec_id,
         "supplier_po_no": s_po_no,
+        # The supplier-facing PO document number (CRM PoShortRefTrnNo) — what the
+        # supplier calls this PO. supplier_po_no stays the internal grouping key.
+        "po_ref": (rec.po_short_ref if rec else None)
+        or (po_group or {}).get("po_ref"),
         "signal": signal,
         "risk_level": _RISK_LEVEL.get(signal, "MEDIUM"),
         "messages": messages,
@@ -808,6 +824,15 @@ def mark_thread_read(
     if not supplier_po_no and not procurement_record_id:
         raise HTTPException(400, "Provide supplier_po_no or procurement_record_id")
     now = datetime.utcnow()
+    # Resolve the supplier this thread belongs to so the recycled PO counter
+    # never marks another supplier's inbound mail as read.
+    req_name = (supplier_name or "").strip() or None
+    if req_name is None and supplier_id is not None:
+        _sup = db.get(SupplierMaster, supplier_id)
+        req_name = _sup.supplier_name if _sup else None
+    if req_name is None and procurement_record_id is not None:
+        _rec = db.get(ProcurementRecord, procurement_record_id)
+        req_name = _rec.supplier_name if _rec else None
     stmt = select(CommunicationMessage).where(
         CommunicationMessage.direction == "INCOMING",
         CommunicationMessage.read_at.is_(None),
@@ -815,12 +840,12 @@ def mark_thread_read(
     if supplier_po_no and procurement_record_id is not None:
         stmt = stmt.where(
             or_(
-                CommunicationMessage.supplier_po_no == supplier_po_no,
+                _msg_po_clause(supplier_po_no, req_name, supplier_id),
                 CommunicationMessage.procurement_record_id == procurement_record_id,
             )
         )
     elif supplier_po_no:
-        stmt = stmt.where(CommunicationMessage.supplier_po_no == supplier_po_no)
+        stmt = stmt.where(_msg_po_clause(supplier_po_no, req_name, supplier_id))
     else:
         stmt = stmt.where(
             CommunicationMessage.procurement_record_id == procurement_record_id
@@ -849,21 +874,47 @@ def _empty_thread(
     }
 
 
+def _msg_po_clause(
+    supplier_po_no: str,
+    supplier_name: Optional[str],
+    supplier_id: Optional[int] = None,
+):
+    """Filter CommunicationMessage by PO number AND supplier. The CRM PoNo is a
+    recycled counter shared across suppliers, so a bare PO-number match pulls in
+    other suppliers' threads; every PO match must be paired with the supplier."""
+    clause = CommunicationMessage.supplier_po_no == supplier_po_no
+    owner = []
+    if supplier_name and supplier_name.strip():
+        owner.append(
+            func.upper(CommunicationMessage.supplier_name)
+            == supplier_name.strip().upper()
+        )
+    if supplier_id is not None:
+        owner.append(CommunicationMessage.supplier_id == supplier_id)
+    if owner:
+        clause = clause & or_(*owner)
+    return clause
+
+
 def _load_comm_messages(
     db: Session,
     procurement_record_id: Optional[int],
     supplier_po_no: Optional[str],
+    supplier_name: Optional[str] = None,
 ) -> list[CommunicationMessage]:
+    po_clause = (
+        _msg_po_clause(supplier_po_no, supplier_name) if supplier_po_no else None
+    )
     stmt = select(CommunicationMessage)
-    if procurement_record_id is not None and supplier_po_no:
+    if procurement_record_id is not None and po_clause is not None:
         stmt = stmt.where(
             (CommunicationMessage.procurement_record_id == procurement_record_id)
-            | (CommunicationMessage.supplier_po_no == supplier_po_no)
+            | po_clause
         )
     elif procurement_record_id is not None:
         stmt = stmt.where(CommunicationMessage.procurement_record_id == procurement_record_id)
-    elif supplier_po_no:
-        stmt = stmt.where(CommunicationMessage.supplier_po_no == supplier_po_no)
+    elif po_clause is not None:
+        stmt = stmt.where(po_clause)
     else:
         return []
     return list(
@@ -1067,7 +1118,7 @@ def _latest_incoming_message_uid(
 
     conds = []
     if supplier_po_no:
-        conds.append(CommunicationMessage.supplier_po_no == supplier_po_no)
+        conds.append(_msg_po_clause(supplier_po_no, supplier_name, supplier_id))
     if procurement_record_id is not None:
         conds.append(CommunicationMessage.procurement_record_id == procurement_record_id)
     if not conds:
@@ -1231,7 +1282,7 @@ def ai_reply(
     }
     label = _TYPE_LABELS.get(rule.mail_type, "Follow-up")
     subject = (
-        f"{label} | PO No. {rec.supplier_po_no} | "
+        f"{label} | PO No. {_po_display(rec)} | "
         f"{rec.material_name} | {rec.supplier_name or ''}"
     )
 
@@ -1240,7 +1291,7 @@ def ai_reply(
         if template
         else (
             f"Dear {rec.supplier_name or 'Supplier'},\n\n"
-            f"{rule.action} is required for PO No. {rec.supplier_po_no} / {rec.material_name}.\n"
+            f"{rule.action} is required for PO No. {_po_display(rec)} / {rec.material_name}.\n"
             f"Signal: {rec.signal or '-'}\n"
             f"CRM No.: {rec.crm_no}\n"
             f"Qty: {rec.qty or '-'} {rec.uom or ''}\n"
@@ -1265,7 +1316,7 @@ def ai_reply(
             )
             ai_body = ai_service.suggest_po_followup(
                 supplier_name=rec.supplier_name,
-                supplier_po_no=rec.supplier_po_no,
+                supplier_po_no=_po_display(rec),
                 overall_signal=rec.signal,
                 days_late=days_late,
                 followup_count=rec.followup_count,
@@ -1314,12 +1365,12 @@ def escalate(
     _roles = seed_mod.ensure_role_accounts(db)
 
     subject = (
-        f"Critical Escalation | PO No. {rec.supplier_po_no} | "
+        f"Critical Escalation | PO No. {_po_display(rec)} | "
         f"{rec.material_name} | {rec.supplier_name or ''}"
     )
     body = (
         f"Dear {rec.supplier_name or 'Supplier'},\n\n"
-        f"This is a critical escalation for PO No. {rec.supplier_po_no} — "
+        f"This is a critical escalation for PO No. {_po_display(rec)} — "
         f"{rec.material_name}.\n"
         "The delay is impacting our production line and requires immediate action.\n\n"
         f"Signal: BLACK\nCRM No.: {rec.crm_no}\n\n"
@@ -1367,7 +1418,7 @@ def escalate(
         supplier_po_no=rec.supplier_po_no,
         procurement_record_id=rec.id,
         linked_mail_id=history.id,
-        title=f"Escalation: PO #{rec.supplier_po_no} — {rec.material_name}",
+        title=f"Escalation: PO #{_po_display(rec)} — {rec.material_name}",
         description="Auto-escalation triggered from Communication Hub.",
         task_source="ESCALATION",
         priority="HIGH",
@@ -1517,7 +1568,7 @@ def reply_outlook(payload: HubReplyIn, db: Session = Depends(get_db)) -> dict[st
     if payload.subject and payload.subject.strip():
         subject = payload.subject.strip()
     elif supplier_po_no:
-        subject = f"Re: PO {supplier_po_no}"
+        subject = f"Re: PO {(rec.po_short_ref if rec else None) or supplier_po_no}"
     elif payload.non_po_subject:
         subject = msg_service.reply_subject(payload.non_po_subject)
     else:
@@ -1584,10 +1635,13 @@ def reply_now(payload: HubReplyIn, db: Session = Depends(get_db)) -> dict[str, A
             to_emails = [e for e in (mapping.to_emails or []) if e]
             cc_emails = [e for e in (mapping.cc_emails or []) if e]
 
+    # Supplier-facing PO number for subject/notification text; the internal
+    # counter stays the linkage key on the stored message.
+    po_display = (rec.po_short_ref if rec else None) or supplier_po_no
     if payload.subject and payload.subject.strip():
         subject = payload.subject.strip()
     elif supplier_po_no:
-        subject = f"Re: PO {supplier_po_no}"
+        subject = f"Re: PO {po_display}"
     elif payload.non_po_subject:
         subject = msg_service.reply_subject(payload.non_po_subject)
     else:
@@ -1656,7 +1710,7 @@ def reply_now(payload: HubReplyIn, db: Session = Depends(get_db)) -> dict[str, A
         notif.notify_supplier, db, supplier_id,
         type="STAFF_REPLY",
         title="New message from your buyer",
-        body=f"PO {supplier_po_no}: {body[:140]}" if supplier_po_no else body[:140],
+        body=f"PO {po_display}: {body[:140]}" if supplier_po_no else body[:140],
         link="/portal/pos",
         supplier_id=supplier_id,
         supplier_po_no=supplier_po_no,

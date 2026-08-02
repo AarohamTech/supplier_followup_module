@@ -92,6 +92,14 @@ def _po_subject(mail_type: str, supplier_name: str | None, po_no: str, count: in
     return f"{label} | PO No. {po_no} | {count} material(s) | {supplier_name or ''}".strip()
 
 
+def _group_po_display(group: dict[str, Any]) -> str:
+    """Supplier-facing PO number for mail subjects/bodies: the PO document
+    reference (CRM PoShortRefTrnNo, e.g. 2627-001703) when the feed gave one,
+    else the internal counter. The counter (CRM PoNo) is recycled across
+    suppliers and is NOT the number printed on the supplier's PO document."""
+    return str(group.get("po_ref") or group.get("supplier_po_no") or "-")
+
+
 def _portal_po_url(po_no: str | None) -> str | None:
     """Deep link to the supplier portal PO page (commitment form)."""
     base = (settings.APP_BASE_URL or "").strip().rstrip("/")
@@ -118,7 +126,7 @@ def _commitment_instruction_text(po_no: str | None) -> str:
 def _po_fallback_body(group: dict[str, Any], table_text: str) -> str:
     return (
         f"Dear {group.get('supplier_name') or 'Supplier'},\n\n"
-        f"Status update is required for PO No. {group.get('supplier_po_no')}.\n"
+        f"Status update is required for PO No. {_group_po_display(group)}.\n"
         f"Overall signal: {group.get('overall_signal')}.\n"
         f"Earliest required dispatch: {group.get('earliest_due_date') or '-'}.\n\n"
         "Material-wise summary:\n"
@@ -135,7 +143,7 @@ def _po_body_html(
     intro_html: str | None = None,
 ) -> str:
     supplier = escape(str(group.get("supplier_name") or "Supplier"))
-    po_no = escape(str(group.get("supplier_po_no") or "-"))
+    po_no = escape(_group_po_display(group))
     count = escape(str(group.get("material_count") or 0))
     signal = escape(str(group.get("overall_signal") or "GREEN"))
     due = escape(str(group.get("earliest_due_date") or "-"))
@@ -268,7 +276,7 @@ def _ai_followup_narrative(
                 days_late = None
         body = ai_service.suggest_po_followup(
             supplier_name=group.get("supplier_name"),
-            supplier_po_no=group.get("supplier_po_no"),
+            supplier_po_no=_group_po_display(group),
             overall_signal=group.get("overall_signal"),
             days_late=days_late,
             followup_count=getattr(anchor_rec, "followup_count", None),
@@ -462,7 +470,7 @@ def create_po_followup_mail(
         else _po_subject(
             resolved_mail_type,
             group.get("supplier_name"),
-            group["supplier_po_no"],
+            _group_po_display(group),
             group["material_count"],
         )
     )
@@ -595,7 +603,7 @@ def _attach_po_pdf_to_green_ack(db: Session, msg: Any, group: dict[str, Any]) ->
                 content, media = crm_ingest_service.fetch_po_pdf(cfg, trn)
                 att = attachment_service.save_upload(
                     db, data=content,
-                    filename=f"PO-{group['supplier_po_no']}.pdf",
+                    filename=f"PO-{_group_po_display(group)}.pdf",
                     content_type=media,
                     uploaded_by_kind="system", uploaded_by_id=None,
                     uploaded_by_label="green-ack",
@@ -609,7 +617,7 @@ def _attach_po_pdf_to_green_ack(db: Session, msg: Any, group: dict[str, Any]) ->
     notif.safe(
         notif.notify_po_owners, db,
         type="GREEN_ACK_SENT",
-        title=f"Green acknowledgement queued for PO {group['supplier_po_no']}",
+        title=f"Green acknowledgement queued for PO {_group_po_display(group)}",
         body=(
             f"To {group.get('supplier_name') or 'supplier'}"
             + (" — official PO PDF attached." if attached else ".")
@@ -859,7 +867,7 @@ def command_followup(
 
     mail_type = PO_MAIL_TYPE_BY_SIGNAL.get(group["overall_signal"], "PO_FOLLOWUP_GROUP")
     subject = _po_subject(
-        mail_type, group.get("supplier_name"), group["supplier_po_no"], group["material_count"]
+        mail_type, group.get("supplier_name"), _group_po_display(group), group["material_count"]
     )
 
     if send:
@@ -904,7 +912,7 @@ def command_followup(
     if not narrative:
         narrative = (
             f"Dear {group.get('supplier_name') or 'Supplier'},\n\n"
-            f"We require an urgent dispatch status update for PO No. {group['supplier_po_no']}. "
+            f"We require an urgent dispatch status update for PO No. {_group_po_display(group)}. "
             "Kindly review the material summary below and provide your committed dispatch "
             "dates in the supplier portal.\n\n"
             "Regards,\nProcurement Team"

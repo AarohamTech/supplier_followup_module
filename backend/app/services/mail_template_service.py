@@ -237,11 +237,18 @@ def render_po_materials_table_text(materials: list[dict[str, Any]]) -> str:
 
 
 def build_po_group_context(group: dict[str, Any]) -> dict[str, Any]:
-    """Context dict for PO-wise templates."""
+    """Context dict for PO-wise templates.
+
+    Templates render supplier-facing text, so the PO number variables carry the
+    PO document reference (CRM PoShortRefTrnNo) when the feed gave one — the
+    internal recycled counter means nothing to the supplier. Portal links
+    (reply_instructions) still key on the internal counter."""
+    display_po = group.get("po_ref") or group.get("supplier_po_no") or ""
     return {
         "supplier_name": group.get("supplier_name") or "",
-        "supplier_po_no": group.get("supplier_po_no") or "",
-        "po_no": group.get("supplier_po_no") or "",
+        "supplier_po_no": display_po,
+        "po_no": display_po,
+        "po_ref": display_po,
         "material_count": group.get("material_count") or 0,
         "overall_signal": group.get("overall_signal") or "GREEN",
         "earliest_due_date": group.get("earliest_due_date") or "",

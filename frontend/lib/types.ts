@@ -705,6 +705,9 @@ export interface CommHubPO {
   supplier_id: number | null;
   supplier_name: string;
   supplier_po_no: string;
+  // Supplier-facing PO document number (CRM PoShortRefTrnNo, e.g. 2627-001703).
+  // Display this one; supplier_po_no stays the internal grouping/API key.
+  po_ref?: string | null;
   material_name: string;
   qty: number | null;
   shipment_date: string | null;
@@ -780,6 +783,8 @@ export interface CommHubThread {
   supplier_name: string | null;
   procurement_record_id: number | null;
   supplier_po_no: string | null;
+  // Supplier-facing PO document number (CRM PoShortRefTrnNo) for display.
+  po_ref?: string | null;
   non_po_subject?: string | null;
   signal: string;
   risk_level: string;

@@ -365,6 +365,11 @@ def build_po_group_payload(
         "supplier_id": supplier_id,
         "supplier_name": supplier_name,
         "supplier_po_no": supplier_po_no,
+        # Supplier-facing PO document number (CRM PoShortRefTrnNo) — what the
+        # supplier calls this PO. The recycled counter stays the grouping key.
+        "po_ref": next(
+            (r.po_short_ref for r in sorted_records if r.po_short_ref), None
+        ),
         "material_count": len(materials),
         "overall_signal": overall_signal,
         "earliest_due_date": earliest_due.isoformat() if earliest_due else None,
