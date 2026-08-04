@@ -4,9 +4,13 @@ name: Deploy backend to EC2
 # that touches the backend (or this workflow). Pulls the new code, reinstalls
 # deps, and restarts the systemd service.
 #
-# Required repo secrets (Settings → Secrets and variables → Actions):
-#   EC2_HOST     = 54.160.160.10
-#   EC2_SSH_KEY  = full contents of SUPPLIER_EMAIL_MODULE_API.pem (the private key)
+# Required repo secrets (Settings → Secrets and variables → Actions) — these
+# must track the CURRENT box; the 2026-07-26 rebuild changed both:
+#   EC2_HOST     = 13.206.119.190  (dynamic — an Elastic IP would stop the drift)
+#   EC2_SSH_KEY  = full contents of MUMBAI_SERVER.pem (the private key)
+# The instance's security group must allow inbound 22 from GitHub-hosted
+# runners (practically: 0.0.0.0/0, key-only auth) — a "My IP"-scoped rule
+# breaks this job with "dial tcp *:22: i/o timeout" on every push.
 
 on:
   push:
