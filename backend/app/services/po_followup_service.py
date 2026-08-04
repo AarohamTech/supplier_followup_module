@@ -11,7 +11,7 @@ and exposes it in a PO-grouped shape.
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
-from typing import Any, Iterable, Optional
+from typing import Any, Iterable, Optional, Sequence
 
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
@@ -90,10 +90,17 @@ def _is_valid_commitment_row(c: SupplierMaterialCommitment) -> bool:
 
 
 def _load_commitments(
-    db: Session, supplier_po_no: str, supplier_name: Optional[str] = None
+    db: Session,
+    supplier_po_no: str | Sequence[str],
+    supplier_name: Optional[str] = None,
 ) -> dict[tuple[str, str], SupplierMaterialCommitment]:
+    # A vendor-PO thread can span several recycled CRM counters, so accept a
+    # list and match commitments captured under any of them.
+    po_numbers = (
+        [supplier_po_no] if isinstance(supplier_po_no, str) else list(supplier_po_no)
+    )
     stmt = select(SupplierMaterialCommitment).where(
-        SupplierMaterialCommitment.supplier_po_no == supplier_po_no
+        SupplierMaterialCommitment.supplier_po_no.in_(po_numbers)
     )
     # PO numbers (CRM PoNo) are recycled across suppliers — scope to this
     # supplier so a shared PO number + material name does not pull in another
@@ -142,15 +149,27 @@ class BulkGroupContext:
         self._supplier_meta = supplier_meta
 
     def commitments(
-        self, supplier_po_no: str, supplier_name: Optional[str]
+        self, supplier_po_no: str | Sequence[str], supplier_name: Optional[str]
     ) -> dict[tuple[str, str], SupplierMaterialCommitment]:
         # Mirrors _load_commitments: scoped to the supplier when we know it
         # (PO numbers are recycled across suppliers), otherwise every row on
-        # that PO regardless of supplier.
-        if supplier_name:
-            key = (supplier_po_no, supplier_name.strip().upper())
-            return self._by_po_supplier.get(key, {})
-        return self._by_po.get(supplier_po_no, {})
+        # that PO regardless of supplier. A vendor-PO thread can span several
+        # counters, so a list merges their commitment maps.
+        po_numbers = (
+            [supplier_po_no]
+            if isinstance(supplier_po_no, str)
+            else sorted(supplier_po_no)
+        )
+        merged: dict[tuple[str, str], SupplierMaterialCommitment] = {}
+        for po in po_numbers:
+            source = (
+                self._by_po_supplier.get((po, supplier_name.strip().upper()), {})
+                if supplier_name
+                else self._by_po.get(po, {})
+            )
+            for mat_key, row in source.items():
+                merged.setdefault(mat_key, row)
+        return merged
 
     def supplier_meta(self, supplier_name: Optional[str]) -> tuple:
         if not supplier_name:
@@ -327,10 +346,16 @@ def build_po_group_payload(
     sorted_records = sorted(
         records, key=lambda r: (r.shipment_date or datetime.max, r.material_name or "")
     )
+    # One vendor PO document can be spread over several recycled CRM counters;
+    # the group carries them all so message/commitment lookups cover the whole
+    # thread, not just the anchor counter.
+    counters = sorted({r.supplier_po_no for r in records if r.supplier_po_no})
+    if not counters and supplier_po_no:
+        counters = [supplier_po_no]
     commitments = (
-        ctx.commitments(supplier_po_no, supplier_name)
+        ctx.commitments(counters or supplier_po_no, supplier_name)
         if ctx is not None
-        else _load_commitments(db, supplier_po_no, supplier_name)
+        else _load_commitments(db, counters or supplier_po_no, supplier_name)
     )
     materials = [
         _material_line(rec, _commitment_for_record(rec, commitments))
@@ -365,8 +390,10 @@ def build_po_group_payload(
         "supplier_id": supplier_id,
         "supplier_name": supplier_name,
         "supplier_po_no": supplier_po_no,
+        # Every recycled CRM counter this vendor-PO thread spans.
+        "supplier_po_nos": counters,
         # Supplier-facing PO document number (CRM PoShortRefTrnNo) — what the
-        # supplier calls this PO. The recycled counter stays the grouping key.
+        # supplier calls this PO. The recycled counter stays the linkage key.
         "po_ref": next(
             (r.po_short_ref for r in sorted_records if r.po_short_ref), None
         ),
@@ -385,6 +412,58 @@ def build_po_group_payload(
         "anchor_record_id": sorted_records[0].id,
         "materials": materials,
     }
+
+
+def vendor_ref_buckets(
+    records: Iterable[ProcurementRecord],
+) -> dict[str, list[ProcurementRecord]]:
+    """Bucket one supplier's records into supplier-visible PO threads.
+
+    The CRM PoNo counter is a customer-order-side artifact: one vendor PO
+    document (`po_short_ref`, the "Vendor PO No." on the Orders page) can be
+    ingested under several counters, and one counter can carry lines of two
+    different vendor POs. The thread identity a supplier understands is the
+    vendor PO document, so records bucket by `po_short_ref` when known. A
+    record without a ref joins its counter's ref-bucket when that counter maps
+    to exactly one ref; otherwise it stays under the bare counter.
+    """
+    scoped = [r for r in records if r.supplier_po_no]
+    refs_by_counter: dict[str, set[str]] = {}
+    for rec in scoped:
+        refs = refs_by_counter.setdefault(rec.supplier_po_no, set())
+        if rec.po_short_ref:
+            refs.add(rec.po_short_ref)
+    buckets: dict[str, list[ProcurementRecord]] = {}
+    for rec in scoped:
+        key = rec.po_short_ref
+        if not key:
+            refs = refs_by_counter[rec.supplier_po_no]
+            key = next(iter(refs)) if len(refs) == 1 else rec.supplier_po_no
+        buckets.setdefault(key, []).append(rec)
+    return buckets
+
+
+def vendor_ref_group_for_record(
+    db: Session, rec: ProcurementRecord
+) -> list[ProcurementRecord]:
+    """All records forming the vendor-PO thread `rec` belongs to, within its
+    supplier, per :func:`vendor_ref_buckets`. Falls back to just `rec`."""
+    if not rec.supplier_po_no:
+        return [rec]
+    stmt = select(ProcurementRecord)
+    if rec.supplier_name and rec.supplier_name.strip():
+        stmt = stmt.where(
+            func.upper(ProcurementRecord.supplier_name)
+            == rec.supplier_name.strip().upper()
+        )
+    else:
+        # Name-less legacy rows: stay within the bare counter.
+        stmt = stmt.where(ProcurementRecord.supplier_po_no == rec.supplier_po_no)
+    supplier_records = db.scalars(stmt).all()
+    for items in vendor_ref_buckets(supplier_records).values():
+        if any(r.id == rec.id for r in items):
+            return items
+    return [rec]
 
 
 def build_all_po_groups(
@@ -533,12 +612,18 @@ def find_today_draft(
 def list_commitments(
     db: Session,
     *,
-    supplier_po_no: Optional[str] = None,
+    supplier_po_no: Optional[str | Sequence[str]] = None,
     supplier_name: Optional[str] = None,
 ) -> list[dict[str, Any]]:
     stmt = select(SupplierMaterialCommitment)
     if supplier_po_no:
-        stmt = stmt.where(SupplierMaterialCommitment.supplier_po_no == supplier_po_no.strip())
+        # A vendor-PO thread can span several recycled CRM counters.
+        po_numbers = (
+            [supplier_po_no.strip()]
+            if isinstance(supplier_po_no, str)
+            else [p.strip() for p in supplier_po_no if p and p.strip()]
+        )
+        stmt = stmt.where(SupplierMaterialCommitment.supplier_po_no.in_(po_numbers))
     if supplier_name:
         stmt = stmt.where(
             func.upper(SupplierMaterialCommitment.supplier_name)

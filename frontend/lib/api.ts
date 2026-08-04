@@ -317,7 +317,7 @@ export const api = {
     return http<PoFollowupGroup>(`/api/po-followups/groups/by-key?${q.toString()}`);
   },
 
-  listCommitments: (params: { supplier_po_no?: string; supplier_name?: string } = {}) => {
+  listCommitments: (params: { supplier_po_no?: string; supplier_po_nos?: string; supplier_name?: string } = {}) => {
     const q = new URLSearchParams();
     Object.entries(params).forEach(([k, v]) => {
       if (v !== undefined && v !== null && v !== "") q.append(k, String(v));
@@ -1413,7 +1413,7 @@ export const api = {
 
   eportalHubMentionTargets: () => http<TaskAssignee[]>("/api/eportal/hub/mention-targets"),
 
-  eportalHubCommitments: (params: { supplier_po_no: string; supplier_name?: string }) => {
+  eportalHubCommitments: (params: { supplier_po_no: string; supplier_po_nos?: string; supplier_name?: string }) => {
     const q = new URLSearchParams();
     Object.entries(params).forEach(([k, v]) => {
       if (v !== undefined && v !== null && v !== "") q.append(k, String(v));

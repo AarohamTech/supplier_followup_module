@@ -81,7 +81,7 @@ export interface CommHubAdapter {
   sendMail: typeof api.hubSendMail;
   assignees: () => Promise<TaskAssignee[]>;
   mentionTargets: () => Promise<TaskAssignee[]>;
-  commitments: (params: { supplier_po_no: string; supplier_name?: string }) => Promise<SupplierMaterialCommitment[]>;
+  commitments: (params: { supplier_po_no: string; supplier_po_nos?: string; supplier_name?: string }) => Promise<SupplierMaterialCommitment[]>;
   approveMessage: typeof api.approveMessage;
   discardMessage: typeof api.discardMessage;
   /** Chat file uploads (drag-drop / paperclip) + the scoped download endpoint. */
@@ -532,11 +532,16 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
   }, [activeHiThreadId, loadHiHistory]);
 
   const loadCommitments = useCallback(
-    async (supplierName: string, supplierPoNo: string) => {
+    async (supplierName: string, supplierPoNo: string, supplierPoNos?: string[]) => {
       try {
         const rows = await hub.commitments({
           supplier_name: supplierName,
           supplier_po_no: supplierPoNo,
+          // The vendor-PO thread can span several recycled CRM counters —
+          // fetch commitments captured under any of them.
+          ...(supplierPoNos && supplierPoNos.length > 1
+            ? { supplier_po_nos: supplierPoNos.join(",") }
+            : {}),
         });
         setCommitments(rows);
       } catch {
@@ -629,7 +634,7 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
           await Promise.all([
             loadThread(first.procurement_record_id),
             loadTasks({ procurement_record_id: first.procurement_record_id }),
-            loadCommitments(first.supplier_name, first.supplier_po_no),
+            loadCommitments(first.supplier_name, first.supplier_po_no, first.supplier_po_nos),
           ]);
         } else {
           await loadTasks({ supplier_id: supplierId });
@@ -641,7 +646,7 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
 
   // ── Select PO ──
   const handleSelectPo = useCallback(
-    async (procurementRecordId: number, supplierName?: string, supplierPoNo?: string) => {
+    async (procurementRecordId: number, supplierName?: string, supplierPoNo?: string, supplierPoNos?: string[]) => {
       if (procurementRecordId === selectedProcurementId) return;
       setSelectedProcurementId(procurementRecordId);
       setSelectedOtherKey(null);
@@ -652,7 +657,7 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
           loadThread(procurementRecordId),
           loadTasks({ procurement_record_id: procurementRecordId }),
           supplierName && supplierPoNo
-            ? loadCommitments(supplierName, supplierPoNo)
+            ? loadCommitments(supplierName, supplierPoNo, supplierPoNos)
             : Promise.resolve(),
         ]);
         // Clear WhatsApp-style unread badge for this PO and refresh the PO list
@@ -709,7 +714,7 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
           await Promise.all([
             loadThread(firstPo.procurement_record_id),
             loadTasks({ procurement_record_id: firstPo.procurement_record_id }),
-            loadCommitments(firstPo.supplier_name, firstPo.supplier_po_no),
+            loadCommitments(firstPo.supplier_name, firstPo.supplier_po_no, firstPo.supplier_po_nos),
           ]);
         } else {
           await loadTasks({ supplier_id: first.supplier_id });
@@ -755,7 +760,7 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
             loadThread(selectedProcurementId),
             loadTasks({ procurement_record_id: selectedProcurementId }),
             activePo?.supplier_po_no
-              ? loadCommitments(activePo.supplier_name, activePo.supplier_po_no)
+              ? loadCommitments(activePo.supplier_name, activePo.supplier_po_no, activePo.supplier_po_nos)
               : Promise.resolve(),
           ]);
         } else if (selectedSupplierId != null) {
@@ -1319,7 +1324,7 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
                     key={p.procurement_record_id}
                     p={p}
                     active={p.procurement_record_id === selectedProcurementId && !inOther}
-                    onClick={() => void handleSelectPo(p.procurement_record_id, p.supplier_name, p.supplier_po_no)}
+                    onClick={() => void handleSelectPo(p.procurement_record_id, p.supplier_name, p.supplier_po_no, p.supplier_po_nos)}
                   />
                 ))
               )
@@ -1347,7 +1352,7 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
                 <div className="flex items-center gap-2 border-b border-brand-border px-5 py-3">
                   <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${SIGNAL_DOT[threadSignal] ?? "bg-subtle"}`} />
                   <h2 className="truncate font-semibold text-brand-dark">
-                    PO #{activePo.po_ref ?? activePo.supplier_po_no}
+                    PO {activePo.po_ref ?? `#${activePo.supplier_po_no}`}
                     <span className="ml-2 font-normal text-brand-muted">{activeSupplier.supplier_name}</span>
                   </h2>
                   <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold uppercase ${SIGNAL_CHIP[threadSignal] ?? ""}`}>
@@ -1640,7 +1645,7 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
                 <div className="min-w-0">
                   <div className="text-sm font-semibold text-brand-dark">HI Assistant</div>
                   <div className="truncate text-[11px] text-brand-muted">
-                    {activePo ? `PO #${activePo.po_ref ?? activePo.supplier_po_no}` : "Ask about this thread"}
+                    {activePo ? `PO ${activePo.po_ref ?? `#${activePo.supplier_po_no}`}` : "Ask about this thread"}
                   </div>
                 </div>
               </div>
@@ -1745,7 +1750,7 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
               <div className="min-w-0">
                 <div className="text-sm font-semibold text-brand-dark">Details &amp; Actions</div>
                 <div className="truncate text-[11px] text-brand-muted">
-                  {activePo ? `PO #${activePo.po_ref ?? activePo.supplier_po_no}` : activeSupplier?.supplier_name || "No PO selected"}
+                  {activePo ? `PO ${activePo.po_ref ?? `#${activePo.supplier_po_no}`}` : activeSupplier?.supplier_name || "No PO selected"}
                 </div>
               </div>
               <button
@@ -2021,7 +2026,7 @@ function PoRow({ p, active, onClick }: { p: CommHubPO; active: boolean; onClick:
     >
       <div className="flex items-center gap-2">
         <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${SIGNAL_DOT[sig] ?? "bg-subtle"}`} />
-        <span className={`truncate text-sm text-brand-dark ${unread ? "font-bold" : "font-medium"}`}>#{p.po_ref ?? p.supplier_po_no}</span>
+        <span className={`truncate text-sm text-brand-dark ${unread ? "font-bold" : "font-medium"}`}>{p.po_ref ?? `#${p.supplier_po_no}`}</span>
         {(p.unread_inbound ?? 0) > 0 && (
           <span className="rounded-full bg-emerald-500 px-1.5 py-0.5 text-[10px] font-bold text-white">
             {(p.unread_inbound ?? 0) > 99 ? "99+" : p.unread_inbound}

@@ -13,7 +13,7 @@ from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from ..core.deps import get_current_user, require_manager, require_writer
@@ -477,7 +477,12 @@ def pos_by_supplier_name(
 def _pos_for_supplier(
     db: Session, supplier_id: Optional[int], supplier_name: str
 ) -> list[dict[str, Any]]:
-    """Return one entry per (supplier_po_no) for the supplier, materials nested inside."""
+    """Return one entry per vendor PO for the supplier, materials nested inside.
+
+    Threads bucket by the vendor PO document (`po_short_ref` — the "Vendor PO
+    No." the supplier and the Orders page use), not the recycled CRM counter:
+    one document can span several counters and one counter can carry two
+    documents. Records without a ref fall back to their counter."""
     upper = supplier_name.strip().upper()
     records = db.scalars(
         select(ProcurementRecord)
@@ -485,18 +490,16 @@ def _pos_for_supplier(
         .order_by(ProcurementRecord.shipment_date)
     ).all()
 
-    buckets: dict[str, list[ProcurementRecord]] = {}
-    for rec in records:
-        if not rec.supplier_po_no:
-            continue
-        buckets.setdefault(rec.supplier_po_no, []).append(rec)
+    buckets = po_followup_service.vendor_ref_buckets(records)
 
     result: list[dict[str, Any]] = []
-    for po_no, items in buckets.items():
+    for _key, items in buckets.items():
+        po_no = items[0].supplier_po_no
         group = po_followup_service.build_po_group_payload(
             db, items, supplier_name, po_no
         )
         record_ids = group["procurement_record_ids"]
+        counters = group["supplier_po_nos"]
         mail_count: int = db.execute(
             select(func.count(MailHistory.id)).where(
                 MailHistory.procurement_record_id.in_(record_ids)
@@ -513,12 +516,7 @@ def _pos_for_supplier(
             select(func.count(CommunicationMessage.id)).where(
                 CommunicationMessage.direction == "INCOMING",
                 CommunicationMessage.read_at.is_(None),
-                or_(
-                    CommunicationMessage.procurement_record_id.in_(record_ids)
-                    if record_ids
-                    else False,
-                    _msg_po_clause(po_no, supplier_name, supplier_id),
-                ),
+                _msg_group_clause(counters, record_ids, supplier_name, supplier_id),
             )
         ).scalar_one() or 0
         latest_mail = db.scalar(
@@ -531,12 +529,7 @@ def _pos_for_supplier(
             select(CommunicationMessage)
             .where(
                 CommunicationMessage.direction == "INCOMING",
-                or_(
-                    CommunicationMessage.procurement_record_id.in_(record_ids)
-                    if record_ids
-                    else False,
-                    _msg_po_clause(po_no, supplier_name, supplier_id),
-                ),
+                _msg_group_clause(counters, record_ids, supplier_name, supplier_id),
             )
             .order_by(CommunicationMessage.created_at.desc())
             .limit(1)
@@ -549,6 +542,8 @@ def _pos_for_supplier(
                 "supplier_id": supplier_id or group.get("supplier_id"),
                 "supplier_name": supplier_name,
                 "supplier_po_no": po_no,
+                # Every recycled CRM counter this vendor-PO thread spans.
+                "supplier_po_nos": counters,
                 # Supplier-facing PO document number (CRM PoShortRefTrnNo).
                 "po_ref": group.get("po_ref"),
                 "material_name": f"ALL MATERIALS ({group['material_count']})",
@@ -609,6 +604,8 @@ def get_thread(
     stmt = select(MailHistory)
     selected_rec: Optional[ProcurementRecord] = None
     po_scoped_record_ids: list[int] = []
+    group_records: list[ProcurementRecord] = []
+    group_counters: list[str] = []
 
     # The supplier this thread request is about — the CRM PoNo counter is
     # recycled across suppliers, so PO-number filters below must stay paired
@@ -621,22 +618,28 @@ def get_thread(
     if procurement_record_id is not None:
         selected_rec = db.get(ProcurementRecord, procurement_record_id)
         if selected_rec and selected_rec.supplier_po_no:
-            scoped_stmt = select(ProcurementRecord.id).where(
-                ProcurementRecord.supplier_po_no == selected_rec.supplier_po_no
+            # The thread spans the whole vendor PO document, which can sit
+            # under several recycled CRM counters (and one counter can carry
+            # two documents — those must NOT merge).
+            group_records = po_followup_service.vendor_ref_group_for_record(
+                db, selected_rec
             )
-            if selected_rec.supplier_name:
-                scoped_stmt = scoped_stmt.where(
-                    func.upper(ProcurementRecord.supplier_name)
-                    == selected_rec.supplier_name.strip().upper()
-                )
-            po_scoped_record_ids = list(db.execute(scoped_stmt).scalars().all())
+            po_scoped_record_ids = [r.id for r in group_records]
+            group_counters = sorted(
+                {r.supplier_po_no for r in group_records if r.supplier_po_no}
+            )
 
     if procurement_record_id is not None and selected_rec and selected_rec.supplier_po_no:
         stmt = stmt.where(
             or_(
-                MailHistory.supplier_po_no == selected_rec.supplier_po_no,
                 MailHistory.procurement_record_id.in_(
                     po_scoped_record_ids or [procurement_record_id]
+                ),
+                # Counter-linked mails without a record link; a record link
+                # outside the group means the other vendor PO on this counter.
+                and_(
+                    MailHistory.procurement_record_id.is_(None),
+                    MailHistory.supplier_po_no.in_(group_counters),
                 ),
             )
         )
@@ -690,11 +693,18 @@ def get_thread(
         s_id = supplier_id or first.supplier_id
         rec_id = first.procurement_record_id or 0
 
-    po_group = (
-        po_followup_service.get_po_group(db, sname, s_po_no)
-        if sname and s_po_no
-        else None
-    )
+    if group_records:
+        # The resolved vendor-PO group — NOT the bare counter, which can span
+        # two vendor POs or cover only part of this one.
+        po_group = po_followup_service.build_po_group_payload(
+            db, group_records, sname, s_po_no
+        )
+    else:
+        po_group = (
+            po_followup_service.get_po_group(db, sname, s_po_no)
+            if sname and s_po_no
+            else None
+        )
     po_table_rows = _po_message_table_rows(po_group)
 
     messages = [
@@ -728,7 +738,14 @@ def get_thread(
     ]
 
     # Merge CommunicationMessage rows (new pipeline) for the same PO/record.
-    comm_msgs = _load_comm_messages(db, rec_id, s_po_no, sname or req_name)
+    comm_msgs = _load_comm_messages(
+        db,
+        rec_id,
+        s_po_no,
+        sname or req_name,
+        record_ids=po_scoped_record_ids,
+        counters=group_counters,
+    )
     cm_attachments = attachment_service.for_messages(db, [cm.id for cm in comm_msgs])
     for cm in comm_msgs:
         reply_rows = _reply_message_table_rows(cm.body)
@@ -799,8 +816,10 @@ def get_thread(
         "supplier_name": sname,
         "procurement_record_id": rec_id,
         "supplier_po_no": s_po_no,
+        # Every recycled CRM counter this vendor-PO thread spans.
+        "supplier_po_nos": group_counters or ([s_po_no] if s_po_no else []),
         # The supplier-facing PO document number (CRM PoShortRefTrnNo) — what the
-        # supplier calls this PO. supplier_po_no stays the internal grouping key.
+        # supplier calls this PO. supplier_po_no stays the internal linkage key.
         "po_ref": (rec.po_short_ref if rec else None)
         or (po_group or {}).get("po_ref"),
         "signal": signal,
@@ -830,14 +849,31 @@ def mark_thread_read(
     if req_name is None and supplier_id is not None:
         _sup = db.get(SupplierMaster, supplier_id)
         req_name = _sup.supplier_name if _sup else None
-    if req_name is None and procurement_record_id is not None:
-        _rec = db.get(ProcurementRecord, procurement_record_id)
-        req_name = _rec.supplier_name if _rec else None
+    anchor_rec: Optional[ProcurementRecord] = (
+        db.get(ProcurementRecord, procurement_record_id)
+        if procurement_record_id is not None
+        else None
+    )
+    if req_name is None and anchor_rec is not None:
+        req_name = anchor_rec.supplier_name
     stmt = select(CommunicationMessage).where(
         CommunicationMessage.direction == "INCOMING",
         CommunicationMessage.read_at.is_(None),
     )
-    if supplier_po_no and procurement_record_id is not None:
+    if anchor_rec is not None and anchor_rec.supplier_po_no:
+        # Clear the badge for the whole vendor-PO thread — every counter the
+        # document spans — without touching the other vendor PO that may share
+        # one of those recycled counters.
+        group = po_followup_service.vendor_ref_group_for_record(db, anchor_rec)
+        stmt = stmt.where(
+            _msg_group_clause(
+                sorted({r.supplier_po_no for r in group if r.supplier_po_no}),
+                [r.id for r in group],
+                req_name,
+                supplier_id,
+            )
+        )
+    elif supplier_po_no and procurement_record_id is not None:
         stmt = stmt.where(
             or_(
                 _msg_po_clause(supplier_po_no, req_name, supplier_id),
@@ -874,6 +910,44 @@ def _empty_thread(
     }
 
 
+def _msg_group_clause(
+    counters: list[str],
+    record_ids: list[int],
+    supplier_name: Optional[str],
+    supplier_id: Optional[int] = None,
+):
+    """Filter CommunicationMessage down to one vendor-PO thread.
+
+    A thread spans every record of one vendor PO document, which can sit under
+    several recycled CRM counters. A message belongs to it when it is
+    explicitly linked to one of the thread's records, or when it carries one of
+    the thread's counters (supplier-scoped) WITHOUT a record link — a record
+    link outside the group means the mail belongs to the other vendor PO
+    sharing that recycled counter."""
+    conds = []
+    if record_ids:
+        conds.append(CommunicationMessage.procurement_record_id.in_(record_ids))
+    if counters:
+        counter_clause = and_(
+            CommunicationMessage.procurement_record_id.is_(None),
+            CommunicationMessage.supplier_po_no.in_(counters),
+        )
+        owner = []
+        if supplier_name and supplier_name.strip():
+            owner.append(
+                func.upper(CommunicationMessage.supplier_name)
+                == supplier_name.strip().upper()
+            )
+        if supplier_id is not None:
+            owner.append(CommunicationMessage.supplier_id == supplier_id)
+        if owner:
+            counter_clause = and_(counter_clause, or_(*owner))
+        conds.append(counter_clause)
+    if not conds:
+        return CommunicationMessage.id.is_(None)
+    return or_(*conds)
+
+
 def _msg_po_clause(
     supplier_po_no: str,
     supplier_name: Optional[str],
@@ -901,7 +975,23 @@ def _load_comm_messages(
     procurement_record_id: Optional[int],
     supplier_po_no: Optional[str],
     supplier_name: Optional[str] = None,
+    *,
+    record_ids: Optional[list[int]] = None,
+    counters: Optional[list[str]] = None,
 ) -> list[CommunicationMessage]:
+    if record_ids or counters:
+        # Resolved vendor-PO group: match the whole thread across its counters.
+        return list(
+            db.scalars(
+                select(CommunicationMessage)
+                .where(
+                    _msg_group_clause(
+                        counters or [], record_ids or [], supplier_name
+                    )
+                )
+                .order_by(CommunicationMessage.created_at.asc())
+            ).all()
+        )
     po_clause = (
         _msg_po_clause(supplier_po_no, supplier_name) if supplier_po_no else None
     )
@@ -1115,6 +1205,29 @@ def _latest_incoming_message_uid(
             if msg_service.normalize_subject(m.subject) == key:
                 return m.message_uid
         return None
+
+    anchor_rec = (
+        db.get(ProcurementRecord, procurement_record_id)
+        if procurement_record_id is not None
+        else None
+    )
+    if anchor_rec is not None and anchor_rec.supplier_po_no:
+        # Reply onto the latest inbound of the whole vendor-PO thread — the
+        # document can span several recycled counters.
+        group = po_followup_service.vendor_ref_group_for_record(db, anchor_rec)
+        row = db.scalar(
+            base.where(
+                _msg_group_clause(
+                    sorted({r.supplier_po_no for r in group if r.supplier_po_no}),
+                    [r.id for r in group],
+                    supplier_name or anchor_rec.supplier_name,
+                    supplier_id,
+                )
+            )
+            .order_by(CommunicationMessage.created_at.desc())
+            .limit(1)
+        )
+        return row.message_uid if row else None
 
     conds = []
     if supplier_po_no:

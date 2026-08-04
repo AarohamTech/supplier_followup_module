@@ -705,8 +705,11 @@ export interface CommHubPO {
   supplier_id: number | null;
   supplier_name: string;
   supplier_po_no: string;
+  // Every recycled CRM counter this vendor-PO thread spans (threads group by
+  // the vendor PO document, which the CRM can split across counters).
+  supplier_po_nos?: string[];
   // Supplier-facing PO document number (CRM PoShortRefTrnNo, e.g. 2627-001703).
-  // Display this one; supplier_po_no stays the internal grouping/API key.
+  // Display this one; supplier_po_no stays the internal linkage/API key.
   po_ref?: string | null;
   material_name: string;
   qty: number | null;

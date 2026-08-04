@@ -53,11 +53,17 @@ def group_by_key(
 @router.get("/commitments")
 def list_commitments(
     supplier_po_no: Optional[str] = Query(None),
+    supplier_po_nos: Optional[str] = Query(
+        None, description="Comma-separated counters of one vendor-PO thread"
+    ),
     supplier_name: Optional[str] = Query(None),
     db: Session = Depends(get_db),
 ) -> list[dict[str, Any]]:
+    po_filter: Any = supplier_po_no
+    if supplier_po_nos:
+        po_filter = [p for p in supplier_po_nos.split(",") if p.strip()]
     return po_followup_service.list_commitments(
-        db, supplier_po_no=supplier_po_no, supplier_name=supplier_name
+        db, supplier_po_no=po_filter, supplier_name=supplier_name
     )
 
 

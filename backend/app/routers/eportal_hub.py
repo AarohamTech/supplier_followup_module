@@ -148,6 +148,12 @@ def _record_in_scope(
         db, emp_code, rec.supplier_po_no, rec.supplier_name
     ):
         return rec
+    # A vendor PO document can span several recycled counters; owning any
+    # record of the vendor-PO thread grants the thread.
+    if rec.supplier_po_no:
+        group = po_followup_service.vendor_ref_group_for_record(db, rec)
+        if any(r.owner_emp_code == emp_code for r in group):
+            return rec
     return None
 
 
@@ -168,10 +174,15 @@ def _resolve_scoped_po(
     po_no = supplier_po_no
     name = supplier_name
     if procurement_record_id is not None:
-        rec = db.get(ProcurementRecord, procurement_record_id)
-        if rec:
-            po_no = po_no or rec.supplier_po_no
-            name = name or rec.supplier_name
+        # Record-anchored requests resolve scope through the record's whole
+        # vendor-PO thread (it can span several recycled counters).
+        rec = _record_in_scope(db, emp_code, procurement_record_id)
+        if rec and rec.supplier_po_no:
+            return po_no or rec.supplier_po_no
+        raw = db.get(ProcurementRecord, procurement_record_id)
+        if raw:
+            po_no = po_no or raw.supplier_po_no
+            name = name or raw.supplier_name
     if not po_no or not _po_in_scope(db, emp_code, po_no, name):
         raise HTTPException(404, "PO not found for your account")
     return po_no
@@ -524,8 +535,15 @@ def list_pos(
         return []
 
     # Reuse the admin builder for the exact shape, then filter to owned POs.
+    # A vendor-PO thread can span several recycled CRM counters — it is in
+    # scope when the employee owns any of them.
     all_pos = hub._pos_for_supplier(db, supplier_id, name)
-    return [p for p in all_pos if p.get("supplier_po_no") in owned_pos]
+    return [
+        p
+        for p in all_pos
+        if owned_pos
+        & set(p.get("supplier_po_nos") or ([p["supplier_po_no"]] if p.get("supplier_po_no") else []))
+    ]
 
 
 @router.get("/other-mails")
@@ -897,6 +915,9 @@ def _scoped_message_or_404(
 @router.get("/commitments")
 def list_commitments(
     supplier_po_no: str = Query(...),
+    supplier_po_nos: Optional[str] = Query(
+        None, description="Comma-separated counters of one vendor-PO thread"
+    ),
     supplier_name: Optional[str] = None,
     user: User = Depends(get_current_employee),
     db: Session = Depends(get_db),
@@ -905,8 +926,18 @@ def list_commitments(
     commitments endpoint). 404 if the PO is not owned."""
     if not _po_in_scope(db, user.emp_code, supplier_po_no, supplier_name):
         raise HTTPException(404, "PO not found for your account")
+    # Extra counters of the same vendor-PO thread ride along, each gated by
+    # the same ownership check so the scope cannot widen past owned pairs.
+    po_filter: str | list[str] = supplier_po_no
+    if supplier_po_nos:
+        extras = [p for p in supplier_po_nos.split(",") if p.strip()]
+        po_filter = [
+            p
+            for p in extras
+            if _po_in_scope(db, user.emp_code, p, supplier_name)
+        ] or [supplier_po_no]
     return po_followup_service.list_commitments(
-        db, supplier_po_no=supplier_po_no, supplier_name=supplier_name
+        db, supplier_po_no=po_filter, supplier_name=supplier_name
     )
 
 
