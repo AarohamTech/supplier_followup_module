@@ -492,6 +492,23 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
       });
   }, [supplierList, search, queueFilter]);
 
+  // ── Search filter (PO threads of the selected supplier) ──
+  // Matches the vendor PO number (2627-002867), the internal counter (005518,
+  // with or without the leading #), any counter the thread spans, and material
+  // names — so searching a PO number from Orders finds its thread here.
+  const filteredPoList = useMemo(() => {
+    const q = search.trim().toLowerCase().replace(/^#/, "");
+    if (!q) return poList;
+    return poList.filter((p) => {
+      if ((p.po_ref || "").toLowerCase().includes(q)) return true;
+      if ((p.supplier_po_no || "").toLowerCase().includes(q)) return true;
+      if ((p.supplier_po_nos || []).some((po) => po.toLowerCase().includes(q))) return true;
+      return (p.materials || []).some((m) =>
+        (m.material_name || "").toLowerCase().includes(q),
+      );
+    });
+  }, [poList, search]);
+
   // ── Data loaders ──
   const loadKpis = useCallback(async () => {
     try {
@@ -1318,8 +1335,10 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
             ) : poView === "pos" ? (
               poList.length === 0 && !loading ? (
                 <EmptyState icon={<Inbox size={18} />}>No POs for this supplier.</EmptyState>
+              ) : filteredPoList.length === 0 ? (
+                <EmptyState icon={<Inbox size={18} />}>No POs match “{search.trim()}”.</EmptyState>
               ) : (
-                poList.map((p) => (
+                filteredPoList.map((p) => (
                   <PoRow
                     key={p.procurement_record_id}
                     p={p}

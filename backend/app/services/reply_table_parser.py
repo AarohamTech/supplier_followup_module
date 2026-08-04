@@ -105,6 +105,19 @@ def _coerce_status(value: Optional[str]) -> Optional[str]:
     return None
 
 
+# Start of a quoted/forwarded chain — everything below belongs to an earlier
+# mail, not to what the supplier wrote in THIS reply.
+_QUOTED_CHAIN_START = re.compile(
+    r"^("
+    r"from:\s*\S"                      # "From: Amol Patil <...>"
+    r"|-{2,}\s*original message\s*-{2,}"
+    r"|-{2,}\s*forwarded message\s*-{2,}"
+    r"|_{6,}$"                         # Outlook's forward separator line
+    r")",
+    re.IGNORECASE,
+)
+
+
 def _primary_reply_section(body: str) -> str:
     lines: list[str] = []
     for line in (body or "").splitlines():
@@ -113,7 +126,7 @@ def _primary_reply_section(body: str) -> str:
             break
         if stripped.startswith(">"):
             break
-        if stripped in {"-----Original Message-----", "From:"}:
+        if _QUOTED_CHAIN_START.match(stripped):
             break
         lines.append(line)
     return "\n".join(lines).strip()
@@ -148,6 +161,10 @@ def _is_header_like_row(row: dict[str, Any]) -> bool:
         if value
     )
 
+
+# Email-header shapes that must never be parsed as material rows.
+_MAIL_HEADER_LINE = re.compile(r"^(from|to|cc|bcc|subject|sent|date):", re.IGNORECASE)
+_EMAIL_TOKEN = re.compile(r"\b[\w.+-]+@[\w-]+\.[\w.-]+\b")
 
 _CRM_TOKEN = r"[A-Za-z0-9][A-Za-z0-9\-/_]{3,}"
 _PLAIN_ROW_START = re.compile(rf"^\d+\s+{_CRM_TOKEN}\b")
@@ -395,20 +412,35 @@ def parse_reply_table(body: Optional[str]) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     if header_idx is None:
         # Loose mode: scan lines that have at least 3 pipe-separated cells.
+        # Email header lines (To:/Cc: recipient lists are semicolon-separated!)
+        # and signature lines must never become rows: skip header-shaped lines,
+        # reject cells that are email addresses, and require at least one
+        # parsed data value (qty/date/status) so free prose never qualifies.
         for line in lines:
+            if _MAIL_HEADER_LINE.match(line.strip()):
+                continue
             parts = _split_row(line)
             if len(parts) < 3:
                 continue
-            rows.append(
-                {
-                    "material_code": parts[0],
-                    "material_name": parts[1] if len(parts) > 1 else None,
-                    "quantity": _coerce_qty(parts[2]) if len(parts) > 2 else None,
-                    "commitment_date": _coerce_date(parts[3]) if len(parts) > 3 else None,
-                    "remark": parts[4] if len(parts) > 4 else None,
-                    "supplier_status": _coerce_status(parts[5]) if len(parts) > 5 else None,
-                }
-            )
+            row = {
+                "material_code": parts[0],
+                "material_name": parts[1] if len(parts) > 1 else None,
+                "quantity": _coerce_qty(parts[2]) if len(parts) > 2 else None,
+                "commitment_date": _coerce_date(parts[3]) if len(parts) > 3 else None,
+                "remark": parts[4] if len(parts) > 4 else None,
+                "supplier_status": _coerce_status(parts[5]) if len(parts) > 5 else None,
+            }
+            if _EMAIL_TOKEN.search(row["material_code"] or "") or _EMAIL_TOKEN.search(
+                row["material_name"] or ""
+            ):
+                continue
+            if (
+                row["quantity"] is None
+                and row["commitment_date"] is None
+                and row["supplier_status"] is None
+            ):
+                continue
+            rows.append(row)
         return [r for r in rows if r.get("material_name") or r.get("material_code")]
 
     for line in lines[header_idx + 1 :]:
@@ -441,7 +473,12 @@ def parse_reply_table(body: Optional[str]) -> list[dict[str, Any]]:
                 row["material_code"] = value or None
             elif field == "material_name":
                 row["material_name"] = value or None
-        if (row.get("material_name") or row.get("material_code")) and not _is_header_like_row(row):
+        if (
+            (row.get("material_name") or row.get("material_code"))
+            and not _is_header_like_row(row)
+            and not _EMAIL_TOKEN.search(row.get("material_code") or "")
+            and not _EMAIL_TOKEN.search(row.get("material_name") or "")
+        ):
             rows.append(row)
 
     return rows

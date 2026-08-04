@@ -127,6 +127,10 @@ class Settings(BaseSettings):
     # Default OFF — commitments are now captured via the portal commitment form
     # (a link is sent in the follow-up mail). Flip on only to restore the old flow.
     COMMITMENT_VIA_EMAIL_ENABLED: bool = Field(default=False)
+    # Extra company-owned mail domains (comma-separated). Senders on these
+    # domains are never attributed to a supplier; the IMAP/SMTP account
+    # domains are always treated as internal without listing them here.
+    INTERNAL_MAIL_DOMAINS: str = Field(default="")
     MAIL_FETCH_PROTOCOL: str = Field(...)
     MAIL_INBOX_USE_SSL: bool = Field(...)
 

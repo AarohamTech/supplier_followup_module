@@ -231,7 +231,10 @@ class AiToolScopeTests(unittest.TestCase):
 
 
 class CommitmentFlowTests(unittest.TestCase):
-    def test_email_reply_commitment_parsing_discarded_by_default(self):
+    def test_email_reply_commitment_parsing_discarded_when_flag_off(self):
+        from unittest import mock
+
+        from app.core.config import settings as app_settings
         from app.services import status_change_service
         with _temp_db() as db:
             msg = CommunicationMessage(
@@ -241,8 +244,14 @@ class CommitmentFlowTests(unittest.TestCase):
             db.add(msg)
             db.commit()
             db.refresh(msg)
-            # Email-reply parsing is off by default → no commitments created.
-            self.assertEqual(status_change_service.apply_material_reply_table(db, msg, body=msg.body), [])
+            # Pin the flag OFF (the deployed .env may enable it) → rows discarded.
+            with mock.patch.object(
+                app_settings, "COMMITMENT_VIA_EMAIL_ENABLED", False, create=True
+            ):
+                self.assertEqual(
+                    status_change_service.apply_material_reply_table(db, msg, body=msg.body),
+                    [],
+                )
 
     def test_commitment_instructions_point_at_portal_form(self):
         from app.services.mail_template_service import commitment_instructions

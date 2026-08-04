@@ -151,16 +151,21 @@ def _process_one(
     )
     parsed = mail_parser_service.parse_email(db, subject, body, supplier_id=supplier_id)
 
-    rec = msg_service.find_procurement_record(
-        db,
-        supplier_po_no=parsed.get("supplier_po_no"),
-        subject=subject,
-        body=body,
-        # Scope PO matching to the sender's supplier — the CRM PO counter is
-        # recycled, so an unscoped match can link the reply to another
-        # supplier's PO with the same number.
-        supplier_name=supplier_name,
-    )
+    # Internal senders (own staff forwards, bounce daemons) are never supplier
+    # replies — skip the PO body-scan too, else a quoted PO number links the
+    # mail into a supplier's thread. They route to the Customer Mails inbox.
+    rec = None
+    if not msg_service.is_internal_sender(sender_email):
+        rec = msg_service.find_procurement_record(
+            db,
+            supplier_po_no=parsed.get("supplier_po_no"),
+            subject=subject,
+            body=body,
+            # Scope PO matching to the sender's supplier — the CRM PO counter is
+            # recycled, so an unscoped match can link the reply to another
+            # supplier's PO with the same number.
+            supplier_name=supplier_name,
+        )
 
     # Mails from unknown senders (no supplier mapping AND no PO match) are
     # routed into the Customer Mail inbox instead of the supplier comm hub.

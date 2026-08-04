@@ -13,6 +13,7 @@ from typing import Any, Optional
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from ..core.config import settings
 from ..models.communication_message import (
     MESSAGE_DIRECTIONS,
     MESSAGE_STATUSES,
@@ -23,6 +24,43 @@ from ..models.supplier import SupplierMaster
 from ..models.supplier_email import SupplierEmail
 
 log = logging.getLogger(__name__)
+
+
+# Delivery-status daemons — never a person, never a supplier. Covers the
+# common (and the misspelled) variants seen in real bounce senders.
+_BOUNCE_LOCALPART_RE = re.compile(
+    r"^(mailer-d(?:ae|ea)mon|postmaster|bounce|no-?reply)", re.IGNORECASE
+)
+
+
+def internal_mail_domains() -> set[str]:
+    """The company's own mail domains: derived from the configured mailboxes,
+    plus any comma-separated extras in INTERNAL_MAIL_DOMAINS."""
+    domains: set[str] = set()
+    for account in (
+        getattr(settings, "IMAP_USER", None),
+        getattr(settings, "SMTP_USER", None),
+    ):
+        if account and "@" in account:
+            domains.add(account.rsplit("@", 1)[-1].strip().lower())
+    for extra in (getattr(settings, "INTERNAL_MAIL_DOMAINS", "") or "").split(","):
+        if extra.strip():
+            domains.add(extra.strip().lower())
+    return domains
+
+
+def is_internal_sender(email: str | None) -> bool:
+    """True when a sender must never be attributed to a supplier: our own
+    staff (supplier mappings legitimately carry staff addresses in cc /
+    escalation, so an array match is NOT proof the mail came from the
+    supplier) and bounce daemons (their bodies quote our own PO mails, which
+    the PO body-scan would otherwise link back to a supplier)."""
+    if not email or "@" not in email:
+        return False
+    local, _, domain = email.strip().lower().rpartition("@")
+    if _BOUNCE_LOCALPART_RE.match(local):
+        return True
+    return domain in internal_mail_domains()
 
 
 def _validate(direction: str, status: str) -> None:
@@ -59,8 +97,14 @@ def reply_subject(subject: str | None) -> str:
 
 
 def find_supplier_by_email(db: Session, email: str | None) -> tuple[int | None, str | None]:
-    """Lookup supplier by an email present in to/cc/bcc/escalation arrays."""
+    """Lookup supplier by an email present in to/cc/bcc/escalation arrays.
+
+    Internal senders never resolve: staff addresses live in cc/escalation
+    arrays by design, so matching them would attribute the company's own
+    forwards to the supplier (the Vedant Tools bug)."""
     if not email:
+        return None, None
+    if is_internal_sender(email):
         return None, None
     email_lc = email.strip().lower()
     if not email_lc:
