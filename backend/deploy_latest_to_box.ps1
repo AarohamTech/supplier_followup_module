@@ -23,7 +23,14 @@ if grep -q ^COMMITMENT_VIA_EMAIL_ENABLED= .env; then
 else
   printf 'COMMITMENT_VIA_EMAIL_ENABLED=true\n' >> .env
 fi
-echo -n 'flag: '; grep ^COMMITMENT_VIA_EMAIL_ENABLED= .env
+# CRM ingest must be durable in .env — the Settings-UI toggle is in-process
+# only and every restart silently disabled ingestion until now.
+if grep -q ^CRM_INGEST_ENABLED= .env; then
+  sed -i s/^CRM_INGEST_ENABLED=.*/CRM_INGEST_ENABLED=true/ .env
+else
+  printf 'CRM_INGEST_ENABLED=true\n' >> .env
+fi
+echo -n 'flags: '; grep -E '^(COMMITMENT_VIA_EMAIL_ENABLED|CRM_INGEST_ENABLED)=' .env | tr '\n' ' '; echo
 sudo systemctl restart sfa-backend
 for i in $(seq 1 30); do
   if curl -fsS http://localhost:8000/healthz >/dev/null 2>&1; then
