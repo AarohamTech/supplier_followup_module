@@ -55,6 +55,23 @@ class ForwardedMailTests(unittest.TestCase):
         body = "Amol A. Patil; Store Incharge; Kolhapur Works\n"
         self.assertEqual(parse_reply_table(body), [])
 
+    def test_mailto_style_forward_with_name_only_cc_produces_no_rows(self):
+        # Second prod case: "[mailto:...]" headers and a Cc: of bare NAMES
+        # (no email addresses) — rendered "Cc: Sanjay Jadhav | Ashok Sonale"
+        # as a material row on the old parser.
+        body = (
+            "From: ED Development [mailto:ed.development@zanvargroup.com]\n"
+            "Sent: 31 July 2026 02:37 PM\n"
+            "To: Edsteel Purchase\n"
+            "Cc: Sanjay Jadhav; Ashok Sonale; Pradip Patil\n"
+            "Subject: Arrange conveyor roller .\n\n"
+            "Please arrange conveyor roller ASPR Drawing  .....20 nos\n\n"
+            "Mob. 965 714 9007\n"
+            "Pradeep B PatiL; Development; Zanvar Group\n"
+            "Hariom Enterprises; Hariomtech; Kolhapur\n"
+        )
+        self.assertEqual(parse_reply_table(body), [])
+
 
 class LegitTableTests(unittest.TestCase):
     def test_markdown_table_still_parses(self):
