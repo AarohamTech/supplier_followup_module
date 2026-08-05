@@ -8,7 +8,7 @@
 #
 # Run:
 #   powershell -ExecutionPolicy Bypass -File backend\set_crm_login_on_box.ps1 `
-#       -CrmEmail "<crm app login email>" -CrmPassword "<password>"
+#       -CrmEmail "<crm app login>" -CrmPassword "<password>"
 #
 # The password is written straight to the box .env over SSH and is never echoed.
 param(
@@ -22,42 +22,47 @@ $BoxHost = "ubuntu@$BoxIp"
 $Pem = "$env:USERPROFILE\Downloads\MUMBAI_SERVER.pem"
 if (-not (Test-Path $Pem)) { throw "SSH key not found: $Pem" }
 
-# set_key <KEY> <VALUE> — replace the line if present, else append.
-# NOTE: no double quotes inside the remote block (PowerShell mangles them).
-$remote = @"
+# LITERAL here-string (no PowerShell interpolation — bash keeps its own $ and
+# $(...)); credentials are substituted via placeholders below. A double-quoted
+# here-string would eat $(seq ...) and every bash variable.
+$remote = @'
 set -e
 cd ~/supplier_followup_module/backend
 set_key() {
-  if grep -q "^\$1=" .env; then
-    grep -v "^\$1=" .env > .env.tmp && mv .env.tmp .env
+  if grep -q "^$1=" .env; then
+    grep -v "^$1=" .env > .env.tmp && mv .env.tmp .env
   fi
-  printf '%s=%s\n' "\$1" "\$2" >> .env
+  printf '%s=%s\n' "$1" "$2" >> .env
 }
-set_key CRM_LOGIN_EMAIL '$CrmEmail'
-set_key CRM_LOGIN_PASSWORD '$CrmPassword'
-set_key CRM_DESK_ID '$DeskId'
-set_key CRM_DEVICE_ID '$DeskId'
+set_key CRM_LOGIN_EMAIL '__CRM_EMAIL__'
+set_key CRM_LOGIN_PASSWORD '__CRM_PASSWORD__'
+set_key CRM_DESK_ID '__CRM_DESK__'
+set_key CRM_DEVICE_ID '__CRM_DESK__'
 set_key CRM_INGEST_ENABLED true
 echo 'CRM keys now in .env (password masked):'
 grep -E '^CRM' .env | sed -E 's/(PASSWORD=).+/\1***MASKED***/'
 sudo systemctl restart sfa-backend
-for i in \$(seq 1 30); do
+for i in $(seq 1 30); do
   if curl -fsS http://localhost:8000/healthz >/dev/null 2>&1; then
-    echo "backend healthy after ~\$((i*2))s"
+    echo "backend healthy after ~$((i*2))s"
     break
   fi
   sleep 2
 done
-echo 'waiting for the first ingest tick (up to 4 min)...'
-for i in \$(seq 1 48); do
+echo 'waiting for the first CRM ingest tick (up to ~4 min)...'
+for i in $(seq 1 48); do
   sleep 5
-  if sudo journalctl -u sfa-backend --since -5min --no-pager | grep -qiE 'crm.*ingest|ingest.*created'; then
-    sudo journalctl -u sfa-backend --since -5min --no-pager | grep -iE 'crm|ingest' | tail -5
+  if sudo journalctl -u sfa-backend --since -6min --no-pager | grep -qiE 'crm.*ingest|ingest.*created|qty-sync'; then
     break
   fi
 done
-"@
+sudo journalctl -u sfa-backend --since -6min --no-pager | grep -iE 'crm|ingest' | tail -8
+'@
+
+$remote = $remote.Replace('__CRM_EMAIL__', $CrmEmail).
+                  Replace('__CRM_PASSWORD__', $CrmPassword).
+                  Replace('__CRM_DESK__', $DeskId)
 
 ssh -i $Pem -o StrictHostKeyChecking=accept-new $BoxHost $remote
 Write-Host ""
-Write-Host "Now check the CRM Ingestion page - status should be OK (not DISABLED)." -ForegroundColor Cyan
+Write-Host "Check the CRM Ingestion page - status should be OK, not DISABLED." -ForegroundColor Cyan
