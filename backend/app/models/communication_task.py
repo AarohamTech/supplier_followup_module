@@ -45,6 +45,18 @@ class CommunicationTask(Base):
     task_source: Mapped[str] = mapped_column(String(16), default="SUPPLIER", index=True)
     created_from_mail_id: Mapped[int | None] = mapped_column(Integer, index=True)
 
+    # Provenance for tasks mirrored in from another system over /api/bridge.
+    # `(external_system, external_ref)` is the idempotency key — one task per
+    # ZanFlow material line however many times ZanFlow pushes it. Enforced in
+    # `services/bridge_service.py` rather than as a unique constraint, because
+    # `core/schema_evolve.py` only ever ADDs columns to the live schema (the
+    # same reason `users.username` uniqueness lives in app code).
+    external_system: Mapped[str | None] = mapped_column(String(32), index=True)
+    external_ref: Mapped[str | None] = mapped_column(String(64), index=True)
+    #: Deep link back into the owning system, so whoever picks the task up can
+    #: open the material line it came from.
+    external_url: Mapped[str | None] = mapped_column(String(512))
+
     # Content
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text)

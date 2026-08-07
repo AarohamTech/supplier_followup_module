@@ -38,3 +38,7 @@ docker compose -f deploy/docker-compose.yml up --build
 - DB:       localhost:5432 (postgres/postgres)
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full design, schema, AI strategy and phase-wise rollout plan.
+
+Tasks also arrive from **ZanFlow Materials**: assigning a material line there
+creates a task here for the same person, and their work on it goes back. See
+[docs/ZANFLOW_BRIDGE_API.md](docs/ZANFLOW_BRIDGE_API.md).

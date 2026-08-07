@@ -22,6 +22,7 @@ from ..schemas.communication_task import (
     CommunicationTaskUpdate,
 )
 from ..services import ai_service
+from ..services import bridge_service as bridge
 from ..services import task_analytics_service as analytics
 from ..services import task_assignment_service as assign
 from ..services import task_collaboration_service as collab
@@ -185,6 +186,20 @@ def update_task(
 
     db.commit()
     db.refresh(row)
+
+    # If this task is mirroring a ZanFlow material line, tell ZanFlow. One hook
+    # covers the staff board, the employee portal and the supplier portal,
+    # because all three delegate their PATCH here. Best effort by construction —
+    # `safe_notify` never raises, so a ZanFlow outage cannot fail this request.
+    if "status" in changes or "progress_percent" in changes:
+        bridge.safe_notify(
+            db, row,
+            event="STATUS_CHANGED" if "status" in changes else "PROGRESS_CHANGED",
+            status=row.status,
+            progress_percent=row.progress_percent,
+            actor=actor_name,
+            actor_user_id=actor.id,
+        )
     return row
 
 
@@ -348,6 +363,17 @@ def add_task_comment(
         )
     except ValueError:
         raise HTTPException(404, "Task not found")
+
+    # The other chokepoint: the employee portal posts its comments through this
+    # same function, so a bridged task's discussion reaches the material line
+    # whichever surface it was typed into.
+    bridge.safe_notify(
+        db, db.get(CommunicationTask, task_id),
+        event="COMMENT_ADDED",
+        comment=text,
+        actor=assign.display_name(actor),
+        actor_user_id=actor.id,
+    )
     return _comment_out(row)
 
 

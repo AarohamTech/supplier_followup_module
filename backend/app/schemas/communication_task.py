@@ -112,6 +112,17 @@ class CommunicationTaskOut(CommunicationTaskBase):
         return v if v in ("SUPPLIER", "CUSTOMER", "INTERNAL", "ESCALATION") else "INTERNAL"
 
     id: int
+
+    # Where the task came from, when it was mirrored in over /api/bridge.
+    # Declared here rather than on `CommunicationTaskBase` on purpose: putting
+    # them on the base would give `CommunicationTaskCreate` the same fields and
+    # let a staff user hand-write a task claiming to be a ZanFlow material
+    # line — and then collide with the real one on the idempotency key. The
+    # upsert in `bridge_service` stays the only writer.
+    external_system: Optional[str] = None
+    external_ref: Optional[str] = None
+    external_url: Optional[str] = None
+
     comments_count: int = 0
     attachment_count: int = 0
     closed_at: Optional[datetime] = None

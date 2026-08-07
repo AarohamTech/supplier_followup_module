@@ -42,9 +42,21 @@ class Settings(BaseSettings):
     SEED_ADMIN_PASSWORD: str = Field(default="ChangeMe!123")
     SEED_ADMIN_NAME: str = Field(default="System Admin")
 
-    # Shared secret required to call the /api/webhooks/* endpoints (machine-to-
-    # machine). When empty, the webhook endpoints reject all calls (fail closed).
+    # Shared secret required to call the /api/webhooks/* and /api/bridge/*
+    # endpoints (machine-to-machine). When empty, both reject all calls
+    # (fail closed).
     WEBHOOK_SECRET: str | None = Field(default=None)
+
+    # ── ZanFlow bridge ────────────────────────────────────────────────────────
+    # ZanFlow Materials pushes a task here whenever it assigns a material line;
+    # that direction is inbound over /api/bridge/*, guarded by WEBHOOK_SECRET
+    # above. These three are the other direction — where to tell ZanFlow that a
+    # bridged task moved, and the secret it will check. Leave the base URL empty
+    # and the callback is a silent no-op: inbound still works, the mirror over
+    # there just stops updating.
+    ZANFLOW_API_BASE: str = Field(default="")
+    ZANFLOW_CALLBACK_SECRET: str | None = Field(default=None)
+    ZANFLOW_TIMEOUT_SECONDS: int = Field(default=10)
 
     # ── LLM / AI (OpenAI-compatible endpoint, e.g. NVIDIA NIM) ────────────────
     LLM_ENABLED: bool = Field(default=False)

@@ -46,6 +46,7 @@ from .routers import (
     employee_accounts,
     supplier_assignments,
     po_view,
+    bridge,
     settings as settings_router,
 )
 from .scheduler import register_all_specs, start_scheduler, stop_scheduler
@@ -138,9 +139,14 @@ app.add_middleware(
 # Resolve the active company (schema) per request from the JWT company claim.
 app.add_middleware(TenantMiddleware)
 
-# Open routers (no auth): login + machine-to-machine webhooks.
+# Open routers (no session auth): login, machine-to-machine webhooks, and the
+# ZanFlow bridge. The last two are not open in any meaningful sense — both are
+# guarded at the router level by the shared secret in WEBHOOK_SECRET, which
+# fails closed when it is unset. They sit here because their callers are other
+# systems, which have no session to present.
 app.include_router(auth.router)
 app.include_router(webhooks.router)
+app.include_router(bridge.router)
 
 # Admin-only user management (guards itself at the router level).
 app.include_router(users.router)
