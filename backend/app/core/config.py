@@ -57,6 +57,14 @@ class Settings(BaseSettings):
     ZANFLOW_API_BASE: str = Field(default="")
     ZANFLOW_CALLBACK_SECRET: str | None = Field(default=None)
     ZANFLOW_TIMEOUT_SECONDS: int = Field(default=10)
+    # Which company's schema bridged tasks belong in, as a company code.
+    #
+    # Every other route gets its company from the JWT, but the bridge is
+    # authenticated by a shared secret and has no token to read — so without
+    # this it silently writes to the default company, and staff signed in to
+    # any other one see none of the tasks ZanFlow has sent. Empty keeps the old
+    # behaviour (the default company).
+    ZANFLOW_COMPANY: str = Field(default="")
 
     # ── LLM / AI (OpenAI-compatible endpoint, e.g. NVIDIA NIM) ────────────────
     LLM_ENABLED: bool = Field(default=False)

@@ -85,6 +85,56 @@ class SecretTests(unittest.TestCase):
         self.assertEqual(caught.exception.status_code, 401)
 
 
+class CompanyBindingTests(unittest.TestCase):
+    """Which company's schema a bridged task lands in.
+
+    Every other route takes its company from the JWT. This one has no JWT, so
+    without an explicit binding it writes to the default company — and staff
+    signed in to any other company see none of the tasks ZanFlow has sent.
+    That failure is invisible from both ends: the push says SYNCED and the task
+    exists, just in a schema nobody is looking at. Found in production.
+    """
+
+    def _schema_during(self):
+        from app.core.tenant import get_current_schema
+        gen = bridge_router.use_zanflow_company()
+        next(gen)
+        seen = get_current_schema()
+        try:
+            next(gen)
+        except StopIteration:
+            pass
+        return seen, get_current_schema()
+
+    def test_unset_keeps_the_default_company(self):
+        with patch.object(bridge_router.settings, "ZANFLOW_COMPANY", ""):
+            during, after = self._schema_during()
+        self.assertEqual(during, "public")
+        self.assertEqual(after, "public")
+
+    def test_a_company_code_binds_that_schema(self):
+        with patch.object(bridge_router.settings, "ZANFLOW_COMPANY", "101"), \
+             patch.object(bridge_router.company_service, "get_schema_for_code",
+                          return_value="company_101"):
+            during, after = self._schema_during()
+        self.assertEqual(during, "company_101")
+        self.assertEqual(after, "public", "the schema must not leak past the request")
+
+    def test_an_unresolvable_code_falls_back_instead_of_500ing(self):
+        """A typo in the env must not take the whole door down — the task still
+        arrives, in the default company, and the log says why."""
+        with patch.object(bridge_router.settings, "ZANFLOW_COMPANY", "nope"), \
+             patch.object(bridge_router.company_service, "get_schema_for_code",
+                          side_effect=ValueError("no such company")):
+            during, after = self._schema_during()
+        self.assertEqual(during, "public")
+        self.assertEqual(after, "public")
+
+    def test_the_binding_is_actually_attached_to_the_router(self):
+        deps = [d.dependency for d in bridge_router.router.dependencies]
+        self.assertIn(bridge_router.use_zanflow_company, deps)
+
+
 class UpsertRouteTests(unittest.TestCase):
     def test_creating_reports_created_and_logs_the_activity(self):
         with _temp_db() as db:

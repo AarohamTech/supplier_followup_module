@@ -18,20 +18,53 @@ import logging
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
+from ..core.config import settings
+from ..core.tenant import DEFAULT_SCHEMA, reset_current_schema, set_current_schema
 from ..database import get_db
 from ..models.user import User
 from ..schemas.bridge import BridgeTaskIn, BridgeTaskOut
 from ..services import bridge_service as bridge
+from ..services import company_service
 from ..services import task_assignment_service as assign
 from ..services import task_collaboration_service as collab
 from .webhooks import require_webhook_secret
 
 log = logging.getLogger(__name__)
 
+
+def use_zanflow_company():
+    """Bind the company whose schema bridged tasks belong in.
+
+    `TenantMiddleware` reads the company from the JWT, and this router has no
+    JWT — its caller is a machine holding a shared secret. So without this
+    every bridged task lands in the *default* company, and anyone signed in to
+    a different one sees nothing ZanFlow has sent. That is not a visible
+    failure: the push reports SYNCED, the task exists, and it is simply in a
+    schema the person looking is not reading.
+
+    Set before the handler runs, which is early enough: the engine pins
+    `search_path` when a connection is *checked out*, and the session from
+    `get_db` has not issued a query yet.
+    """
+    schema = DEFAULT_SCHEMA
+    code = (settings.ZANFLOW_COMPANY or "").strip()
+    if code:
+        try:
+            schema = company_service.get_schema_for_code(code)
+        except Exception:  # noqa: BLE001 — a bad code must not take the door down
+            log.warning("bridge: ZANFLOW_COMPANY=%r did not resolve; using %s",
+                        code, DEFAULT_SCHEMA)
+    token = set_current_schema(schema)
+    try:
+        yield
+    finally:
+        reset_current_schema(token)
+
+
 router = APIRouter(
     prefix="/api/bridge",
     tags=["bridge"],
-    dependencies=[Depends(require_webhook_secret)],
+    dependencies=[Depends(require_webhook_secret), Depends(use_zanflow_company)],
 )
 
 
