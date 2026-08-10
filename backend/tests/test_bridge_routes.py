@@ -22,10 +22,11 @@ from sqlalchemy.orm import sessionmaker  # noqa: E402
 
 from app.database import Base  # noqa: E402
 from app.models import CommunicationTask, User  # noqa: E402
+from app.models.task_collaboration import TaskComment  # noqa: E402
 from app.routers import bridge as bridge_router  # noqa: E402
 from app.routers import communication as comm  # noqa: E402
 from app.routers.webhooks import require_webhook_secret  # noqa: E402
-from app.schemas.bridge import BridgeAssignee, BridgeTaskIn  # noqa: E402
+from app.schemas.bridge import BridgeAssignee, BridgeCommentIn, BridgeTaskIn  # noqa: E402
 from app.schemas.communication_task import CommunicationTaskUpdate  # noqa: E402
 from app.services import bridge_service as svc  # noqa: E402
 
@@ -96,15 +97,40 @@ class CompanyBindingTests(unittest.TestCase):
     """
 
     def _schema_during(self):
+        """Drive the dependency the way FastAPI does — as an async generator.
+
+        The first version of this helper called it synchronously with `next()`,
+        which passed against a *sync* dependency and hid the bug that mattered:
+        FastAPI runs sync generator dependencies in a threadpool, so setup and
+        teardown can land in different contexts and `reset_current_schema`
+        raises `ValueError: <Token> was created in a different Context` — a 500
+        on every bridge call, raised after the handler had already committed.
+        Driving it as async is what the framework actually does.
+        """
+        import asyncio
+
         from app.core.tenant import get_current_schema
-        gen = bridge_router.use_zanflow_company()
-        next(gen)
-        seen = get_current_schema()
-        try:
-            next(gen)
-        except StopIteration:
-            pass
-        return seen, get_current_schema()
+
+        async def run():
+            gen = bridge_router.use_zanflow_company()
+            await gen.__anext__()
+            seen = get_current_schema()
+            try:
+                await gen.__anext__()
+            except StopAsyncIteration:
+                pass
+            return seen, get_current_schema()
+
+        return asyncio.run(run())
+
+    def test_the_dependency_is_async_so_its_token_can_be_reset(self):
+        """Pinned as its own test because the failure is invisible in a sync
+        unit test and only appears under the real server."""
+        import inspect
+        assert inspect.isasyncgenfunction(bridge_router.use_zanflow_company), (
+            "must be an async generator, or FastAPI runs it in a threadpool and "
+            "the ContextVar token cannot be reset"
+        )
 
     def test_unset_keeps_the_default_company(self):
         with patch.object(bridge_router.settings, "ZANFLOW_COMPANY", ""):
@@ -182,6 +208,64 @@ class UpsertRouteTests(unittest.TestCase):
             row = db.query(CommunicationTask).one()
             self.assertEqual(row.task_source, "INTERNAL")
         self.assertNotIn("task_source", BridgeTaskIn.model_fields)
+
+
+class InboundCommentTests(unittest.TestCase):
+    """Comments arriving from ZanFlow, and the reason they use their own door."""
+
+    def test_a_comment_lands_on_the_bridged_task(self):
+        with _temp_db() as db:
+            bridge_router.upsert_bridge_task(_task_in(), db=db)
+            out = bridge_router.add_bridge_comment(
+                "MR-1042-M2",
+                BridgeCommentIn(comment="Store has checked stock.", author="Ninad Pawar"),
+                db=db,
+            )
+            row = db.query(TaskComment).one()
+            self.assertEqual(row.comment, "Store has checked stock.")
+            self.assertEqual(row.created_by, "Ninad Pawar")
+            self.assertIsNone(row.created_by_id, "the author has no account here")
+            self.assertEqual(out["task_id"], row.task_id)
+
+    def test_it_does_not_notify_zanflow_back(self):
+        """The loop guard. `communication.add_task_comment` calls notify_zanflow
+        on its way out; if this reused that, the comment would be sent straight
+        back to the system it came from, written to the line again, and pushed
+        here again."""
+        with _temp_db() as db:
+            bridge_router.upsert_bridge_task(_task_in(), db=db)
+            with patch.object(svc.settings, "ZANFLOW_API_BASE", "https://zf.example"), \
+                 patch.object(svc.settings, "ZANFLOW_CALLBACK_SECRET", "s3cret"), \
+                 patch.object(svc.requests, "post") as post:
+                bridge_router.add_bridge_comment(
+                    "MR-1042-M2", BridgeCommentIn(comment="no echo please"), db=db
+                )
+            post.assert_not_called()
+
+    def test_the_comment_counter_moves_so_the_card_is_honest(self):
+        with _temp_db() as db:
+            bridge_router.upsert_bridge_task(_task_in(), db=db)
+            bridge_router.add_bridge_comment(
+                "MR-1042-M2", BridgeCommentIn(comment="one"), db=db)
+            bridge_router.add_bridge_comment(
+                "MR-1042-M2", BridgeCommentIn(comment="two"), db=db)
+            task = db.query(CommunicationTask).one()
+            self.assertEqual(task.comments_count, 2)
+
+    def test_an_unknown_ref_is_404(self):
+        with _temp_db() as db:
+            with self.assertRaises(HTTPException) as caught:
+                bridge_router.add_bridge_comment(
+                    "MR-9999-M9", BridgeCommentIn(comment="hello"), db=db)
+            self.assertEqual(caught.exception.status_code, 404)
+
+    def test_an_empty_comment_is_refused(self):
+        with _temp_db() as db:
+            bridge_router.upsert_bridge_task(_task_in(), db=db)
+            with self.assertRaises(HTTPException) as caught:
+                bridge_router.add_bridge_comment(
+                    "MR-1042-M2", BridgeCommentIn(comment="   "), db=db)
+            self.assertEqual(caught.exception.status_code, 422)
 
 
 class CallbackHookTests(unittest.TestCase):

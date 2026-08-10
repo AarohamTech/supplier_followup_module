@@ -44,6 +44,18 @@ class BridgeTaskIn(BaseModel):
     assigned_by: Optional[str] = Field(default=None, max_length=128)
 
 
+class BridgeCommentIn(BaseModel):
+    """A comment made on the material line, coming the other way.
+
+    `author` is a display name and nothing more — the person typing it has an
+    account in the sending system, not in this one, so there is no id to
+    attribute it to. It goes on the card as the comment's `created_by`.
+    """
+
+    comment: str = Field(min_length=1)
+    author: Optional[str] = Field(default=None, max_length=128)
+
+
 class BridgeTaskOut(BaseModel):
     task_id: int
     created: bool

@@ -15,14 +15,14 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from ..core.config import settings
 from ..core.tenant import DEFAULT_SCHEMA, reset_current_schema, set_current_schema
 from ..database import get_db
 from ..models.user import User
-from ..schemas.bridge import BridgeTaskIn, BridgeTaskOut
+from ..schemas.bridge import BridgeCommentIn, BridgeTaskIn, BridgeTaskOut
 from ..services import bridge_service as bridge
 from ..services import company_service
 from ..services import task_assignment_service as assign
@@ -32,8 +32,18 @@ from .webhooks import require_webhook_secret
 log = logging.getLogger(__name__)
 
 
-def use_zanflow_company():
+async def use_zanflow_company():
     """Bind the company whose schema bridged tasks belong in.
+
+    **Async on purpose.** FastAPI runs a *sync* generator dependency in a
+    threadpool, and the code before and after the `yield` can end up in
+    different contexts — so the token from `set_current_schema` cannot be reset
+    and the teardown raises `ValueError: <Token> was created in a different
+    Context`, turning every call into a 500 *after* the handler has already
+    committed. An async dependency stays on one task, so setup and teardown
+    share a context; the value still reaches the sync handler because
+    `run_in_threadpool` copies the context in. `TenantMiddleware` avoids the
+    same trap by being raw ASGI rather than `BaseHTTPMiddleware`.
 
     `TenantMiddleware` reads the company from the JWT, and this router has no
     JWT — its caller is a machine holding a shared secret. So without this
@@ -144,6 +154,46 @@ def upsert_bridge_task(payload: BridgeTaskIn, db: Session = Depends(get_db)) -> 
         assigned_to=task.assigned_to,
         unmapped_assignee=unmapped,
     )
+
+
+@router.post("/tasks/{external_ref}/comments", status_code=201)
+def add_bridge_comment(
+    external_ref: str,
+    payload: BridgeCommentIn,
+    db: Session = Depends(get_db),
+    external_system: str = "zanflow",
+) -> dict:
+    """A comment made on the material line, mirrored onto the task.
+
+    Deliberately NOT routed through `communication.add_task_comment`, which is
+    what the staff board and the portals use. That function calls
+    `notify_zanflow` on the way out — so reusing it here would send this very
+    comment straight back to the system it came from, which would write it to
+    the line again, which would push it here again. The two directions stay
+    loop-free because each one enters by a door the other never uses.
+    """
+    task = bridge.find_external_task(
+        db, external_system=external_system, external_ref=external_ref
+    )
+    if task is None:
+        raise HTTPException(404, f"No bridged task for {external_ref!r}")
+
+    text = (payload.comment or "").strip()
+    if not text:
+        raise HTTPException(422, "comment is required")
+
+    author = (payload.author or "").strip() or "ZanFlow"
+    row = collab.add_comment(
+        db,
+        task_id=task.id,
+        # Attributed in the text: the author has no account here, and
+        # `created_by` is what the card shows.
+        comment=text,
+        created_by=author,
+        created_by_id=None,
+    )
+    db.commit()
+    return {"id": row.id, "task_id": task.id, "created_by": author}
 
 
 @router.get("/tasks/{external_ref}")
