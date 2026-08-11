@@ -87,10 +87,12 @@ def switch_company(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> Token:
-    # Portal accounts are pinned to their own company — no switching.
-    if user.supplier_id is not None or user.emp_code is not None:
+    # Supplier portal accounts are external and scoped to one company's supplier
+    # master — they stay pinned. Staff (any role) and employee portal logins are
+    # internal to the group and may move between companies.
+    if user.supplier_id is not None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
-                            detail="Portal accounts cannot switch company")
+                            detail="Supplier accounts cannot switch company")
     target = company_service.get_by_code(db, payload.company)
     if target is None or not target.is_active:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,

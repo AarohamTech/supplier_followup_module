@@ -6,6 +6,7 @@ import { LogOut, Menu } from "lucide-react";
 import { Logo, ZanvarMark } from "@/components/brand/Logo";
 import { useAuth } from "@/lib/auth";
 import EmployeeSidebar from "@/components/eportal/EmployeeSidebar";
+import CompanySwitcher from "@/components/layout/CompanySwitcher";
 import NotificationBell from "@/components/NotificationBell";
 import ThemeToggle from "@/components/layout/ThemeToggle";
 
@@ -24,10 +25,11 @@ export default function EmployeeShell({
   onMenuClick: () => void;
   onClose: () => void;
 }) {
-  const { user, logout } = useAuth();
+  const { user, company, logout } = useAuth();
   const pathname = usePathname();
   const name = user?.full_name || user?.username || user?.email || "Employee";
   const initial = name.charAt(0).toUpperCase();
+  const brandName = company?.brand_name || "H-Connect";
 
   return (
     <div className="flex min-h-screen flex-col bg-brand-surface">
@@ -49,12 +51,13 @@ export default function EmployeeShell({
             <div className="flex min-w-0 flex-col">
               <span className="truncate text-sm font-semibold leading-tight text-brand-dark sm:text-[15px]">Employee Portal</span>
               <span className="hidden text-xs text-brand-muted leading-tight sm:block">
-                Your assigned purchase orders
+                {brandName} · your assigned purchase orders
               </span>
             </div>
           </div>
           <div className="flex-1" />
           <div className="flex items-center gap-1 sm:gap-2.5">
+            <CompanySwitcher />
             <ThemeToggle />
             <NotificationBell />
             <div className="hidden h-6 w-px bg-brand-border sm:block" />
