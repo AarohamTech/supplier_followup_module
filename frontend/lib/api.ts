@@ -104,6 +104,7 @@ import type {
   CrmIngestLog,
   AppNotification,
   AdminDigestConfig,
+  MailSendWindow,
 } from "./types";
 import { getToken, setToken, LOGIN_PATH } from "./auth-token";
 
@@ -596,6 +597,22 @@ export const api = {
       "/api/settings/admin-digest/test",
       { method: "POST" },
     ),
+
+  getMailWindow: () =>
+    http<{ mail_window: MailSendWindow }>("/api/settings/mail-window"),
+
+  updateMailWindow: (
+    values: Partial<
+      Pick<
+        MailSendWindow,
+        "enabled" | "timezone" | "start_hour" | "end_hour" | "per_minute_limit" | "send_interval_minutes"
+      >
+    >,
+  ) =>
+    http<{ mail_window: MailSendWindow }>("/api/settings/mail-window", {
+      method: "PUT",
+      body: JSON.stringify(values),
+    }),
 
   listDraftRules: () =>
     http<{ rules: DraftRule[]; followup_intervals_hours: Record<string, number> }>(

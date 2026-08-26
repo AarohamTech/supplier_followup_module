@@ -1706,6 +1706,20 @@ export interface AdminDigestConfig {
   last_sent_date: string | null;
 }
 
+// ─── Auto follow-up send window ──────────────────────────────────────────────
+export interface MailSendWindow {
+  enabled: boolean;
+  timezone: string;
+  start_hour: number;
+  end_hour: number;
+  per_minute_limit: number;
+  window_open: boolean;
+  /** Local "HH:00" at which the window next flips; "" when it never closes. */
+  next_change_local: string;
+  send_interval_minutes: number;
+  effective_per_minute: number | null;
+}
+
 // ─── Notifications ───────────────────────────────────────────────────────────
 export interface AppNotification {
   id: number;

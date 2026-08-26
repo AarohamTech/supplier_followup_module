@@ -6,6 +6,10 @@ Exposes:
     PUT  /api/settings/scheduler
     PUT  /api/settings/followup
 
+  Auto follow-up send window:
+    GET  /api/settings/mail-window
+    PUT  /api/settings/mail-window
+
   Mail engine control:
     GET  /api/settings/mail-engine
     POST /api/settings/test-smtp
@@ -25,6 +29,8 @@ Exposes:
 """
 from __future__ import annotations
 
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
@@ -34,7 +40,13 @@ from ..core.deps import get_current_user, require_admin, require_manager
 from ..database import get_db
 from ..models.mail_template import MailTemplate
 from ..scheduler import apply_scheduler_settings
-from ..services import admin_digest_service, mail_config_service, mail_engine_service, settings_service
+from ..services import (
+    admin_digest_service,
+    engine_registry,
+    mail_config_service,
+    mail_engine_service,
+    settings_service,
+)
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
@@ -153,6 +165,62 @@ def send_admin_digest_test(
     if not current_user.email:
         raise HTTPException(status_code=400, detail="Your account has no email address.")
     return admin_digest_service.send_test_digest(db, current_user.email)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Auto follow-up send window
+# ─────────────────────────────────────────────────────────────────────────────
+_SEND_JOB = "mail_send_cron"
+
+
+class MailSendWindowUpdate(BaseModel):
+    enabled: bool | None = None
+    timezone: str | None = None
+    start_hour: int | None = None
+    end_hour: int | None = None
+    per_minute_limit: int | None = None
+    # The cap is defined per MINUTE, which only holds if the send job actually
+    # runs once a minute. Exposed here so the admin sets both in one place
+    # instead of discovering the mismatch from unsent mail.
+    send_interval_minutes: int | None = None
+
+
+def _mail_window_payload(db: Session) -> dict:
+    cfg = settings_service.get_mail_send_window(db)
+    now = datetime.utcnow()
+    job = engine_registry.get_job(db, _SEND_JOB)
+    interval = int(getattr(job, "interval_minutes", 0) or 0)
+    return {
+        **cfg,
+        "window_open": settings_service.window_is_open(cfg, now),
+        "next_change_local": settings_service.next_window_change(cfg, now),
+        "send_interval_minutes": interval,
+        # What the queue can actually clear in a minute given the real cadence.
+        "effective_per_minute": (
+            round(cfg["per_minute_limit"] / interval, 1) if interval > 0 else None
+        ),
+    }
+
+
+@router.get("/mail-window")
+def get_mail_window_settings(db: Session = Depends(get_db)) -> dict:
+    return {"mail_window": _mail_window_payload(db)}
+
+
+@router.put("/mail-window", dependencies=_MGR)
+def update_mail_window_settings(
+    payload: MailSendWindowUpdate, db: Session = Depends(get_db)
+) -> dict:
+    values = {k: v for k, v in payload.model_dump().items() if v is not None}
+    interval = values.pop("send_interval_minutes", None)
+    if values:
+        settings_service.set_mail_send_window(db, values)
+    if interval is not None:
+        if interval < 1:
+            raise HTTPException(400, "send_interval_minutes must be at least 1")
+        mail_engine_service.update_cron_job(db, _SEND_JOB, interval_minutes=interval)
+        apply_scheduler_settings()
+    return {"mail_window": _mail_window_payload(db)}
 
 
 @router.get("/draft-rules")

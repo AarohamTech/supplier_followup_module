@@ -16,7 +16,7 @@ from email.utils import make_msgid, parseaddr
 from html import unescape
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from ..core.config import settings
@@ -28,11 +28,15 @@ from ..models.procurement import ProcurementRecord
 from ..services import brand_email
 from ..services import communication_message_service as msg_service
 from ..services import mail_config_service
+from ..services import settings_service
 from ..services.mail_config_service import SmtpConfig
 
 log = logging.getLogger(__name__)
 
 _TAG_RE = re.compile(r"<[^>]+>")
+
+# Auto follow-ups are the only outgoing mail the send window holds back.
+AUTO_FOLLOWUP_MAIL_TYPE_PREFIX = "PO_FOLLOWUP"
 
 
 def _html_to_text(html: str | None) -> str:
@@ -343,39 +347,73 @@ def _send_bucket(message_ids: list[int], schema: str) -> list[dict[str, Any]]:
         return results
 
 
-def send_ready_messages(limit: int | None = None, *, schema: str | None = None) -> dict[str, Any]:
+def send_ready_messages(
+    limit: int | None = None,
+    *,
+    schema: str | None = None,
+    now: datetime | None = None,
+) -> dict[str, Any]:
     active_schema = schema or get_current_schema()
+    moment = now or datetime.utcnow()
 
     db: Session = SessionLocal()
     try:
         ready, reason = mail_config_service.get_smtp_config(db).ready()
+        window = settings_service.get_mail_send_window(db)
     finally:
         db.close()
     if not ready:
         log.info("Mail send worker disabled: %s", reason)
         return {"enabled": False, "reason": reason, "attempted": 0, "results": []}
 
+    window_open = settings_service.window_is_open(window, moment)
     if limit is None:
-        limit = int(getattr(settings, "MAIL_SEND_BATCH_LIMIT", 50) or 50)
+        # The cap covers the whole batch (auto + staff mail), so combined
+        # throughput stays under the SMTP provider's per-minute ceiling.
+        limit = int(
+            window.get("per_minute_limit")
+            or getattr(settings, "MAIL_SEND_BATCH_LIMIT", 50)
+            or 50
+        )
 
     db: Session = SessionLocal()
     try:
+        stmt = select(CommunicationMessage.id).where(
+            CommunicationMessage.direction == "OUTGOING",
+            CommunicationMessage.status == "READY",
+        )
+        if not window_open:
+            # Hold auto follow-ups until the window opens. The IS NULL half is
+            # load-bearing: in SQL `NULL NOT LIKE 'x%'` is NULL, not true, so
+            # without it every staff-composed mail (mail_type IS NULL) would be
+            # held too.
+            stmt = stmt.where(
+                or_(
+                    CommunicationMessage.mail_type.is_(None),
+                    CommunicationMessage.mail_type.notlike(
+                        f"{AUTO_FOLLOWUP_MAIL_TYPE_PREFIX}%"
+                    ),
+                )
+            )
         ids = list(
             db.scalars(
-                select(CommunicationMessage.id)
-                .where(
-                    CommunicationMessage.direction == "OUTGOING",
-                    CommunicationMessage.status == "READY",
-                )
-                .order_by(CommunicationMessage.created_at.asc())
-                .limit(limit)
+                stmt.order_by(CommunicationMessage.created_at.asc()).limit(limit)
             ).all()
         )
     finally:
         db.close()
 
+    window_state = {
+        "window_open": window_open,
+        "auto_followups_held": not window_open,
+        "per_minute_limit": limit,
+    }
+
     if not ids:
-        return {"enabled": True, "attempted": 0, "sent": 0, "results": [], "ran_at": datetime.utcnow().isoformat()}
+        return {
+            "enabled": True, "attempted": 0, "sent": 0, "results": [],
+            "ran_at": datetime.utcnow().isoformat(), **window_state,
+        }
 
     # Partition into disjoint round-robin buckets so no two workers touch the same
     # message (no double-send), then send buckets in parallel.
@@ -397,6 +435,7 @@ def send_ready_messages(limit: int | None = None, *, schema: str | None = None) 
         "workers": workers,
         "results": results,
         "ran_at": datetime.utcnow().isoformat(),
+        **window_state,
     }
 
 

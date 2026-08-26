@@ -11,7 +11,9 @@ Defaults fall back to ``settings`` (env vars) when no row is present.
 from __future__ import annotations
 
 import re
+from datetime import datetime, timezone
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
 
@@ -196,3 +198,86 @@ def _int_map(raw: Any, *, lo: int, hi: int) -> dict[str, int]:
             except (TypeError, ValueError):
                 continue
     return out
+
+
+# ── auto follow-up send window ───────────────────────────────────────────────
+# Auto follow-ups (mail_type PO_FOLLOWUP_*) are held during office hours and
+# drained overnight. Staff-composed mail ignores the window entirely.
+MAIL_SEND_WINDOW_KEY = "mail_send_window"
+
+DEFAULT_MAIL_SEND_WINDOW: dict[str, Any] = {
+    "enabled": True,
+    "timezone": "Asia/Kolkata",
+    "start_hour": 19,  # window opens at 19:00 local
+    "end_hour": 8,     # and closes at 08:00 local
+    "per_minute_limit": 25,
+}
+
+_WINDOW_INT_FIELDS = (("start_hour", 0, 23), ("end_hour", 0, 23), ("per_minute_limit", 1, 200))
+
+
+def _merge_mail_send_window(stored: dict[str, Any]) -> dict[str, Any]:
+    d = DEFAULT_MAIL_SEND_WINDOW
+    merged: dict[str, Any] = {
+        "enabled": bool(stored.get("enabled", d["enabled"])),
+        "timezone": str(stored.get("timezone") or d["timezone"]),
+    }
+    for field, lo, hi in _WINDOW_INT_FIELDS:
+        merged[field] = _clamp_int(stored.get(field), d[field], lo, hi)
+    return merged
+
+
+def get_mail_send_window(db: Session) -> dict[str, Any]:
+    return _merge_mail_send_window(_get_raw(db, MAIL_SEND_WINDOW_KEY) or {})
+
+
+def set_mail_send_window(db: Session, values: dict[str, Any]) -> dict[str, Any]:
+    # Build a NEW dict rather than mutating the one _get_raw handed back: that is
+    # the same object SQLAlchemy holds on the row, so an in-place edit leaves the
+    # JSON column looking unchanged and the write is silently dropped.
+    existing = {**(_get_raw(db, MAIL_SEND_WINDOW_KEY) or {})}
+    if "enabled" in values:
+        existing["enabled"] = bool(values["enabled"])
+    if values.get("timezone"):
+        existing["timezone"] = str(values["timezone"])
+    for field, lo, hi in _WINDOW_INT_FIELDS:
+        if field in values:
+            existing[field] = _clamp_int(values[field], DEFAULT_MAIL_SEND_WINDOW[field], lo, hi)
+    _set_raw(db, MAIL_SEND_WINDOW_KEY, existing)
+    db.commit()
+    return _merge_mail_send_window(existing)
+
+
+def window_is_open(cfg: dict[str, Any], now_utc: datetime) -> bool:
+    """Is the auto follow-up send window open at ``now_utc``?
+
+    The window is a wall-clock band in ``cfg["timezone"]`` while the box runs
+    UTC, so the instant is converted before the hour is compared. A start hour
+    later than the end hour (19 -> 8) wraps midnight; equal hours mean "always
+    open", which is also what a disabled window means.
+    """
+    if not cfg.get("enabled", True):
+        return True
+    start = _clamp_int(cfg.get("start_hour"), DEFAULT_MAIL_SEND_WINDOW["start_hour"], 0, 23)
+    end = _clamp_int(cfg.get("end_hour"), DEFAULT_MAIL_SEND_WINDOW["end_hour"], 0, 23)
+    if start == end:
+        return True
+    try:
+        tz = ZoneInfo(str(cfg.get("timezone") or DEFAULT_MAIL_SEND_WINDOW["timezone"]))
+    except Exception:  # noqa: BLE001 - unknown tz name must not stop the mail
+        tz = ZoneInfo(DEFAULT_MAIL_SEND_WINDOW["timezone"])
+    hour = now_utc.replace(tzinfo=timezone.utc).astimezone(tz).hour
+    if start < end:
+        return start <= hour < end
+    return hour >= start or hour < end
+
+
+def next_window_change(cfg: dict[str, Any], now_utc: datetime) -> str:
+    """Local ``HH:00`` at which the window next flips, or "" if it never does."""
+    if not cfg.get("enabled", True):
+        return ""
+    start = _clamp_int(cfg.get("start_hour"), DEFAULT_MAIL_SEND_WINDOW["start_hour"], 0, 23)
+    end = _clamp_int(cfg.get("end_hour"), DEFAULT_MAIL_SEND_WINDOW["end_hour"], 0, 23)
+    if start == end:
+        return ""
+    return f"{(end if window_is_open(cfg, now_utc) else start):02d}:00"

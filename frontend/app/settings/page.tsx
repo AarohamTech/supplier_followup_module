@@ -12,6 +12,7 @@ import type {
 import { signalClass } from "@/lib/format";
 import PageHeader from "@/components/layout/PageHeader";
 import MainMailboxSettings from "@/components/settings/MainMailboxSettings";
+import MailSendWindowSettings from "@/components/settings/MailSendWindowSettings";
 import { Settings } from "lucide-react";
 
 const SCHEDULER_FIELDS: { key: string; label: string }[] = [
@@ -264,6 +265,9 @@ export default function SettingsPage() {
 
       {/* Editable main mailbox credentials (admin-only) */}
       <MainMailboxSettings />
+
+      {/* Auto follow-up send window (off-hours only, rate-capped) */}
+      <MailSendWindowSettings />
 
       {/* Cron jobs */}
       <div className="card p-5 space-y-3">
