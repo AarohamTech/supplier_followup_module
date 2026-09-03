@@ -38,11 +38,12 @@ _TAG_RE = re.compile(r"<[^>]+>")
 # Auto follow-ups are the only outgoing mail the send window holds back.
 AUTO_FOLLOWUP_MAIL_TYPE_PREFIX = "PO_FOLLOWUP"
 # Auto mail that must NOT wait for the off-hours window: the GREEN acknowledgement
-# (the supplier expects it the moment the PO is released) and the BLACK critical
-# escalation. Everything else under the PO_FOLLOWUP prefix (YELLOW / RED / GROUP)
-# is held until the window opens. Non-follow-up mail (credentials, compose,
-# customer replies) never had a prefix match and is never held.
-REALTIME_MAIL_TYPES: frozenset[str] = frozenset({"PO_FOLLOWUP_GREEN", "PO_FOLLOWUP_BLACK"})
+# (the supplier expects it the moment the PO is released). Everything else under
+# the PO_FOLLOWUP prefix (YELLOW / RED / BLACK / GROUP) is held until the window
+# opens; the client explicitly wants BLACK escalations to go out nightly too.
+# Non-follow-up mail (credentials, compose, customer replies) never had a prefix
+# match and is never held.
+REALTIME_MAIL_TYPES: frozenset[str] = frozenset({"PO_FOLLOWUP_GREEN"})
 
 
 def is_held_mail_type(mail_type: str | None) -> bool:
@@ -407,7 +408,7 @@ def send_ready_messages(
                     CommunicationMessage.mail_type.notlike(
                         f"{AUTO_FOLLOWUP_MAIL_TYPE_PREFIX}%"
                     ),
-                    # GREEN ack + BLACK escalation go out in real time.
+                    # GREEN ack goes out in real time.
                     CommunicationMessage.mail_type.in_(sorted(REALTIME_MAIL_TYPES)),
                 )
             )

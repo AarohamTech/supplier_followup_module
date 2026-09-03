@@ -200,18 +200,18 @@ class WorkerGateTests(unittest.TestCase):
         self.assertIn(ids["staff_untyped"], sent)
         self.assertFalse(out["window_open"])
 
-    def test_green_ack_black_escalation_and_credentials_go_out_in_office_hours(self) -> None:
+    def test_green_ack_and_credentials_go_out_in_office_hours_black_waits(self) -> None:
         # The supplier expects the acknowledgement the moment a PO is released,
-        # a critical escalation cannot wait for the night, and login details
-        # must arrive while the admin is still on the phone with the supplier.
+        # and login details must arrive while the admin is still on the phone
+        # with the supplier. BLACK escalations are chased nightly like RED.
         with _temp_db() as Session:
             ids = self._seed(Session)
             with self._worker(Session) as (w, sent):
                 w.send_ready_messages(now=IST_1200)
 
         self.assertIn(ids["auto_green"], sent)
-        self.assertIn(ids["auto_black"], sent)
         self.assertIn(ids["credentials"], sent)
+        self.assertNotIn(ids["auto_black"], sent)
         self.assertNotIn(ids["auto_red"], sent)
 
     def test_is_held_mail_type_matches_the_worker_gate(self) -> None:
@@ -220,7 +220,8 @@ class WorkerGateTests(unittest.TestCase):
         self.assertTrue(is_held_mail_type("PO_FOLLOWUP_RED"))
         self.assertTrue(is_held_mail_type("PO_FOLLOWUP_YELLOW"))
         self.assertTrue(is_held_mail_type("PO_FOLLOWUP_GROUP"))
-        for realtime in ("PO_FOLLOWUP_GREEN", "PO_FOLLOWUP_BLACK",
+        self.assertTrue(is_held_mail_type("PO_FOLLOWUP_BLACK"))
+        for realtime in ("PO_FOLLOWUP_GREEN",
                          "SUPPLIER_PORTAL_CREDENTIALS", "CUSTOMER_REPLY", None):
             self.assertFalse(is_held_mail_type(realtime), realtime)
 

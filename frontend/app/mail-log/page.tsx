@@ -143,8 +143,8 @@ export default function MailLogPage() {
       {data && data.window.enabled && !data.window.open && (
         <div className="flex items-center gap-2 rounded-md border border-sky-100 bg-sky-50 px-3 py-2 text-xs text-sky-800">
           <Clock size={14} />
-          Office hours: yellow and red auto follow-ups are held until {data.window.next_change} ({data.window.timezone}).
-          Green acknowledgements, black escalations, login credentials and staff mail go out immediately.
+          Office hours: yellow, red and black auto follow-ups are held until {data.window.next_change} ({data.window.timezone}).
+          Green acknowledgements, login credentials and staff mail go out immediately.
         </div>
       )}
 
