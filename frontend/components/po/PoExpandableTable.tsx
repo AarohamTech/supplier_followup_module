@@ -54,6 +54,16 @@ function fmtDateTime(d?: string | null) {
 }
 
 // PO numbers are recycled across suppliers, so scope every key by (supplier, PO).
+/** The number people know: the vendor PO document ref, else the internal counter. */
+function poDisplayRef(p: { supplier_po_no: string; po_short_ref?: string | null }): string {
+  return p.po_short_ref || p.supplier_po_no;
+}
+
+/** CRM "NOT APPROVED" / "NOT GENERATED" — visible to staff only, hidden from suppliers. */
+function isAwaitingApproval(status?: string | null): boolean {
+  return (status || "").trim().toUpperCase().startsWith("NOT ");
+}
+
 function poKey(p: EmployeePo): string {
   return `${(p.supplier_name || "").toUpperCase()}|${p.supplier_po_no}`;
 }
@@ -248,7 +258,7 @@ export default function PoExpandableTable({
             <tr>
               <th className="w-8 px-3 py-2" />
               <th className="px-3 py-2">Signal</th>
-              <th className="px-3 py-2">PO No</th>
+              <th className="px-3 py-2">Vendor PO No.</th>
               <th className="px-3 py-2">Vendor</th>
               <th className="px-3 py-2">Materials</th>
               <th className="px-3 py-2">Earliest Ship</th>
@@ -269,7 +279,13 @@ export default function PoExpandableTable({
                     </td>
                     <td className="px-3 py-2"><SignalChip signal={p.overall_signal} /></td>
                     <td className="px-3 py-2 font-medium text-brand-dark">
-                      {p.supplier_po_no}
+                      {poDisplayRef(p)}
+                      {p.po_short_ref && (
+                        <div className="text-[10px] font-normal text-brand-muted">
+                          #{p.supplier_po_no}
+                          {(p.po_ref_count ?? 0) > 1 ? ` · ${(p.po_ref_count ?? 0) - 1} more ref${(p.po_ref_count ?? 0) > 2 ? "s" : ""}` : ""}
+                        </div>
+                      )}
                       {p.escalated && (
                         <span className="ml-2 rounded bg-red-50 px-1.5 py-0.5 text-[10px] font-semibold text-signal-red">ESCALATED</span>
                       )}
@@ -291,6 +307,14 @@ export default function PoExpandableTable({
                     <td className="px-3 py-2">
                       <div className="flex items-center gap-1.5">
                         <span>{p.po_status || "—"}</span>
+                        {isAwaitingApproval(p.po_status) && (
+                          <span
+                            className="inline-flex rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-amber-700 ring-1 ring-inset ring-amber-100"
+                            title="Internal only — the supplier will not see this PO until it is approved in the CRM"
+                          >
+                            Internal
+                          </span>
+                        )}
                         <ReceiptChip status={p.receipt_status} />
                       </div>
                     </td>
@@ -381,7 +405,8 @@ export default function PoExpandableTable({
             <div className="border-b border-brand-border px-5 py-3 font-semibold text-sm">Request PO cancellation</div>
             <div className="px-5 py-4 space-y-2 text-sm">
               <p>
-                Raise a cancellation for PO <span className="font-semibold">{confirmPo.supplier_po_no}</span>
+                Raise a cancellation for PO <span className="font-semibold">{poDisplayRef(confirmPo)}</span>
+                {confirmPo.po_short_ref ? <span className="text-brand-muted"> (#{confirmPo.supplier_po_no})</span> : null}
                 {confirmPo.supplier_name ? <> ({confirmPo.supplier_name})</> : null}?
               </p>
               <p className="text-xs text-brand-muted">

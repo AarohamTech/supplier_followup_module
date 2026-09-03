@@ -1,6 +1,7 @@
 // Centralized API client and typed helpers.
 // Calls go through Next.js rewrites (/api/* → backend /api/*).
 import type {
+  MailLogResponse,
   AttachmentMeta,
   SentFeedItem,
   ProcurementRecord,
@@ -110,6 +111,20 @@ import { getToken, setToken, LOGIN_PATH } from "./auth-token";
 
 const API = ""; // same-origin, rewritten by next.config.mjs
 
+export type MailLogParams = {
+  status?: string; mail_type?: string; search?: string;
+  date_from?: string; date_to?: string; page?: number; size?: number;
+};
+
+function mailLogQuery(params: MailLogParams): string {
+  const q = new URLSearchParams();
+  (Object.keys(params) as (keyof MailLogParams)[]).forEach((k) => {
+    const v = params[k];
+    if (v !== undefined && v !== null && v !== "") q.set(k, String(v));
+  });
+  return q.toString();
+}
+
 async function http<T>(path: string, init?: RequestInit): Promise<T> {
   const isFormData = init?.body instanceof FormData;
   const token = getToken();
@@ -190,6 +205,16 @@ export const api = {
   // Admin-only CRM fetch history (added/changed per fetch).
   crmIngestionLogs: (limit = 50) =>
     http<CrmIngestLog[]>(`/api/procurement/crm-ingestion-logs?limit=${limit}`),
+
+  // Mail Log: every outgoing message with recipients, status and hold state.
+  mailLog: (params: MailLogParams = {}) => {
+    const qs = mailLogQuery(params);
+    return http<MailLogResponse>(`/api/mail-log${qs ? `?${qs}` : ""}`);
+  },
+  mailLogExportUrl: (params: MailLogParams = {}) => {
+    const qs = mailLogQuery({ ...params, page: undefined, size: undefined });
+    return `/api/mail-log/export${qs ? `?${qs}` : ""}`;
+  },
 
   // Admin-only: every PO line with a cancellation request (+ Excel export URL).
   poViewCancelRequests: () =>

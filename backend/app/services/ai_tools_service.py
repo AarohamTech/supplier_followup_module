@@ -23,6 +23,7 @@ from ..core.config import settings
 from ..models.communication_message import CommunicationMessage
 from ..models.customer_mail import CustomerMail
 from ..models.procurement import ProcurementRecord
+from .po_visibility import supplier_visible_clause
 from ..models.supplier import SupplierMaster
 from . import embeddings_service, po_followup_service, vector_store
 
@@ -59,6 +60,7 @@ def _owns_po(db: Session, scope: ToolScope, supplier_po_no: str) -> bool:
         return True
     return db.scalar(
         select(func.count(ProcurementRecord.id)).where(
+            supplier_visible_clause(),
             ProcurementRecord.supplier_po_no == supplier_po_no,
             func.upper(ProcurementRecord.supplier_name) == scope.supplier_name.upper(),
         )

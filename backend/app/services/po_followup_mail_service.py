@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from ..core.config import settings
 from ..models.mail_history import MailHistory
 from ..models.procurement import ProcurementRecord
+from .po_visibility import is_supplier_visible, supplier_visible_clause
 from . import ai_service, brand_email, communication_message_service as msg_service
 from . import embeddings_service, followup_audit_service, po_followup_service, vector_store
 from .followup_engine import apply_followup_logic
@@ -416,6 +417,28 @@ def create_po_followup_mail(
         group["overall_signal"], "PO_FOLLOWUP_GROUP"
     )
 
+    if not _group_has_supplier_visible_line(db, group):
+        followup_audit_service.record_safe(
+            db,
+            supplier_po_no=group.get("supplier_po_no"),
+            supplier_name=group.get("supplier_name"),
+            signal=group.get("overall_signal"),
+            mail_type=resolved_mail_type,
+            source=source,
+            outcome="SKIPPED",
+            detail=NOT_APPROVED_SKIP,
+            commit=commit,
+        )
+        return PoMailQueueResult(
+            created=False,
+            skipped_reason=NOT_APPROVED_SKIP,
+            supplier_name=group.get("supplier_name"),
+            supplier_po_no=group.get("supplier_po_no"),
+            mail_type=resolved_mail_type,
+            overall_signal=group.get("overall_signal"),
+            material_count=group.get("material_count") or 0,
+        )
+
     if require_mapping and not group.get("mapping_active"):
         followup_audit_service.record_safe(
             db,
@@ -628,6 +651,23 @@ def _attach_po_pdf_to_green_ack(db: Session, msg: Any, group: dict[str, Any]) ->
     )
 
 
+NOT_APPROVED_SKIP = "PO not approved yet — suppliers are not mailed about unapproved POs"
+
+
+def _group_has_supplier_visible_line(db: Session, group: dict[str, Any]) -> bool:
+    """A PO group may be mailed to its supplier only if at least one of its lines
+    is APPROVED (see po_visibility). Groups with no record ids (tests / legacy
+    payloads) are treated as visible so existing callers keep working."""
+    ids = group.get("procurement_record_ids") or []
+    if not ids:
+        return True
+    for rid in ids:
+        rec = db.get(ProcurementRecord, rid)
+        if rec is not None and is_supplier_visible(rec):
+            return True
+    return False
+
+
 def _record_due_for_auto_mail(rec: ProcurementRecord, now: datetime) -> bool:
     # Fully received (per CRM GRN quantities), delisted from the CRM pending desk,
     # or cancel-requested lines are done — never chase the supplier for them.
@@ -659,9 +699,11 @@ def queue_due_po_followups(
         return {"enabled": False, "queued": 0, "skipped": 0, "results": []}
 
     now = datetime.utcnow()
+    # Suppliers are only ever mailed about APPROVED lines: unapproved / not-yet-
+    # generated POs are internal until the CRM flips them (po_visibility).
     records = db.scalars(
         select(ProcurementRecord)
-        .where(ProcurementRecord.supplier_po_no.isnot(None))
+        .where(ProcurementRecord.supplier_po_no.isnot(None), supplier_visible_clause())
         .order_by(ProcurementRecord.supplier_name.asc(), ProcurementRecord.supplier_po_no.asc())
     ).all()
 

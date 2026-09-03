@@ -201,6 +201,12 @@ class Settings(BaseSettings):
     # manual Sync-now button forces it. Fail-safe — errors never break ingest.
     CRM_QTY_SYNC_ENABLED: bool = Field(default=True)
     CRM_QTY_SYNC_INTERVAL_MINUTES: int = Field(default=30)
+    # Outbound PO-cancel request to the CRM/ERP (docs/PO_CANCEL_ERP_API.md). Uses
+    # the same login/token as the desk feed. The path is relative to the
+    # company's CRM base URL. When disabled or unconfigured the PO still goes
+    # "Pending cancellation" locally and the response says why nothing was sent.
+    CRM_CANCEL_API_ENABLED: bool = Field(default=True)
+    CRM_CANCEL_API_PATH: str = Field(default="/api/crm/PoCancelRequest")
 
     # ── File attachments (S3) ────────────────────────────────────────────────
     # Chat / communication-hub file uploads land in a PRIVATE S3 bucket; all

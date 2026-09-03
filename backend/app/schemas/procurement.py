@@ -63,6 +63,8 @@ class ProcurementBase(BaseModel):
     po_qty: Optional[float] = None
     grn_qty: Optional[float] = None
     pending_qty: Optional[float] = None
+    # Raw CRM desk row (all feed fields) — only set by the CRM ingest.
+    crm_raw: Optional[dict[str, Any]] = None
 
     @field_validator("supplier_date", "po_date", mode="before")
     @classmethod

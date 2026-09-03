@@ -87,6 +87,29 @@ class ServiceTests(unittest.TestCase):
             self.assertIsNotNone(pv.po_detail(db, supplier_po_no="PO1", supplier_name="Acme", owner_emp_code="E1"))
 
 
+    def test_grouped_list_carries_the_vendor_po_ref(self):
+        with _temp_db() as db:
+            db.add(ProcurementRecord(crm_no="C1", material_name="M1", supplier_po_no="002616",
+                                     supplier_name="Liftech", owner_emp_code="E1",
+                                     po_short_ref="2627-001703"))
+            db.add(ProcurementRecord(crm_no="C2", material_name="M2", supplier_po_no="002616",
+                                     supplier_name="Liftech", owner_emp_code="E1",
+                                     po_short_ref="2627-001703"))
+            db.add(ProcurementRecord(crm_no="C3", material_name="M3", supplier_po_no="008508",
+                                     supplier_name="Sew", owner_emp_code="E1"))
+            db.commit()
+
+            groups = {g["supplier_po_no"]: g for g in pv.list_groups(db, owner_emp_code="E1")}
+            self.assertEqual(groups["002616"]["po_short_ref"], "2627-001703")
+            self.assertEqual(groups["002616"]["po_ref_count"], 1)
+            self.assertIsNone(groups["008508"]["po_short_ref"])
+
+            # the vendor ref is searchable, since that is the number people know
+            found, total = pv.grouped_pos(db, search="2627-0017")
+            self.assertEqual(total, 1)
+            self.assertEqual(found[0]["supplier_po_no"], "002616")
+
+
 class RouterRbacTests(unittest.TestCase):
     def setUp(self):
         self.engine = create_engine(

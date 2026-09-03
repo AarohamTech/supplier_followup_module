@@ -27,7 +27,6 @@ class PortalPo(BaseModel):
     crm_no: Optional[str] = None
     material_count: int
     overall_signal: Optional[str] = None
-    po_status: Optional[str] = None
     earliest_shipment_date: Optional[datetime] = None
     completed: bool
     asn_count: int
@@ -74,7 +73,6 @@ class PortalPoMaterial(BaseModel):
     po_date: Optional[datetime] = None
     shipment_date: Optional[datetime] = None
     signal: Optional[str] = None
-    po_status: Optional[str] = None
     # Current supplier commitment (if any) for this material.
     commitment_date: Optional[datetime] = None
     commitment_qty: Optional[float] = None

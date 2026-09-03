@@ -1463,7 +1463,6 @@ export interface PortalPo {
   crm_no?: string | null;
   material_count: number;
   overall_signal?: string | null;
-  po_status?: string | null;
   earliest_shipment_date?: string | null;
   completed: boolean;
   asn_count: number;
@@ -1489,6 +1488,10 @@ export interface EmployeeSummary {
 
 export interface EmployeePo {
   supplier_po_no: string;
+  /** Vendor PO document number (CRM PoShortRefTrnNo) — the primary number to show. */
+  po_short_ref?: string | null;
+  /** Distinct vendor refs under this (recycled) counter; >1 => shared counter. */
+  po_ref_count?: number;
   crm_no?: string | null;
   supplier_name?: string | null;
   material_count: number;
@@ -1658,7 +1661,6 @@ export interface PortalPoMaterial {
   po_date?: string | null;
   shipment_date?: string | null;
   signal?: string | null;
-  po_status?: string | null;
   commitment_date?: string | null;
   commitment_qty?: number | null;
   commitment_status?: string | null;
@@ -1731,4 +1733,35 @@ export interface AppNotification {
   supplier_po_no?: string | null;
   is_read: boolean;
   created_at: string;
+}
+
+// ─── Mail Log (every outgoing message + send state) ───────────────────────────
+export interface MailLogItem {
+  id: number;
+  created_at?: string | null;
+  sent_at?: string | null;
+  supplier_id?: number | null;
+  supplier_name?: string | null;
+  supplier_po_no?: string | null;
+  to_emails: string[];
+  cc_emails: string[];
+  receiver_email?: string | null;
+  mail_type?: string | null;
+  subject?: string | null;
+  status?: string | null; // SENT / READY / FAILED / DRAFT
+  error_message?: string | null;
+  /** READY auto follow-up waiting for the off-hours send window. */
+  held: boolean;
+  /** Local "HH:00" the window next opens, when held. */
+  held_until?: string | null;
+}
+
+export interface MailLogResponse {
+  items: MailLogItem[];
+  total: number;
+  page: number;
+  size: number;
+  counts: Record<string, number>;
+  mail_types: string[];
+  window: { enabled: boolean; open: boolean; next_change: string; timezone?: string | null };
 }

@@ -71,7 +71,7 @@ export default function MailSendWindowSettings() {
         <div>
           <div className="font-semibold text-sm">Auto Follow-up Send Window</div>
           <p className="text-xs text-brand-muted">
-            Auto follow-ups wait for this window. Staff-composed mail and “Send now” are never held.
+            Yellow and red auto follow-ups wait for this window. Green acknowledgements, black escalations, login credentials, staff-composed mail and “Send now” go out immediately.
           </p>
         </div>
         {cfg && (

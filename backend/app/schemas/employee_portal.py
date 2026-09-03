@@ -22,6 +22,11 @@ class EmployeeSummary(BaseModel):
 
 class EmployeePo(BaseModel):
     supplier_po_no: str
+    # Vendor PO document number (CRM PoShortRefTrnNo). Shown as the primary PO
+    # number; supplier_po_no is the internal (recycled) counter, kept for keys.
+    po_short_ref: Optional[str] = None
+    # Distinct vendor refs under this counter (>1 => the counter is shared).
+    po_ref_count: int = 0
     crm_no: Optional[str] = None
     supplier_name: Optional[str] = None
     material_count: int = 0

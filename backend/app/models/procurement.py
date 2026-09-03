@@ -1,6 +1,6 @@
 from datetime import date, datetime
 
-from sqlalchemy import Boolean, Date, DateTime, Index, Integer, Numeric, String, Text, UniqueConstraint, func
+from sqlalchemy import JSON, Boolean, Date, DateTime, Index, Integer, Numeric, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ..database import Base
@@ -89,6 +89,10 @@ class ProcurementRecord(Base):
     po_trn_no: Mapped[str | None] = mapped_column(String(64), index=True)
     # PO remark from the CRM feed (`Remark`, e.g. "MONTHLY ORDER JUNE - JULY 26").
     po_remark: Mapped[str | None] = mapped_column(String(500))
+    # The CRM desk row exactly as the feed returned it (every field, mapped or
+    # not). Lets the ERP cancel request carry all original fields and lets us
+    # re-map without re-fetching. NULL for rows ingested before this column.
+    crm_raw: Mapped[dict | None] = mapped_column(JSON)
     # Set when this line stopped appearing in the CRM pending desk feed (received/
     # closed/sold on the CRM side). Delisted lines drop out of pending views and
     # follow-ups; cleared automatically if the line reappears in the feed.

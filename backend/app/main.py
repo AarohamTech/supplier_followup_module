@@ -29,6 +29,7 @@ from .routers import (
     supplier_emails,
     mail_drafts,
     mail_history,
+    mail_log,
     communication,
     communication_hub,
     users,
@@ -167,6 +168,7 @@ app.include_router(suppliers.router, dependencies=_rbac)
 app.include_router(supplier_emails.router, dependencies=_rbac)
 app.include_router(mail_drafts.router, dependencies=_rbac)
 app.include_router(mail_history.router, dependencies=_rbac)
+app.include_router(mail_log.router)
 app.include_router(communication.router, dependencies=_rbac)
 app.include_router(communication.tasks_router, dependencies=_rbac)
 app.include_router(communication_hub.router, dependencies=_rbac)

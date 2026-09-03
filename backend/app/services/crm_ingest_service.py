@@ -487,8 +487,20 @@ def _emp_code(value: Any) -> str | None:
     return str(value).strip() or None
 
 
+def _ingestible(row: dict[str, Any]) -> bool:
+    """Keep every PO line the desk carries — APPROVED, NOT APPROVED and NOT
+    GENERATED alike — as long as it has the business key (CRM no, PO no,
+    material). Staff and employees see the unapproved lines in Orders so they can
+    chase approvals; supplier-facing surfaces filter them out via
+    ``po_visibility`` until the CRM flips the status to APPROVED.
+
+    (Until 2026-09 only APPROVED rows with a vendor were kept, which is why no
+    unapproved PO ever reached the Orders page.)"""
+    return all(str(row.get(k) or "").strip() for k in ("CRMNo", "PoNo", "MaterialName"))
+
+
 def _is_generated(row: dict[str, Any]) -> bool:
-    """Only generated POs: an APPROVED status with a real vendor (PoLongName)."""
+    """A generated PO: APPROVED with a real vendor (PoLongName). Reporting only."""
     status = str(row.get("PoStatus") or "").strip().upper()
     vendor = str(row.get("PoLongName") or "").strip()
     return status == "APPROVED" and bool(vendor)
@@ -599,6 +611,8 @@ def map_row(row: dict[str, Any]) -> dict[str, Any]:
         "po_qty": _first(row, ("PoQty", "POQty")),
         "grn_qty": _first(row, ("GrnQty", "GrrQty", "GRNQty")),
         "pending_qty": _first(row, ("PendQty", "PendingQty", "PendedQty")),
+        # Whole desk row, verbatim — see ProcurementRecord.crm_raw.
+        "crm_raw": dict(row),
     }
 
 
@@ -676,6 +690,7 @@ def _col_values(payload: dict[str, Any]) -> dict[str, Any]:
         "grn_qty": payload.get("grn_qty"),
         "pending_qty": payload.get("pending_qty"),
         "receipt_status": _receipt_status(payload),
+        "crm_raw": payload.get("crm_raw"),
         "followup_status": rule.followup_status,
         "escalation_level": rule.escalation_level,
         "ai_required": rule.ai_required,
@@ -735,15 +750,21 @@ def _bulk_upsert(db: Session, raw_rows: list[dict[str, Any]]) -> tuple[int, int,
     # so unchanged POs are never re-written and the fetch history is accurate.
     crm_nos = {k[0] for k in by_key}
     existing_hash: dict[tuple, str | None] = {}
+    # Rows ingested before crm_raw existed have it NULL; write them once even when
+    # the hash says "unchanged" so the raw feed row gets backfilled.
+    needs_raw: set[tuple] = set()
     for row in db.execute(
         select(
             ProcurementRecord.crm_no,
             ProcurementRecord.supplier_po_no,
             ProcurementRecord.material_name,
             ProcurementRecord.source_hash,
+            ProcurementRecord.crm_raw.is_(None),
         ).where(ProcurementRecord.crm_no.in_(crm_nos))
     ).all():
         existing_hash[(row[0], row[1], row[2])] = row[3]
+        if row[4]:
+            needs_raw.add((row[0], row[1], row[2]))
 
     created = updated = 0
     to_upsert: list[dict[str, Any]] = []
@@ -754,6 +775,8 @@ def _bulk_upsert(db: Session, raw_rows: list[dict[str, Any]]) -> tuple[int, int,
             created += 1
         elif prior != h:
             updated += 1
+        elif key in needs_raw and payload.get("crm_raw"):
+            pass  # unchanged content, but backfill the raw row (not counted)
         else:
             continue  # unchanged — skip the write entirely
         row_values = _col_values(payload)
@@ -793,6 +816,7 @@ def _bulk_upsert(db: Session, raw_rows: list[dict[str, Any]]) -> tuple[int, int,
                 "grn_qty": stmt.excluded.grn_qty,
                 "pending_qty": stmt.excluded.pending_qty,
                 "receipt_status": stmt.excluded.receipt_status,
+                "crm_raw": stmt.excluded.crm_raw,
                 "source_hash": stmt.excluded.source_hash,
                 "followup_status": case(
                     (sig == "GREEN", "PENDING_ACK"),
@@ -958,8 +982,11 @@ def poll_and_ingest(
     t0 = time.time()
     try:
         feed = fetch_desk(cfg)
-        generated = [r for r in feed if _is_generated(r)]
-        rows = [map_row(r) for r in generated]
+        kept = [r for r in feed if _ingestible(r)]
+        # `generated` in the ingest log keeps its meaning (APPROVED + vendor) so the
+        # admin panel still shows how many of the fetched lines are live POs.
+        generated = [r for r in kept if _is_generated(r)]
+        rows = [map_row(r) for r in kept]
         created, updated, skipped = _bulk_upsert(db, rows)
     except Exception as exc:  # noqa: BLE001
         try:

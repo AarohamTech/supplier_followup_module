@@ -95,6 +95,11 @@ def grouped_pos(
         func.min(R.shipment_date).label("earliest"),
         func.max(R.po_status).label("po_status"),
         func.max(R.customer_name).label("customer_name"),
+        # Vendor PO document number (CRM PoShortRefTrnNo) — what the supplier and
+        # the printed PO say. The counter (supplier_po_no) is recycled and can
+        # carry more than one vendor ref, hence the distinct count.
+        func.max(R.po_short_ref).label("po_short_ref"),
+        func.count(func.distinct(R.po_short_ref)).label("po_ref_count"),
     ).where(R.supplier_po_no.isnot(None), R.delisted_at.is_(None))
     if owner_emp_code:
         base = base.where(R.owner_emp_code == owner_emp_code)
@@ -102,6 +107,7 @@ def grouped_pos(
         like = f"%{search.strip()}%"
         base = base.where(or_(
             R.supplier_po_no.ilike(like),
+            R.po_short_ref.ilike(like),
             R.supplier_name.ilike(like),
             R.crm_no.ilike(like),
         ))
@@ -131,6 +137,8 @@ def grouped_pos(
             receipt = None
         items.append({
             "supplier_po_no": r.po,
+            "po_short_ref": r.po_short_ref,
+            "po_ref_count": int(r.po_ref_count or 0),
             "crm_no": r.crm_no,
             "supplier_name": r.supplier_name,
             "material_count": material_count,

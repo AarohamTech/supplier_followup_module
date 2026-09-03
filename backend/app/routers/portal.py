@@ -22,6 +22,7 @@ from ..models.communication_message import CommunicationMessage
 from ..models.communication_task import CommunicationTask
 from ..models.message_attachment import MessageAttachment
 from ..models.procurement import ProcurementRecord
+from ..services.po_visibility import supplier_visible_clause
 from ..models.supplier import SupplierMaster
 from ..models.supplier_material_commitment import SupplierMaterialCommitment
 from ..models.user import User
@@ -72,6 +73,7 @@ def _po_records(db: Session, supplier_name: str | None) -> list[ProcurementRecor
         db.scalars(
             select(ProcurementRecord).where(
                 ProcurementRecord.delisted_at.is_(None),
+                supplier_visible_clause(),
                 func.upper(ProcurementRecord.supplier_name) == supplier_name.upper()
             )
         ).all()
@@ -171,7 +173,6 @@ def list_pos(user: User = Depends(get_current_supplier), db: Session = Depends(g
             "po_ref": None,
             "po_trn_no": None,
             "signals": [],
-            "po_status": r.po_status,
             "earliest": None,
             "count": 0,
             "escalated": False,
@@ -196,7 +197,6 @@ def list_pos(user: User = Depends(get_current_supplier), db: Session = Depends(g
             crm_no=g["crm_no"],
             material_count=g["count"],
             overall_signal=_worst_signal(g["signals"]),
-            po_status=g["po_status"],
             earliest_shipment_date=g["earliest"],
             completed=po in completed,
             asn_count=asn_counts.get(po, 0),
@@ -229,6 +229,7 @@ def po_materials(
         return []
     rows = db.scalars(
         select(ProcurementRecord).where(
+            supplier_visible_clause(),
             func.upper(ProcurementRecord.supplier_name) == name.upper(),
             ProcurementRecord.supplier_po_no == supplier_po_no,
         )
@@ -277,7 +278,6 @@ def _material_out(r: ProcurementRecord, c: SupplierMaterialCommitment | None) ->
         po_date=_as_dt(r.supplier_date or r.po_date),
         shipment_date=r.shipment_date,
         signal=r.signal,
-        po_status=r.po_status,
         commitment_date=_as_dt(c.commitment_date) if c else None,
         commitment_qty=float(c.commitment_qty) if c and c.commitment_qty is not None else None,
         commitment_status=c.supplier_status if c else None,
@@ -347,6 +347,7 @@ def submit_commitments(
     commits = _commitments_by_material(db, supplier_po_no, name)
     rows = db.scalars(
         select(ProcurementRecord).where(
+            supplier_visible_clause(),
             func.upper(ProcurementRecord.supplier_name) == (name or "").upper(),
             ProcurementRecord.supplier_po_no == supplier_po_no,
         )
@@ -489,6 +490,7 @@ def po_pdf(
     name = _supplier_name(db, user)
     owned = db.scalar(
         select(func.count()).select_from(ProcurementRecord).where(
+            supplier_visible_clause(),
             ProcurementRecord.po_trn_no == trn_no,
             func.upper(ProcurementRecord.supplier_name) == (name or "").upper(),
         )
@@ -592,6 +594,7 @@ def _po_is_owned(db: Session, supplier_name: str | None, supplier_po_no: str) ->
         return None
     return db.scalar(
         select(ProcurementRecord).where(
+            supplier_visible_clause(),
             func.upper(ProcurementRecord.supplier_name) == supplier_name.upper(),
             ProcurementRecord.supplier_po_no == supplier_po_no,
         )
@@ -759,6 +762,7 @@ def escalate_po(
     # Flag every line of this PO so the "Escalated" badge lights on both sides.
     po_records = db.scalars(
         select(ProcurementRecord).where(
+            supplier_visible_clause(),
             func.upper(ProcurementRecord.supplier_name) == (name or "").upper(),
             ProcurementRecord.supplier_po_no == supplier_po_no,
         )

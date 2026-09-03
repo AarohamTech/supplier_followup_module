@@ -134,6 +134,18 @@ class WorkerGateTests(unittest.TestCase):
                 direction="OUTGOING", status="READY", mail_type="PO_FOLLOWUP_GROUP",
                 subject="Auto group", to_emails=["s@v.com"],
             ),
+            "auto_green": CommunicationMessage(
+                direction="OUTGOING", status="READY", mail_type="PO_FOLLOWUP_GREEN",
+                subject="Green ack", to_emails=["s@v.com"],
+            ),
+            "auto_black": CommunicationMessage(
+                direction="OUTGOING", status="READY", mail_type="PO_FOLLOWUP_BLACK",
+                subject="Black escalation", to_emails=["s@v.com"],
+            ),
+            "credentials": CommunicationMessage(
+                direction="OUTGOING", status="READY", mail_type="SUPPLIER_PORTAL_CREDENTIALS",
+                subject="Your login", to_emails=["s@v.com"],
+            ),
             "staff_typed": CommunicationMessage(
                 direction="OUTGOING", status="READY", mail_type="CUSTOMER_REPLY",
                 subject="Staff reply", to_emails=["c@x.com"],
@@ -187,6 +199,30 @@ class WorkerGateTests(unittest.TestCase):
         self.assertIn(ids["staff_typed"], sent)
         self.assertIn(ids["staff_untyped"], sent)
         self.assertFalse(out["window_open"])
+
+    def test_green_ack_black_escalation_and_credentials_go_out_in_office_hours(self) -> None:
+        # The supplier expects the acknowledgement the moment a PO is released,
+        # a critical escalation cannot wait for the night, and login details
+        # must arrive while the admin is still on the phone with the supplier.
+        with _temp_db() as Session:
+            ids = self._seed(Session)
+            with self._worker(Session) as (w, sent):
+                w.send_ready_messages(now=IST_1200)
+
+        self.assertIn(ids["auto_green"], sent)
+        self.assertIn(ids["auto_black"], sent)
+        self.assertIn(ids["credentials"], sent)
+        self.assertNotIn(ids["auto_red"], sent)
+
+    def test_is_held_mail_type_matches_the_worker_gate(self) -> None:
+        from app.workers.mail_send_worker import is_held_mail_type
+
+        self.assertTrue(is_held_mail_type("PO_FOLLOWUP_RED"))
+        self.assertTrue(is_held_mail_type("PO_FOLLOWUP_YELLOW"))
+        self.assertTrue(is_held_mail_type("PO_FOLLOWUP_GROUP"))
+        for realtime in ("PO_FOLLOWUP_GREEN", "PO_FOLLOWUP_BLACK",
+                         "SUPPLIER_PORTAL_CREDENTIALS", "CUSTOMER_REPLY", None):
+            self.assertFalse(is_held_mail_type(realtime), realtime)
 
     def test_open_window_sends_auto_followups_too(self) -> None:
         with _temp_db() as Session:

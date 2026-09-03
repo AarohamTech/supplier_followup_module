@@ -32,7 +32,7 @@ export default function EmployeePosPage() {
   const filtered = pos.filter((p) => {
     const s = q.trim().toLowerCase();
     if (!s) return true;
-    return `${p.supplier_po_no} ${p.supplier_name || ""} ${p.crm_no || ""}`.toLowerCase().includes(s);
+    return `${p.supplier_po_no} ${p.po_short_ref || ""} ${p.supplier_name || ""} ${p.crm_no || ""}`.toLowerCase().includes(s);
   });
 
   return (
