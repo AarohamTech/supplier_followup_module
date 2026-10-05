@@ -15,6 +15,7 @@ import {
 import { getToken } from "@/lib/auth-token";
 import { useTheme } from "@/lib/theme";
 import { fmtDate } from "@/lib/format";
+import { useT } from "@/lib/i18n";
 import type { WorkloadOpenTask, WorkloadPendingPo, WorkloadThroughputDay } from "@/lib/types";
 
 export function signalChip(signal?: string | null): string {
@@ -67,13 +68,14 @@ export async function downloadXlsx(url: string, filename: string): Promise<void>
 }
 
 export function ExportButton({ url, filename, label = "Export Excel" }: { url: string; filename: string; label?: string }) {
+  const { t } = useT();
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   return (
     <button
       className="btn-outline h-9"
       disabled={busy}
-      title={err ?? "Download as .xlsx for meetings"}
+      title={err ?? t("Download as .xlsx for meetings")}
       onClick={() => {
         setBusy(true);
         setErr(null);
@@ -83,13 +85,14 @@ export function ExportButton({ url, filename, label = "Export Excel" }: { url: s
       }}
     >
       {busy ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
-      <span className="hidden sm:inline">{err ? "Retry export" : label}</span>
+      <span className="hidden sm:inline">{err ? t("Retry export") : t(label)}</span>
     </button>
   );
 }
 
 /** 14-day created vs completed task throughput — two fixed-hue series + legend. */
 export function ThroughputChart({ data }: { data: WorkloadThroughputDay[] }) {
+  const { t } = useT();
   const isDark = useTheme((s) => s.isDark);
   const created = isDark ? "#60A5FA" : "#3B82F6";
   const completed = isDark ? "#A78BFA" : "#8B5CF6";
@@ -97,7 +100,7 @@ export function ThroughputChart({ data }: { data: WorkloadThroughputDay[] }) {
   const rows = data.map((d) => ({ ...d, label: d.day.slice(5) }));
   return (
     <div className="card p-4">
-      <div className="mb-3 text-sm font-semibold">Task throughput — last 14 days</div>
+      <div className="mb-3 text-sm font-semibold">{t("Task throughput — last 14 days")}</div>
       <div className="h-52">
         <ResponsiveContainer>
           <BarChart data={rows} barGap={2}>
@@ -105,8 +108,8 @@ export function ThroughputChart({ data }: { data: WorkloadThroughputDay[] }) {
             <YAxis allowDecimals={false} width={24} tick={{ fontSize: 10, fill: ink }} tickLine={false} axisLine={false} />
             <Tooltip cursor={{ fill: isDark ? "#ffffff14" : "#00000008" }} />
             <Legend wrapperStyle={{ fontSize: 11 }} />
-            <Bar dataKey="created" name="Created" fill={created} radius={[3, 3, 0, 0]} maxBarSize={14} />
-            <Bar dataKey="completed" name="Completed" fill={completed} radius={[3, 3, 0, 0]} maxBarSize={14} />
+            <Bar dataKey="created" name={t("Created")} fill={created} radius={[3, 3, 0, 0]} maxBarSize={14} />
+            <Bar dataKey="completed" name={t("Completed")} fill={completed} radius={[3, 3, 0, 0]} maxBarSize={14} />
           </BarChart>
         </ResponsiveContainer>
       </div>
@@ -115,17 +118,18 @@ export function ThroughputChart({ data }: { data: WorkloadThroughputDay[] }) {
 }
 
 export function BreakdownChips({ title, data }: { title: string; data: Record<string, number> }) {
+  const { t } = useT();
   const entries = Object.entries(data).sort((a, b) => b[1] - a[1]);
   return (
     <div className="card p-4">
       <div className="mb-2 text-sm font-semibold">{title}</div>
       {entries.length === 0 ? (
-        <div className="text-xs text-brand-muted">No tasks yet.</div>
+        <div className="text-xs text-brand-muted">{t("No tasks yet.")}</div>
       ) : (
         <div className="flex flex-wrap gap-1.5">
           {entries.map(([k, v]) => (
             <span key={k} className="inline-flex items-center gap-1.5 rounded-md bg-subtle px-2 py-1 text-[11px] font-medium text-brand-dark">
-              {k.replaceAll("_", " ")}
+              {t(k).replaceAll("_", " ")}
               <span className="font-semibold tabular-nums">{v}</span>
             </span>
           ))}
@@ -136,31 +140,32 @@ export function BreakdownChips({ title, data }: { title: string; data: Record<st
 }
 
 export function PendingPoTable({ rows, showSupplier }: { rows: WorkloadPendingPo[]; showSupplier?: boolean }) {
+  const { t } = useT();
   return (
     <section className="card overflow-hidden">
       <div className="border-b border-brand-border px-4 py-3">
-        <h2 className="text-sm font-semibold text-brand-dark">Pending PO lines ({rows.length})</h2>
-        <p className="text-xs text-brand-muted">Not yet dispatched/closed — earliest ship date first.</p>
+        <h2 className="text-sm font-semibold text-brand-dark">{t("Pending PO lines ({n})", { n: rows.length })}</h2>
+        <p className="text-xs text-brand-muted">{t("Not yet dispatched/closed — earliest ship date first.")}</p>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-xs">
           <thead>
             <tr className="border-b border-brand-border bg-subtle/60 text-left text-[10px] uppercase tracking-wider text-brand-muted">
-              <th className="px-4 py-2 font-semibold">PO No.</th>
-              <th className="px-3 py-2 font-semibold">Material</th>
-              {showSupplier && <th className="px-3 py-2 font-semibold">Supplier</th>}
-              <th className="px-3 py-2 font-semibold">Customer</th>
-              <th className="px-3 py-2 font-semibold">Customer PO</th>
-              <th className="px-3 py-2 font-semibold">Signal</th>
-              <th className="px-3 py-2 text-right font-semibold">Qty</th>
-              <th className="px-3 py-2 text-right font-semibold">Rate</th>
-              <th className="px-3 py-2 text-right font-semibold">Stock</th>
-              <th className="px-3 py-2 font-semibold">Status</th>
-              <th className="px-3 py-2 text-right font-semibold">PO date</th>
-              <th className="px-3 py-2 text-right font-semibold">Ship date</th>
-              <th className="px-3 py-2 text-right font-semibold">Days overdue</th>
-              <th className="px-3 py-2 text-right font-semibold">Follow-ups</th>
-              <th className="px-4 py-2 text-right font-semibold">Commitment</th>
+              <th className="px-4 py-2 font-semibold">{t("PO No.")}</th>
+              <th className="px-3 py-2 font-semibold">{t("Material")}</th>
+              {showSupplier && <th className="px-3 py-2 font-semibold">{t("Supplier")}</th>}
+              <th className="px-3 py-2 font-semibold">{t("Customer")}</th>
+              <th className="px-3 py-2 font-semibold">{t("Customer PO")}</th>
+              <th className="px-3 py-2 font-semibold">{t("Signal")}</th>
+              <th className="px-3 py-2 text-right font-semibold">{t("Qty")}</th>
+              <th className="px-3 py-2 text-right font-semibold">{t("Rate")}</th>
+              <th className="px-3 py-2 text-right font-semibold">{t("Stock")}</th>
+              <th className="px-3 py-2 font-semibold">{t("Status")}</th>
+              <th className="px-3 py-2 text-right font-semibold">{t("PO date")}</th>
+              <th className="px-3 py-2 text-right font-semibold">{t("Ship date")}</th>
+              <th className="px-3 py-2 text-right font-semibold">{t("Days overdue")}</th>
+              <th className="px-3 py-2 text-right font-semibold">{t("Follow-ups")}</th>
+              <th className="px-4 py-2 text-right font-semibold">{t("Commitment")}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-brand-border">
@@ -200,7 +205,7 @@ export function PendingPoTable({ rows, showSupplier }: { rows: WorkloadPendingPo
             ))}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={showSupplier ? 14 : 13} className="px-4 py-8 text-center text-brand-muted">Nothing pending. 🎉</td>
+                <td colSpan={showSupplier ? 14 : 13} className="px-4 py-8 text-center text-brand-muted">{t("Nothing pending.")} 🎉</td>
               </tr>
             )}
           </tbody>
@@ -211,45 +216,46 @@ export function PendingPoTable({ rows, showSupplier }: { rows: WorkloadPendingPo
 }
 
 export function OpenTaskTable({ rows }: { rows: WorkloadOpenTask[] }) {
+  const { t } = useT();
   return (
     <section className="card overflow-hidden">
       <div className="border-b border-brand-border px-4 py-3">
-        <h2 className="text-sm font-semibold text-brand-dark">Open tasks ({rows.length})</h2>
-        <p className="text-xs text-brand-muted">Everything not done — earliest due first.</p>
+        <h2 className="text-sm font-semibold text-brand-dark">{t("Open tasks ({n})", { n: rows.length })}</h2>
+        <p className="text-xs text-brand-muted">{t("Everything not done — earliest due first.")}</p>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-xs">
           <thead>
             <tr className="border-b border-brand-border bg-subtle/60 text-left text-[10px] uppercase tracking-wider text-brand-muted">
-              <th className="px-4 py-2 font-semibold">Task</th>
-              <th className="px-3 py-2 font-semibold">Priority</th>
-              <th className="px-3 py-2 font-semibold">Status</th>
-              <th className="px-3 py-2 font-semibold">Source</th>
-              <th className="px-3 py-2 font-semibold">Supplier / PO</th>
-              <th className="px-3 py-2 text-right font-semibold">Due</th>
-              <th className="px-4 py-2 text-right font-semibold">Days overdue</th>
+              <th className="px-4 py-2 font-semibold">{t("Task")}</th>
+              <th className="px-3 py-2 font-semibold">{t("Priority")}</th>
+              <th className="px-3 py-2 font-semibold">{t("Status")}</th>
+              <th className="px-3 py-2 font-semibold">{t("Source")}</th>
+              <th className="px-3 py-2 font-semibold">{t("Supplier / PO")}</th>
+              <th className="px-3 py-2 text-right font-semibold">{t("Due")}</th>
+              <th className="px-4 py-2 text-right font-semibold">{t("Days overdue")}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-brand-border">
-            {rows.map((t) => (
-              <tr key={t.id} className="hover:bg-subtle/50">
+            {rows.map((task) => (
+              <tr key={task.id} className="hover:bg-subtle/50">
                 <td className="max-w-[280px] px-4 py-2">
-                  <div className="truncate font-medium text-brand-dark" title={t.title}>{t.title}</div>
+                  <div className="truncate font-medium text-brand-dark" title={task.title}>{task.title}</div>
                 </td>
-                <td className="px-3 py-2 font-semibold text-brand-dark">{t.priority}</td>
-                <td className="px-3 py-2 text-brand-dark">{t.status.replace(/^C_/, "").replaceAll("_", " ")}</td>
-                <td className="px-3 py-2 text-brand-muted">{t.task_source || "—"}</td>
+                <td className="px-3 py-2 font-semibold text-brand-dark">{t(task.priority)}</td>
+                <td className="px-3 py-2 text-brand-dark">{task.status.replace(/^C_/, "").replaceAll("_", " ")}</td>
+                <td className="px-3 py-2 text-brand-muted">{task.task_source ? t(task.task_source) : "—"}</td>
                 <td className="max-w-[180px] px-3 py-2">
-                  <div className="truncate text-brand-dark">{t.supplier_name || "—"}</div>
-                  {t.supplier_po_no && <div className="text-[10px] text-brand-muted">PO {t.supplier_po_no}</div>}
+                  <div className="truncate text-brand-dark">{task.supplier_name || "—"}</div>
+                  {task.supplier_po_no && <div className="text-[10px] text-brand-muted">{t("PO {po}", { po: task.supplier_po_no })}</div>}
                 </td>
-                <td className="px-3 py-2 text-right text-brand-dark">{t.due_date ? fmtDate(t.due_date) : "—"}</td>
-                <td className="px-4 py-2 text-right"><Num v={t.days_overdue ?? 0} warn /></td>
+                <td className="px-3 py-2 text-right text-brand-dark">{task.due_date ? fmtDate(task.due_date) : "—"}</td>
+                <td className="px-4 py-2 text-right"><Num v={task.days_overdue ?? 0} warn /></td>
               </tr>
             ))}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-brand-muted">No open tasks.</td>
+                <td colSpan={7} className="px-4 py-8 text-center text-brand-muted">{t("No open tasks.")}</td>
               </tr>
             )}
           </tbody>

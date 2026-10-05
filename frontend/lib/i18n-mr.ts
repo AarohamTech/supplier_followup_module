@@ -5,7 +5,17 @@
  * Business identifiers (PO, CRM, GRN, ASN, HI) stay in Latin script on purpose —
  * that is how the team and the ERP refer to them.
  */
+import { MR_DASHBOARD } from "./i18n-mr/dashboard";
+import { MR_FOLLOWUPS } from "./i18n-mr/followups";
+import { MR_HUB } from "./i18n-mr/hub";
+import { MR_MAILS } from "./i18n-mr/mails";
+
+// Shared-screen dictionaries come first so the hand-tuned core strings below win.
 export const MR: Record<string, string> = {
+  ...MR_HUB,
+  ...MR_FOLLOWUPS,
+  ...MR_DASHBOARD,
+  ...MR_MAILS,
   // ── Common ──
   "Loading…": "लोड होत आहे…",
   Cancel: "रद्द करा",

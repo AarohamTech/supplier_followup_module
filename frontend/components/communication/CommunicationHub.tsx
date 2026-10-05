@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import api from "@/lib/api";
 import { useStore } from "@/lib/store";
 import { overdueDays } from "@/lib/format";
+import { useT } from "@/lib/i18n";
 import TaskCreateForm from "@/components/tasks/TaskCreateForm";
 import CustomerWorkspace from "@/components/customer-mails/CustomerWorkspace";
 import {
@@ -169,18 +170,20 @@ function signalRank(s: string): number {
   return ({ GREEN: 0, YELLOW: 1, RED: 2, BLACK: 3 } as Record<string, number>)[s] ?? 0;
 }
 
-function relTime(value: string | null | undefined): string {
+type Translate = ReturnType<typeof useT>["t"];
+
+function relTime(value: string | null | undefined, t: Translate): string {
   if (!value) return "—";
   const d = new Date(value);
   if (isNaN(d.getTime())) return "—";
   const diffMs = Date.now() - d.getTime();
   const min = Math.floor(diffMs / 60000);
-  if (min < 1) return "just now";
-  if (min < 60) return `${min}m ago`;
+  if (min < 1) return t("just now");
+  if (min < 60) return t("{n}m ago", { n: min });
   const hr = Math.floor(min / 60);
-  if (hr < 24) return `${hr}h ago`;
+  if (hr < 24) return t("{n}h ago", { n: hr });
   const day = Math.floor(hr / 24);
-  if (day < 30) return `${day}d ago`;
+  if (day < 30) return t("{n}d ago", { n: day });
   return d.toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
 }
 
@@ -196,8 +199,8 @@ function fmtTime(value: string | null | undefined): string {
   });
 }
 
-function fmtDueDate(value: string | null | undefined): { text: string; overdue: boolean } {
-  if (!value) return { text: "No due date", overdue: false };
+function fmtDueDate(value: string | null | undefined, t: Translate): { text: string; overdue: boolean } {
+  if (!value) return { text: t("No due date"), overdue: false };
   const d = new Date(value);
   if (isNaN(d.getTime())) return { text: value, overdue: false };
   const overdue = d.getTime() < Date.now();
@@ -309,17 +312,18 @@ function recommendedAction(signal: TaskSignal, draftCount: number, openTasks: nu
   return "Monitor";
 }
 
-function actionDescription(signal: TaskSignal, lastSubject?: string | null): string {
-  if (signal === "BLACK") return "Critical PO. Create escalation pressure and keep leadership visible.";
-  if (signal === "RED") return "Delayed PO. Push for a firm commitment date before this slips further.";
-  if (signal === "YELLOW") return "Follow up before this becomes late.";
-  return lastSubject ? `Latest thread: ${lastSubject}` : "No urgent action detected.";
+function actionDescription(signal: TaskSignal, t: Translate, lastSubject?: string | null): string {
+  if (signal === "BLACK") return t("Critical PO. Create escalation pressure and keep leadership visible.");
+  if (signal === "RED") return t("Delayed PO. Push for a firm commitment date before this slips further.");
+  if (signal === "YELLOW") return t("Follow up before this becomes late.");
+  return lastSubject ? t("Latest thread: {subject}", { subject: lastSubject }) : t("No urgent action detected.");
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Component
 // ─────────────────────────────────────────────────────────────────────────────
 export default function CommunicationHub({ hub, showCustomers = false }: CommunicationHubProps) {
+  const { t } = useT();
   // ── API-driven state ──
   const [hubKpis, setHubKpis] = useState<CommHubDashboard | null>(null);
   const [supplierList, setSupplierList] = useState<CommHubSupplier[]>([]);
@@ -361,7 +365,7 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
         const meta = await hub.uploadAttachment(file);
         setPendingFiles((cur) => [...cur, meta]);
       } catch (e: unknown) {
-        pushToast("err", e instanceof Error ? e.message : "Upload failed");
+        pushToast("err", e instanceof Error ? e.message : t("Upload failed"));
       } finally {
         setUploadingCount((n) => Math.max(0, n - 1));
       }
@@ -427,9 +431,9 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
   const agentBusy = activeHiThreadId != null && agentBusyThreadId === activeHiThreadId;
   // Non-PO "Other Mails" conversation in focus (no PO selected).
   const inOther = selectedOtherKey !== null;
-  const activeOther = otherMails.find((t) => t.thread_key === selectedOtherKey) ?? null;
+  const activeOther = otherMails.find((om) => om.thread_key === selectedOtherKey) ?? null;
   const otherSubject =
-    activeOther?.subject ?? thread?.messages?.[0]?.subject ?? thread?.non_po_subject ?? "Other mail";
+    activeOther?.subject ?? thread?.messages?.[0]?.subject ?? thread?.non_po_subject ?? t("Other mail");
   const otherSupplierName =
     activeOther?.supplier_name ?? thread?.supplier_name ?? selectedSupplierName ?? "";
   const threadMessages: CommHubMessage[] = thread?.messages ?? [];
@@ -465,7 +469,7 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
   const pushToast = useCallback((tone: "ok" | "err", msg: string) => {
     const id = Date.now() + Math.random();
     setToasts((prev) => [...prev, { id, tone, msg }]);
-    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 3000);
+    setTimeout(() => setToasts((prev) => prev.filter((x) => x.id !== id)), 3000);
   }, []);
 
   // ── Search filter (supplier name + last subject) ──
@@ -600,19 +604,19 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
 
   // ── Select a non-PO "Other Mails" thread ──
   const handleSelectOther = useCallback(
-    async (t: OtherMailThread) => {
-      if (t.thread_key === selectedOtherKey) return;
+    async (om: OtherMailThread) => {
+      if (om.thread_key === selectedOtherKey) return;
       setSelectedProcurementId(null);
-      setSelectedOtherKey(t.thread_key);
+      setSelectedOtherKey(om.thread_key);
       setThread(null);
       setTaskGroups(null);
       setCommitments([]);
       setDetailsOpen(false);
       setHeaderMatsOpen(false);
       const params = {
-        supplier_id: t.supplier_id ?? selectedSupplierId,
-        supplier_name: t.supplier_name ?? selectedSupplierName,
-        non_po_subject: t.thread_key,
+        supplier_id: om.supplier_id ?? selectedSupplierId,
+        supplier_name: om.supplier_name ?? selectedSupplierName,
+        non_po_subject: om.thread_key,
       };
       try {
         setThread(await hub.thread(params));
@@ -815,7 +819,7 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
   const handleCreateTask = async (payload: CommunicationTaskCreate) => {
     try {
       const created = await hub.createTask(payload);
-      pushToast("ok", `Task assigned to ${created.assigned_to ?? "—"}`);
+      pushToast("ok", t("Task assigned to {name}", { name: created.assigned_to ?? "—" }));
       setAssignOpen(false);
       if (selectedProcurementId != null) {
         await loadTasks({ procurement_record_id: selectedProcurementId });
@@ -824,7 +828,7 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
       }
       await loadKpis();
     } catch (e: unknown) {
-      pushToast("err", e instanceof Error ? e.message : "Failed to create task");
+      pushToast("err", e instanceof Error ? e.message : t("Failed to create task"));
     }
   };
 
@@ -837,9 +841,9 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
       } else if (selectedSupplierId != null) {
         await loadTasks({ supplier_id: selectedSupplierId });
       }
-      pushToast("ok", next === "DONE" ? "Task closed" : "Task reopened");
+      pushToast("ok", next === "DONE" ? t("Task closed") : t("Task reopened"));
     } catch (e: unknown) {
-      pushToast("err", e instanceof Error ? e.message : "Failed to update task");
+      pushToast("err", e instanceof Error ? e.message : t("Failed to update task"));
     }
   };
 
@@ -847,14 +851,14 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
     if (!activePo) return;
     try {
       await hub.escalate(activePo.procurement_record_id);
-      pushToast("ok", "Escalation triggered. Draft mail + task created.");
+      pushToast("ok", t("Escalation triggered. Draft mail + task created."));
       await Promise.all([
         loadThread(activePo.procurement_record_id),
         loadTasks({ procurement_record_id: activePo.procurement_record_id }),
         loadKpis(),
       ]);
     } catch (e: unknown) {
-      pushToast("err", e instanceof Error ? e.message : "Escalation failed");
+      pushToast("err", e instanceof Error ? e.message : t("Escalation failed"));
     }
   };
 
@@ -862,7 +866,7 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
     if (!activePo) return;
     const targetId = lastMessageId;
     if (!targetId) {
-      pushToast("err", "No mail draft available to send.");
+      pushToast("err", t("No mail draft available to send."));
       return;
     }
     try {
@@ -870,15 +874,15 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
       const sendResult = result?.send_result || {};
       const enabled = sendResult.enabled !== false;
       if (!enabled) {
-        pushToast("err", `SMTP disabled: ${sendResult.reason || "check settings"}`);
+        pushToast("err", t("SMTP disabled: {reason}", { reason: sendResult.reason || t("check settings") }));
       } else {
         const summary = sendResult.results?.[0] || {};
         const status = summary.status || "QUEUED";
         pushToast(
           status === "SENT" ? "ok" : "err",
           status === "SENT"
-            ? "Mail dispatched via SMTP."
-            : `Mail status: ${status}${summary.error ? ` — ${summary.error}` : ""}`,
+            ? t("Mail dispatched via SMTP.")
+            : `${t("Mail status: {status}", { status })}${summary.error ? ` — ${summary.error}` : ""}`,
         );
       }
       await Promise.all([
@@ -886,7 +890,7 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
         loadKpis(),
       ]);
     } catch (e: unknown) {
-      pushToast("err", e instanceof Error ? e.message : "Send mail failed");
+      pushToast("err", e instanceof Error ? e.message : t("Send mail failed"));
     }
   };
 
@@ -895,9 +899,9 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
     try {
       const result = await hub.aiReply(activePo.procurement_record_id);
       setComposer(result.body);
-      pushToast("ok", "HI reply generated");
+      pushToast("ok", t("HI reply generated"));
     } catch (e: unknown) {
-      pushToast("err", e instanceof Error ? e.message : "HI reply failed");
+      pushToast("err", e instanceof Error ? e.message : t("HI reply failed"));
     }
   };
 
@@ -922,7 +926,7 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
         ...prev,
         [threadId]: res.messages ?? [
           ...(prev[threadId] ?? []),
-          { role: "assistant", text: res.reply || "(no response)", actions: res.pending_actions ?? [] },
+          { role: "assistant", text: res.reply || t("(no response)"), actions: res.pending_actions ?? [] },
         ],
       }));
     } catch (e: unknown) {
@@ -930,7 +934,7 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
         ...prev,
         [threadId]: [
           ...(prev[threadId] ?? []),
-          { role: "assistant", text: e instanceof Error ? e.message : "HI agent could not respond." },
+          { role: "assistant", text: e instanceof Error ? e.message : t("HI agent could not respond.") },
         ],
       }));
     } finally {
@@ -940,10 +944,10 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
 
   // The right-panel's own follow-up input (no /hi prefix needed there).
   const sendHi = () => {
-    const t = hiInput.trim();
-    if (!t || agentBusy || !activePo) return;
+    const text = hiInput.trim();
+    if (!text || agentBusy || !activePo) return;
     setHiInput("");
-    void handleAgent(t);
+    void handleAgent(text);
   };
 
   const confirmAgentAction = async (msgIndex: number, actionIndex: number) => {
@@ -955,7 +959,7 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
         action_type: action.type,
         id: (action.message_id ?? action.subscription_id) as number,
       });
-      pushToast("ok", action.type === "draft" ? "Sent" : "Confirmed");
+      pushToast("ok", action.type === "draft" ? t("Sent") : t("Confirmed"));
       setHiThreads((prev) => ({
         ...prev,
         [threadId]: (prev[threadId] ?? []).map((m, i) =>
@@ -964,7 +968,7 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
       }));
       if (activePo) await loadThread(activePo.procurement_record_id);
     } catch (e: unknown) {
-      pushToast("err", e instanceof Error ? e.message : "Confirm failed");
+      pushToast("err", e instanceof Error ? e.message : t("Confirm failed"));
     }
   };
 
@@ -989,7 +993,7 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
         ),
       }));
     } catch (e: unknown) {
-      pushToast("err", e instanceof Error ? e.message : "Could not dismiss action");
+      pushToast("err", e instanceof Error ? e.message : t("Could not dismiss action"));
     }
   };
 
@@ -1007,7 +1011,7 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
     // Non-PO "Other Mails" reply — threads under the supplier's no-PO conversation.
     if (inOther) {
       if (/^\/hi\b/i.test(text)) {
-        pushToast("err", "The HI agent isn't available on non-PO mails yet.");
+        pushToast("err", t("The HI agent isn't available on non-PO mails yet."));
         return;
       }
       if (!selectedOtherKey) return;
@@ -1022,11 +1026,11 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
         setComposer("");
         setPendingFiles([]);
         if (res.no_email_on_file) {
-          pushToast("ok", "Saved (no email on file — add one in Email Master)");
+          pushToast("ok", t("Saved (no email on file — add one in Email Master)"));
         } else if (res.channel === "email") {
-          pushToast("ok", res.sent ? "Sent by email" : "Queued for email");
+          pushToast("ok", res.sent ? t("Sent by email") : t("Queued for email"));
         } else {
-          pushToast("ok", "Saved");
+          pushToast("ok", t("Saved"));
         }
         try {
           setThread(await hub.thread(params));
@@ -1034,7 +1038,7 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
           /* non-fatal */
         }
       } catch (e: unknown) {
-        pushToast("err", e instanceof Error ? e.message : "Send failed");
+        pushToast("err", e instanceof Error ? e.message : t("Send failed"));
       } finally {
         setReplying(false);
       }
@@ -1063,15 +1067,15 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
       setComposer("");
       setPendingFiles([]);
       if (res.no_email_on_file) {
-        pushToast("ok", "Posted to supplier portal (no email on file — add one in Email Master)");
+        pushToast("ok", t("Posted to supplier portal (no email on file — add one in Email Master)"));
       } else if (res.channel === "email") {
-        pushToast("ok", res.sent ? "Sent by email + portal" : "Queued for email + posted to portal");
+        pushToast("ok", res.sent ? t("Sent by email + portal") : t("Queued for email + posted to portal"));
       } else {
-        pushToast("ok", "Posted to supplier portal");
+        pushToast("ok", t("Posted to supplier portal"));
       }
       await loadThread(activePo.procurement_record_id);
     } catch (e: unknown) {
-      pushToast("err", e instanceof Error ? e.message : "Send failed");
+      pushToast("err", e instanceof Error ? e.message : t("Send failed"));
     } finally {
       setReplying(false);
     }
@@ -1111,14 +1115,14 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
       window.location.href = `mailto:${encodeURIComponent((res.to || []).join(","))}?${qs}`;
       setComposer("");
       if (pendingFiles.length) {
-        pushToast("ok", "Opened in Outlook — attach the files there too (they stay on the portal copy)");
+        pushToast("ok", t("Opened in Outlook — attach the files there too (they stay on the portal copy)"));
       } else {
-        pushToast("ok", "Opened in Outlook — press Send there");
+        pushToast("ok", t("Opened in Outlook — press Send there"));
       }
       setPendingFiles([]);
       if (activePo) await loadThread(activePo.procurement_record_id);
     } catch (e: unknown) {
-      pushToast("err", e instanceof Error ? e.message : "Could not open Outlook");
+      pushToast("err", e instanceof Error ? e.message : t("Could not open Outlook"));
     } finally {
       setReplying(false);
     }
@@ -1158,13 +1162,13 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
         onClick={() => setSource("suppliers")}
         className={`rounded-md px-3 py-1.5 transition ${source === "suppliers" ? "bg-card text-signal-red shadow-sm" : "text-brand-muted hover:text-brand-dark"}`}
       >
-        Suppliers
+        {t("Suppliers")}
       </button>
       <button
         onClick={() => setSource("customers")}
         className={`rounded-md px-3 py-1.5 transition ${source === "customers" ? "bg-card text-signal-red shadow-sm" : "text-brand-muted hover:text-brand-dark"}`}
       >
-        Customers
+        {t("Customers")}
       </button>
     </div>
   ) : null;
@@ -1186,9 +1190,9 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
           <MessagesSquare size={17} />
         </span>
         <div className="min-w-0">
-          <h1 className="truncate text-base font-semibold text-brand-dark">Communication Hub</h1>
+          <h1 className="truncate text-base font-semibold text-brand-dark">{t("Communication Hub")}</h1>
           <p className="hidden text-xs text-brand-muted sm:block">
-            Triage replies, PO risk and next actions in one place.
+            {t("Triage replies, PO risk and next actions in one place.")}
           </p>
         </div>
 
@@ -1196,11 +1200,11 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
 
         <button onClick={loadAll} className="btn-outline ml-auto h-9" disabled={loading}>
           {loading ? <Loader2 size={14} className="animate-spin" /> : <RefreshCcw size={14} />}
-          <span className="hidden sm:inline">Refresh</span>
+          <span className="hidden sm:inline">{t("Refresh")}</span>
         </button>
         <button className="btn-primary h-9" onClick={seedAssign}>
           <Plus size={14} />
-          <span className="hidden sm:inline">Compose Task</span>
+          <span className="hidden sm:inline">{t("Compose Task")}</span>
         </button>
       </header>
 
@@ -1222,14 +1226,14 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
             <button
               key={f.key}
               onClick={() => setQueueFilter(f.key)}
-              title={f.description}
+              title={t(f.description)}
               className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition ${
                 active
                   ? "bg-red-50 text-signal-red ring-1 ring-signal-red/30"
                   : "text-brand-muted hover:bg-subtle"
               }`}
             >
-              {f.label}
+              {t(f.label)}
               <span
                 className={`rounded-full px-1.5 text-[10px] font-bold ${
                   active ? "bg-signal-red text-white" : "bg-subtle text-brand-muted"
@@ -1244,7 +1248,7 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
 
       {error && (
         <div className="mx-6 mt-3 rounded-md border border-red-100 bg-red-50 px-3 py-2 text-sm text-signal-red">
-          {error}
+          {t(error)}
         </div>
       )}
 
@@ -1253,18 +1257,18 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
         {/* LEFT — conversation list */}
         <aside className="flex w-[340px] min-w-[300px] shrink-0 flex-col overflow-hidden rounded-xl border border-brand-border bg-card shadow-sm">
           <div className="flex items-center justify-between px-4 py-2.5">
-            <span className="text-xs font-semibold uppercase tracking-wide text-brand-muted">Suppliers</span>
+            <span className="text-xs font-semibold uppercase tracking-wide text-brand-muted">{t("Suppliers")}</span>
             <span className="text-[11px] text-brand-muted">{filteredSuppliers.length}</span>
           </div>
           <div className="px-3 pb-2">
-            <SearchBox value={search} onChange={setSearch} placeholder="Search supplier or subject…" />
+            <SearchBox value={search} onChange={setSearch} placeholder={t("Search supplier or subject…")} />
           </div>
 
           <div className="max-h-[44%] overflow-y-auto border-y border-brand-border">
             {loading && supplierList.length === 0 ? (
-              <EmptyState icon={<Loader2 className="animate-spin" size={18} />}>Loading…</EmptyState>
+              <EmptyState icon={<Loader2 className="animate-spin" size={18} />}>{t("Loading…")}</EmptyState>
             ) : filteredSuppliers.length === 0 ? (
-              <EmptyState icon={<Inbox size={20} />}>Nothing in this queue.</EmptyState>
+              <EmptyState icon={<Inbox size={20} />}>{t("Nothing in this queue.")}</EmptyState>
             ) : (
               filteredSuppliers.map((s) => (
                 <SupplierRow
@@ -1279,7 +1283,7 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
 
           <div className="px-4 py-2.5">
             <div className="mb-2 truncate text-[11px] text-brand-muted">
-              {activeSupplier ? activeSupplier.supplier_name : "Select a supplier"}
+              {activeSupplier ? activeSupplier.supplier_name : t("Select a supplier")}
             </div>
             {activeSupplier && (
               // Segmented toggle: switching swaps which list the panel shows, so
@@ -1293,7 +1297,7 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
                       : "text-brand-muted hover:text-brand-dark"
                   }`}
                 >
-                  Purchase Orders
+                  {t("Purchase Orders")}
                   <span
                     className={`rounded-full px-1.5 text-[10px] font-bold ${
                       poView === "pos" ? "bg-signal-red text-white" : "bg-card text-brand-muted"
@@ -1304,14 +1308,14 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
                 </button>
                 <button
                   onClick={() => setPoView("other")}
-                  title="Mails with no PO number"
+                  title={t("Mails with no PO number")}
                   className={`flex flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 transition ${
                     poView === "other"
                       ? "bg-card text-signal-red shadow-sm"
                       : "text-brand-muted hover:text-brand-dark"
                   }`}
                 >
-                  Other
+                  {t("Other")}
                   <span
                     className={`rounded-full px-1.5 text-[10px] font-bold ${
                       poView === "other" || (activeSupplier.non_po_count ?? 0) > 0
@@ -1326,19 +1330,19 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
             )}
             {activeSupplier && poView === "pos" && (
               <div className="mt-2">
-                <SearchBox value={poSearch} onChange={setPoSearch} placeholder="Search PO no. or material…" />
+                <SearchBox value={poSearch} onChange={setPoSearch} placeholder={t("Search PO no. or material…")} />
               </div>
             )}
           </div>
 
           <div className="flex-1 overflow-y-auto border-t border-brand-border">
             {!activeSupplier ? (
-              <EmptyState icon={<Inbox size={18} />}>Pick a supplier to see its POs.</EmptyState>
+              <EmptyState icon={<Inbox size={18} />}>{t("Pick a supplier to see its POs.")}</EmptyState>
             ) : poView === "pos" ? (
               poList.length === 0 && !loading ? (
-                <EmptyState icon={<Inbox size={18} />}>No POs for this supplier.</EmptyState>
+                <EmptyState icon={<Inbox size={18} />}>{t("No POs for this supplier.")}</EmptyState>
               ) : filteredPoList.length === 0 ? (
-                <EmptyState icon={<Inbox size={18} />}>No POs match “{poSearch.trim()}”.</EmptyState>
+                <EmptyState icon={<Inbox size={18} />}>{t("No POs match “{q}”.", { q: poSearch.trim() })}</EmptyState>
               ) : (
                 filteredPoList.map((p) => (
                   <PoRow
@@ -1350,14 +1354,14 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
                 ))
               )
             ) : otherMails.length === 0 ? (
-              <EmptyState icon={<Inbox size={18} />}>No mails without a PO for this supplier.</EmptyState>
+              <EmptyState icon={<Inbox size={18} />}>{t("No mails without a PO for this supplier.")}</EmptyState>
             ) : (
-              otherMails.map((t) => (
+              otherMails.map((om) => (
                 <OtherMailRow
-                  key={t.thread_key}
-                  t={t}
-                  active={t.thread_key === selectedOtherKey}
-                  onClick={() => void handleSelectOther(t)}
+                  key={om.thread_key}
+                  t={om}
+                  active={om.thread_key === selectedOtherKey}
+                  onClick={() => void handleSelectOther(om)}
                 />
               ))
             )}
@@ -1377,10 +1381,10 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
                     <span className="ml-2 font-normal text-brand-muted">{activeSupplier.supplier_name}</span>
                   </h2>
                   <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold uppercase ${SIGNAL_CHIP[threadSignal] ?? ""}`}>
-                    {SIGNAL_LABEL[threadSignal] ?? threadSignal}
+                    {SIGNAL_LABEL[threadSignal] ? t(SIGNAL_LABEL[threadSignal]) : threadSignal}
                   </span>
                   <span className="ml-2 hidden text-xs text-brand-muted md:inline">
-                    {threadMessages.length} message{threadMessages.length === 1 ? "" : "s"}
+                    {t(threadMessages.length === 1 ? "{n} message" : "{n} messages", { n: threadMessages.length })}
                   </span>
 
                   <div className="ml-auto flex items-center gap-1">
@@ -1391,9 +1395,9 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
                           ? "border-brand-dark/20 bg-subtle text-brand-dark"
                           : "border-brand-border text-brand-dark hover:bg-subtle"
                       }`}
-                      title="Materials & committed dates"
+                      title={t("Materials & committed dates")}
                     >
-                      <Package size={13} /> Materials
+                      <Package size={13} /> {t("Materials")}
                       <ChevronDown size={12} className={`transition-transform ${headerMatsOpen ? "rotate-180" : ""}`} />
                     </button>
                     <button
@@ -1404,12 +1408,12 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
                           : "border-brand-border text-brand-dark hover:bg-subtle"
                       }`}
                     >
-                      <Sparkles size={13} /> Details
+                      <Sparkles size={13} /> {t("Details")}
                     </button>
                     <button
                       onClick={seedAssign}
                       className="p-1.5 text-brand-muted hover:text-brand-dark"
-                      title="More"
+                      title={t("More")}
                     >
                       <MoreHorizontal size={18} />
                     </button>
@@ -1426,10 +1430,10 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
                     )}
                   </h2>
                   <span className="rounded bg-subtle px-1.5 py-0.5 text-[10px] font-bold uppercase text-brand-muted">
-                    No PO
+                    {t("No PO")}
                   </span>
                   <span className="ml-2 hidden text-xs text-brand-muted md:inline">
-                    {threadMessages.length} message{threadMessages.length === 1 ? "" : "s"}
+                    {t(threadMessages.length === 1 ? "{n} message" : "{n} messages", { n: threadMessages.length })}
                   </span>
                 </div>
               )}
@@ -1438,18 +1442,18 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
               {headerMatsOpen && activePo && (
                 <div className="border-b border-brand-border bg-subtle/70 px-5 py-3">
                   <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-brand-muted">
-                    Materials &amp; committed dates
+                    {t("Materials & committed dates")}
                   </div>
                   {(activePo.materials?.length ?? 0) === 0 ? (
-                    <div className="text-xs text-brand-muted">No materials on this PO.</div>
+                    <div className="text-xs text-brand-muted">{t("No materials on this PO.")}</div>
                   ) : (
                     <div className="overflow-x-auto rounded border border-brand-border bg-card">
                       <table className="min-w-full text-left text-xs">
                         <thead className="bg-subtle">
                           <tr className="text-[10px] uppercase tracking-wide text-brand-muted">
-                            <th className="px-3 py-1.5 font-semibold">Material</th>
-                            <th className="px-3 py-1.5 font-semibold">Overdue</th>
-                            <th className="px-3 py-1.5 font-semibold">Committed date</th>
+                            <th className="px-3 py-1.5 font-semibold">{t("Material")}</th>
+                            <th className="px-3 py-1.5 font-semibold">{t("Overdue")}</th>
+                            <th className="px-3 py-1.5 font-semibold">{t("Committed date")}</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -1466,7 +1470,7 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
                                 </td>
                                 <td className="px-3 py-1.5 whitespace-nowrap">
                                   {od > 0 ? (
-                                    <span className="font-semibold text-signal-red">{od}d</span>
+                                    <span className="font-semibold text-signal-red">{t("{n}d", { n: od })}</span>
                                   ) : (
                                     <span className="text-brand-muted">—</span>
                                   )}
@@ -1475,7 +1479,7 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
                                   {commit?.commitment_date ? (
                                     fmtTableDate(commit.commitment_date)
                                   ) : (
-                                    <span className="text-brand-muted">Awaiting supplier</span>
+                                    <span className="text-brand-muted">{t("Awaiting supplier")}</span>
                                   )}
                                 </td>
                               </tr>
@@ -1492,7 +1496,7 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
               <div className="flex-1 space-y-6 overflow-y-auto px-6 py-6 lg:px-10">
                 {threadMessages.length === 0 ? (
                   <EmptyState icon={<MessagesSquare size={22} />}>
-                    {inOther ? "No messages in this thread yet." : "No emails for this PO yet."}
+                    {inOther ? t("No messages in this thread yet.") : t("No emails for this PO yet.")}
                   </EmptyState>
                 ) : (
                   threadMessages.map((m) => (
@@ -1523,7 +1527,7 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
                 {/* /hi command hint */}
                 {/^\/hi\b/i.test(composer) && (
                   <div className="mb-2 rounded-lg border border-signal-red/20 bg-card p-2 text-[11px] text-brand-muted">
-                    <span className="font-semibold text-signal-red">HI agent</span> — try:{" "}
+                    <span className="font-semibold text-signal-red">{t("HI agent")}</span> — {t("try:")}{" "}
                     {[
                       "summarise this",
                       "send a summary to @username",
@@ -1536,20 +1540,20 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
                         onClick={() => setComposer(`/hi ${ex}`)}
                         className="mr-1 mb-1 inline-block rounded-full border border-brand-border px-2 py-0.5 hover:bg-red-50 hover:text-signal-red"
                       >
-                        {ex}
+                        {t(ex)}
                       </button>
                     ))}
                   </div>
                 )}
                 <div className="mb-2 flex flex-wrap items-center gap-1.5">
-                  <span className="text-[10px] font-semibold uppercase tracking-wide text-brand-muted">Templates</span>
-                  {TEMPLATES.map((t) => (
+                  <span className="text-[10px] font-semibold uppercase tracking-wide text-brand-muted">{t("Templates")}</span>
+                  {TEMPLATES.map((tpl) => (
                     <button
-                      key={t.label}
-                      onClick={() => setComposer(t.body)}
+                      key={tpl.label}
+                      onClick={() => setComposer(tpl.body)}
                       className="rounded-full border border-brand-border px-2.5 py-0.5 text-[11px] font-medium text-brand-muted hover:bg-subtle hover:text-brand-dark"
                     >
-                      {t.label}
+                      {t(tpl.label)}
                     </button>
                   ))}
                 </div>
@@ -1559,7 +1563,7 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
                   {mentionQuery !== null && mentionMatches.length > 0 && (
                     <div className="absolute bottom-full left-0 z-20 mb-1 w-72 overflow-hidden rounded-lg border border-brand-border bg-card shadow-lg">
                       <div className="border-b border-brand-border px-2 py-1 text-[10px] uppercase tracking-wide text-brand-muted">
-                        Mention a teammate
+                        {t("Mention a teammate")}
                       </div>
                       {mentionMatches.map((a, i) => (
                         <button
@@ -1588,7 +1592,7 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
                         if (e.key === "Escape") { e.preventDefault(); setComposer((prev) => `${prev} `); return; }
                       }
                     }}
-                    placeholder="Type your message…  (tip: start with /hi to ask the HI agent)"
+                    placeholder={t("Type your message…  (tip: start with /hi to ask the HI agent)")}
                     className="h-24 w-full resize-none rounded-lg border border-brand-border bg-subtle p-3 pr-28 text-sm outline-none focus:border-signal-red/40 focus:bg-card"
                   />
                   <div className="absolute bottom-3 right-3 flex items-center gap-1.5">
@@ -1597,7 +1601,7 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
                       onClick={() => void handleOutlookReply()}
                       disabled={!composer.trim() || replying || /^\/hi\b/i.test(composer.trim())}
                       className="inline-flex items-center gap-1 rounded-md border border-brand-border px-2.5 py-1.5 text-xs font-semibold text-brand-dark hover:bg-subtle disabled:opacity-50"
-                      title="Open this reply in Outlook (your own mail app) instead of sending from here"
+                      title={t("Open this reply in Outlook (your own mail app) instead of sending from here")}
                     >
                       <Mail size={13} /> Outlook
                     </button>
@@ -1606,7 +1610,7 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
                       <button
                         onClick={() => void handleAiReply()}
                         className="inline-flex items-center gap-1 rounded-md border border-signal-red/30 bg-red-50 px-2.5 py-1.5 text-xs font-semibold text-signal-red hover:bg-red-100"
-                        title="Generate a Harmony Intelligent reply"
+                        title={t("Generate a Harmony Intelligent reply")}
                       >
                         <Sparkles size={13} /> HI
                       </button>
@@ -1617,10 +1621,10 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
                       onClick={() => void handleSendReply()}
                       title={
                         /^\/hi\b/i.test(composer.trim())
-                          ? "Ask the HI agent"
+                          ? t("Ask the HI agent")
                           : sendAsEmail
-                            ? "Send by email + post to portal"
-                            : "Post to supplier portal only"
+                            ? t("Send by email + post to portal")
+                            : t("Post to supplier portal only")
                       }
                     >
                       <Send size={16} />
@@ -1640,9 +1644,9 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
                     onChange={(e) => setSendAsEmail(e.target.checked)}
                     className="accent-signal-red"
                   />
-                  Send as email to the supplier
+                  {t("Send as email to the supplier")}
                   <span className="text-brand-muted/70">
-                    {sendAsEmail ? "(emails them + shows in their portal)" : "(portal only — they read & reply in their portal)"}
+                    {sendAsEmail ? t("(emails them + shows in their portal)") : t("(portal only — they read & reply in their portal)")}
                   </span>
                 </label>
               </div>
@@ -1651,7 +1655,7 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
             <div className="grid flex-1 place-items-center text-brand-muted">
               <div className="text-center">
                 <MessagesSquare size={34} className="mx-auto mb-2 opacity-40" />
-                <p className="text-sm">Select a purchase order or an Other Mail to view the conversation.</p>
+                <p className="text-sm">{t("Select a purchase order or an Other Mail to view the conversation.")}</p>
               </div>
             </div>
           )}
@@ -1664,16 +1668,16 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
               <div className="flex min-w-0 items-center gap-1.5">
                 <Sparkles size={15} className="shrink-0 text-signal-red" />
                 <div className="min-w-0">
-                  <div className="text-sm font-semibold text-brand-dark">HI Assistant</div>
+                  <div className="text-sm font-semibold text-brand-dark">{t("HI Assistant")}</div>
                   <div className="truncate text-[11px] text-brand-muted">
-                    {activePo ? `PO ${activePo.po_ref ?? `#${activePo.supplier_po_no}`}` : "Ask about this thread"}
+                    {activePo ? `PO ${activePo.po_ref ?? `#${activePo.supplier_po_no}`}` : t("Ask about this thread")}
                   </div>
                 </div>
               </div>
               <button
                 onClick={() => setHiOpen(false)}
                 className="rounded-md p-1.5 text-brand-muted hover:bg-subtle"
-                title="Close HI chat"
+                title={t("Close HI chat")}
               >
                 <X size={16} />
               </button>
@@ -1682,7 +1686,7 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
             <div className="flex-1 space-y-3 overflow-y-auto p-3">
               {hiMessages.length === 0 && !agentBusy && (
                 <div className="mt-6 text-center text-xs text-brand-muted">
-                  Ask HI to summarise the thread, draft a reply, or set up a followup.
+                  {t("Ask HI to summarise the thread, draft a reply, or set up a followup.")}
                 </div>
               )}
               {hiMessages.map((msg, mi) => (
@@ -1703,21 +1707,21 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
                       >
                         <span className="min-w-0 truncate">
                           {a.type === "draft"
-                            ? `✉️ Email${a.recipient ? ` to ${a.recipient}` : ""}${a.subject ? `: ${a.subject}` : ""}`
-                            : `🔔 ${a.kind === "SCHEDULED_SUMMARY" ? "Scheduled summary" : "Followup"}${a.recipient ? ` for ${a.recipient}` : ""}${a.schedule ? ` (${a.schedule})` : ""}`}
+                            ? `✉️ ${a.recipient ? t("Email to {name}", { name: a.recipient }) : t("Email")}${a.subject ? `: ${a.subject}` : ""}`
+                            : `🔔 ${a.kind === "SCHEDULED_SUMMARY" ? t("Scheduled summary") : t("Followup")}${a.recipient ? ` ${t("for {name}", { name: a.recipient })}` : ""}${a.schedule ? ` (${a.schedule})` : ""}`}
                         </span>
                         <span className="flex shrink-0 gap-1.5">
                           <button
                             className="rounded-md bg-signal-red px-2.5 py-1 text-[11px] font-semibold text-white hover:opacity-90"
                             onClick={() => void confirmAgentAction(mi, ai)}
                           >
-                            {a.type === "draft" ? "Send" : "Confirm"}
+                            {a.type === "draft" ? t("Send") : t("Confirm")}
                           </button>
                           <button
                             className="rounded-md border border-brand-border px-2.5 py-1 text-[11px] text-brand-muted hover:bg-subtle"
                             onClick={() => void dismissAgentAction(mi, ai)}
                           >
-                            Dismiss
+                            {t("Dismiss")}
                           </button>
                         </span>
                       </div>
@@ -1728,7 +1732,7 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
               {agentBusy && (
                 <div className="flex justify-start">
                   <div className="inline-flex items-center gap-1.5 rounded-lg border border-brand-border bg-subtle/60 px-3 py-2 text-sm text-brand-muted">
-                    <Loader2 size={13} className="animate-spin" /> Thinking…
+                    <Loader2 size={13} className="animate-spin" /> {t("Thinking…")}
                   </div>
                 </div>
               )}
@@ -1737,7 +1741,7 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
 
             <div className="border-t border-brand-border p-3">
               {noPo ? (
-                <div className="text-center text-[11px] text-brand-muted">Select a PO to chat with HI.</div>
+                <div className="text-center text-[11px] text-brand-muted">{t("Select a PO to chat with HI.")}</div>
               ) : (
                 <div className="flex items-end gap-2">
                   <textarea
@@ -1750,14 +1754,14 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
                       }
                     }}
                     rows={2}
-                    placeholder="Ask HI…"
+                    placeholder={t("Ask HI…")}
                     className="flex-1 resize-none rounded-lg border border-brand-border bg-subtle p-2 text-sm outline-none focus:border-signal-red/40 focus:bg-card"
                   />
                   <button
                     className="rounded-md bg-signal-red p-2 text-white shadow-sm hover:opacity-90 disabled:opacity-50"
                     disabled={!hiInput.trim() || agentBusy}
                     onClick={() => sendHi()}
-                    title="Ask HI"
+                    title={t("Ask HI")}
                   >
                     <Send size={16} />
                   </button>
@@ -1769,15 +1773,15 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
           <aside className="flex w-[330px] shrink-0 flex-col overflow-hidden rounded-xl border border-brand-border bg-card shadow-sm">
             <div className="flex items-center justify-between border-b border-brand-border px-4 py-3">
               <div className="min-w-0">
-                <div className="text-sm font-semibold text-brand-dark">Details &amp; Actions</div>
+                <div className="text-sm font-semibold text-brand-dark">{t("Details & Actions")}</div>
                 <div className="truncate text-[11px] text-brand-muted">
-                  {activePo ? `PO ${activePo.po_ref ?? `#${activePo.supplier_po_no}`}` : activeSupplier?.supplier_name || "No PO selected"}
+                  {activePo ? `PO ${activePo.po_ref ?? `#${activePo.supplier_po_no}`}` : activeSupplier?.supplier_name || t("No PO selected")}
                 </div>
               </div>
               <button
                 onClick={() => setDetailsOpen(false)}
                 className="rounded-md p-1.5 text-brand-muted hover:bg-subtle"
-                title="Collapse"
+                title={t("Collapse")}
               >
                 <ChevronRight size={16} />
               </button>
@@ -1786,55 +1790,59 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
             <div className="flex-1 space-y-4 overflow-y-auto p-4">
               {/* Recommended */}
               <div className="rounded-lg border border-red-100 bg-red-50/60 p-3">
-                <div className="text-[10px] font-bold uppercase tracking-wide text-signal-red">Recommended</div>
+                <div className="text-[10px] font-bold uppercase tracking-wide text-signal-red">{t("Recommended")}</div>
                 <div className="mt-1 text-sm font-semibold text-brand-dark">
-                  {noPo ? "Select a PO" : recommendedAction(threadSignal, draftCount, contextTasks.filter((t) => t.status !== "DONE").length)}
+                  {noPo ? t("Select a PO") : t(recommendedAction(threadSignal, draftCount, contextTasks.filter((tk) => tk.status !== "DONE").length))}
                 </div>
                 <p className="mt-1 text-xs leading-relaxed text-brand-muted">
-                  {noPo ? "Choose a supplier and PO to unlock actions." : actionDescription(threadSignal, lastMessage?.subject)}
+                  {noPo ? t("Choose a supplier and PO to unlock actions.") : actionDescription(threadSignal, t, lastMessage?.subject)}
                 </p>
               </div>
 
               {/* Quick actions */}
               <div>
-                <SectionTitle>Quick actions</SectionTitle>
+                <SectionTitle>{t("Quick actions")}</SectionTitle>
                 <div className="grid grid-cols-2 gap-2">
                   <QuickAction
                     icon={<MessagesSquare size={14} />}
-                    label="HI Chat"
+                    label={t("HI Chat")}
                     onClick={() => setHiOpen(true)}
                     disabled={noPo}
                     accent
                   />
-                  <QuickAction icon={<Sparkles size={14} />} label="HI Reply" onClick={() => void handleAiReply()} disabled={noPo} accent />
-                  <QuickAction icon={<Send size={14} />} label="Send Draft" onClick={() => void handleSendMailNow()} disabled={noPo} />
-                  <QuickAction icon={<AlertTriangle size={14} />} label="Escalate" onClick={() => void handleEscalate()} disabled={noPo} danger />
-                  <QuickAction icon={<UserPlus size={14} />} label="Assign" onClick={seedAssign} disabled={!activeSupplier} />
-                  <QuickAction icon={<Bell size={14} />} label="Reminder" onClick={seedReminder} disabled={!activeSupplier} />
-                  <QuickAction icon={<Mail size={14} />} label="PO Mail" onClick={onPoMail} disabled={noPo} />
+                  <QuickAction icon={<Sparkles size={14} />} label={t("HI Reply")} onClick={() => void handleAiReply()} disabled={noPo} accent />
+                  <QuickAction icon={<Send size={14} />} label={t("Send Draft")} onClick={() => void handleSendMailNow()} disabled={noPo} />
+                  <QuickAction icon={<AlertTriangle size={14} />} label={t("Escalate")} onClick={() => void handleEscalate()} disabled={noPo} danger />
+                  <QuickAction icon={<UserPlus size={14} />} label={t("Assign")} onClick={seedAssign} disabled={!activeSupplier} />
+                  <QuickAction icon={<Bell size={14} />} label={t("Reminder")} onClick={seedReminder} disabled={!activeSupplier} />
+                  <QuickAction icon={<Mail size={14} />} label={t("PO Mail")} onClick={onPoMail} disabled={noPo} />
                 </div>
               </div>
 
               {/* AI summary */}
               {activePo && (
                 <div>
-                  <SectionTitle>Harmony Intelligent summary</SectionTitle>
+                  <SectionTitle>{t("Harmony Intelligent summary")}</SectionTitle>
                   <div className="space-y-1.5 rounded-lg border border-brand-border bg-subtle/60 p-3 text-xs leading-relaxed text-brand-dark">
                     <p>
-                      Conversation around {activePo.material_name || "this PO"} — {draftCount} draft / {sentCount} sent.
+                      {t("Conversation around {material} — {drafts} draft / {sent} sent.", {
+                        material: activePo.material_name || t("this PO"),
+                        drafts: draftCount,
+                        sent: sentCount,
+                      })}
                     </p>
                     <p>
-                      <span className="font-semibold text-brand-dark">Latest:</span> {lastMessage?.subject ?? "—"}
+                      <span className="font-semibold text-brand-dark">{t("Latest:")}</span> {lastMessage?.subject ?? "—"}
                     </p>
                     <p>
-                      <span className="font-semibold text-brand-dark">Suggested:</span>{" "}
+                      <span className="font-semibold text-brand-dark">{t("Suggested:")}</span>{" "}
                       {threadSignal === "BLACK"
-                        ? "Escalate to leadership immediately."
+                        ? t("Escalate to leadership immediately.")
                         : threadSignal === "RED"
-                          ? "Send strong follow-up and create P0 task."
+                          ? t("Send strong follow-up and create P0 task.")
                           : threadSignal === "YELLOW"
-                            ? "Send reminder and confirm commitment date."
-                            : "Monitor — no action required."}
+                            ? t("Send reminder and confirm commitment date.")
+                            : t("Monitor — no action required.")}
                     </p>
                   </div>
                 </div>
@@ -1848,10 +1856,10 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
                     className="flex w-full items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-brand-muted hover:text-brand-dark"
                   >
                     <ChevronDown size={13} className={`transition-transform ${showMaterials ? "rotate-180" : ""}`} />
-                    Materials ({activePo.material_count ?? activePo.materials?.length})
+                    {t("Materials ({n})", { n: activePo.material_count ?? activePo.materials?.length })}
                     {commitments.length > 0 && (
                       <span className="ml-auto rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">
-                        {commitments.length} commit{commitments.length === 1 ? "" : "s"}
+                        {t(commitments.length === 1 ? "{n} commit" : "{n} commits", { n: commitments.length })}
                       </span>
                     )}
                   </button>
@@ -1862,7 +1870,7 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
                           <tr>
                             {["CRM", "Material", "Qty", "Due", "Status", "Commit"].map((h, i) => (
                               <th key={i} className="whitespace-nowrap px-2 py-1.5 text-left font-semibold text-brand-muted">
-                                {h}
+                                {t(h)}
                               </th>
                             ))}
                           </tr>
@@ -1899,14 +1907,14 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
               <div>
                 <div className="mb-2 flex items-center justify-between">
                   <SectionTitle className="mb-0">
-                    Open tasks ({contextTasks.filter((t) => t.status !== "DONE").length})
+                    {t("Open tasks ({n})", { n: contextTasks.filter((tk) => tk.status !== "DONE").length })}
                   </SectionTitle>
-                  <button onClick={seedAssign} className="rounded-md p-1 text-signal-red hover:bg-red-50" title="New task">
+                  <button onClick={seedAssign} className="rounded-md p-1 text-signal-red hover:bg-red-50" title={t("New task")}>
                     <Plus size={15} />
                   </button>
                 </div>
                 {contextTasks.length === 0 ? (
-                  <EmptyState icon={<CheckCircle2 size={18} />}>No tasks yet.</EmptyState>
+                  <EmptyState icon={<CheckCircle2 size={18} />}>{t("No tasks yet.")}</EmptyState>
                 ) : (
                   <div className="space-y-2">
                     {contextTasks.map((task) => (
@@ -1919,31 +1927,31 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
           </aside>
         ) : (
           <aside className="flex w-12 shrink-0 flex-col items-center gap-2 rounded-xl border border-brand-border bg-card py-3 shadow-sm">
-            <RailIcon title="HI chat" onClick={() => setHiOpen(true)} disabled={noPo}>
+            <RailIcon title={t("HI chat")} onClick={() => setHiOpen(true)} disabled={noPo}>
               <MessagesSquare size={18} />
             </RailIcon>
-            <RailIcon title="Details & actions" onClick={() => setDetailsOpen(true)}>
+            <RailIcon title={t("Details & actions")} onClick={() => setDetailsOpen(true)}>
               <Sparkles size={18} />
             </RailIcon>
-            <RailIcon title="HI Reply" onClick={() => void handleAiReply()} disabled={noPo}>
+            <RailIcon title={t("HI Reply")} onClick={() => void handleAiReply()} disabled={noPo}>
               <Sparkles size={18} />
             </RailIcon>
-            <RailIcon title="Send Draft" onClick={() => void handleSendMailNow()} disabled={noPo}>
+            <RailIcon title={t("Send Draft")} onClick={() => void handleSendMailNow()} disabled={noPo}>
               <Send size={18} />
             </RailIcon>
-            <RailIcon title="Escalate" onClick={() => void handleEscalate()} disabled={noPo}>
+            <RailIcon title={t("Escalate")} onClick={() => void handleEscalate()} disabled={noPo}>
               <AlertTriangle size={18} />
             </RailIcon>
-            <RailIcon title="Assign" onClick={seedAssign} disabled={!activeSupplier}>
+            <RailIcon title={t("Assign")} onClick={seedAssign} disabled={!activeSupplier}>
               <UserPlus size={18} />
             </RailIcon>
             <div className="relative">
-              <RailIcon title="Open tasks" onClick={() => setDetailsOpen(true)}>
+              <RailIcon title={t("Open tasks")} onClick={() => setDetailsOpen(true)}>
                 <CheckCircle2 size={18} />
               </RailIcon>
-              {contextTasks.filter((t) => t.status !== "DONE").length > 0 && (
+              {contextTasks.filter((tk) => tk.status !== "DONE").length > 0 && (
                 <span className="absolute -right-0.5 -top-0.5 rounded-full bg-signal-red px-1 text-[9px] font-bold text-white">
-                  {contextTasks.filter((t) => t.status !== "DONE").length}
+                  {contextTasks.filter((tk) => tk.status !== "DONE").length}
                 </span>
               )}
             </div>
@@ -1964,14 +1972,14 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
 
       {/* Toasts */}
       <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-2">
-        {toasts.map((t) => (
+        {toasts.map((toast) => (
           <div
-            key={t.id}
+            key={toast.id}
             className={`rounded-md px-4 py-2 text-sm text-white shadow-lg ${
-              t.tone === "ok" ? "bg-emerald-600" : "bg-signal-red"
+              toast.tone === "ok" ? "bg-emerald-600" : "bg-signal-red"
             }`}
           >
-            {t.msg}
+            {toast.msg}
           </div>
         ))}
       </div>
@@ -1983,6 +1991,7 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
 // List rows
 // ─────────────────────────────────────────────────────────────────────────────
 function SupplierRow({ s, active, onClick }: { s: CommHubSupplier; active: boolean; onClick: () => void }) {
+  const { t } = useT();
   const sig = (s.highest_signal || "GREEN") as TaskSignal;
   const unread = (s.unread_inbound ?? 0) > 0;
   return (
@@ -1997,8 +2006,8 @@ function SupplierRow({ s, active, onClick }: { s: CommHubSupplier; active: boole
       }`}
     >
       <div className="flex items-center gap-2">
-        {unread && <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-500" title="Unread supplier replies" />}
-        <span className={`h-2 w-2 shrink-0 rounded-full ${SIGNAL_DOT[sig] ?? "bg-subtle"}`} title={SIGNAL_LABEL[sig]} />
+        {unread && <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-500" title={t("Unread supplier replies")} />}
+        <span className={`h-2 w-2 shrink-0 rounded-full ${SIGNAL_DOT[sig] ?? "bg-subtle"}`} title={SIGNAL_LABEL[sig] ? t(SIGNAL_LABEL[sig]) : undefined} />
         <span className={`flex-1 truncate text-sm text-brand-dark ${unread ? "font-bold" : "font-medium"}`}>
           {s.supplier_name}
         </span>
@@ -2007,21 +2016,21 @@ function SupplierRow({ s, active, onClick }: { s: CommHubSupplier; active: boole
             {(s.unread_inbound ?? 0) > 99 ? "99+" : s.unread_inbound}
           </span>
         )}
-        <span className="text-[10px] text-brand-muted">{relTime(s.last_activity_at)}</span>
+        <span className="text-[10px] text-brand-muted">{relTime(s.last_activity_at, t)}</span>
       </div>
       <p className={`mt-1 truncate pl-4 text-xs ${unread ? "font-medium text-brand-dark/80" : "text-brand-muted"}`}>
-        {s.last_subject ?? "No subject"}
+        {s.last_subject ?? t("No subject")}
       </p>
       {(s.draft_mail_count > 0 || s.task_count > 0) && (
         <div className="mt-1.5 flex items-center gap-1.5 pl-4">
           {s.draft_mail_count > 0 && (
             <span className="rounded bg-red-50 px-1.5 py-0.5 text-[10px] font-bold text-signal-red">
-              {s.draft_mail_count} new
+              {t("{n} new", { n: s.draft_mail_count })}
             </span>
           )}
           {s.task_count > 0 && (
             <span className="rounded bg-subtle px-1.5 py-0.5 text-[10px] font-semibold text-brand-dark">
-              {s.task_count} task{s.task_count === 1 ? "" : "s"}
+              {t(s.task_count === 1 ? "{n} task" : "{n} tasks", { n: s.task_count })}
             </span>
           )}
         </div>
@@ -2031,6 +2040,7 @@ function SupplierRow({ s, active, onClick }: { s: CommHubSupplier; active: boole
 }
 
 function PoRow({ p, active, onClick }: { p: CommHubPO; active: boolean; onClick: () => void }) {
+  const { t } = useT();
   const sig = (p.signal || "GREEN") as TaskSignal;
   const materialCount = p.material_count ?? p.materials?.length ?? 0;
   const unread = (p.unread_inbound ?? 0) > 0;
@@ -2054,22 +2064,23 @@ function PoRow({ p, active, onClick }: { p: CommHubPO; active: boolean; onClick:
           </span>
         )}
         <span className={`ml-auto rounded px-1.5 py-0.5 text-[10px] font-bold uppercase ${SIGNAL_CHIP[sig] ?? ""}`}>
-          {SIGNAL_LABEL[sig] ?? sig}
+          {SIGNAL_LABEL[sig] ? t(SIGNAL_LABEL[sig]) : sig}
         </span>
       </div>
       <div className="mt-1.5 flex items-center gap-2 pl-4 text-[11px] text-brand-muted">
         <Package size={12} className="text-brand-muted" />
-        <span>{materialCount} mat{materialCount === 1 ? "" : "s"}</span>
-        <span>· {p.mail_count} mail{p.mail_count === 1 ? "" : "s"}</span>
-        {p.task_count > 0 && <span>· {p.task_count} task{p.task_count === 1 ? "" : "s"}</span>}
-        <span className="ml-auto text-brand-muted">{relTime(p.last_activity_at)}</span>
+        <span>{t(materialCount === 1 ? "{n} mat" : "{n} mats", { n: materialCount })}</span>
+        <span>· {t(p.mail_count === 1 ? "{n} mail" : "{n} mails", { n: p.mail_count })}</span>
+        {p.task_count > 0 && <span>· {t(p.task_count === 1 ? "{n} task" : "{n} tasks", { n: p.task_count })}</span>}
+        <span className="ml-auto text-brand-muted">{relTime(p.last_activity_at, t)}</span>
       </div>
     </button>
   );
 }
 
-function OtherMailRow({ t, active, onClick }: { t: OtherMailThread; active: boolean; onClick: () => void }) {
-  const unread = (t.unread_inbound ?? 0) > 0;
+function OtherMailRow({ t: th, active, onClick }: { t: OtherMailThread; active: boolean; onClick: () => void }) {
+  const { t } = useT();
+  const unread = (th.unread_inbound ?? 0) > 0;
   return (
     <button
       onClick={onClick}
@@ -2084,19 +2095,19 @@ function OtherMailRow({ t, active, onClick }: { t: OtherMailThread; active: bool
       <div className="flex items-center gap-2">
         <Mail size={13} className="shrink-0 text-brand-muted" />
         <span className={`truncate text-[13px] text-brand-dark ${unread ? "font-bold" : "font-medium"}`}>
-          {t.subject || "(no subject)"}
+          {th.subject || t("(no subject)")}
         </span>
         {unread && (
           <span className="ml-auto rounded-full bg-emerald-500 px-1.5 py-0.5 text-[10px] font-bold text-white">
-            {(t.unread_inbound ?? 0) > 99 ? "99+" : t.unread_inbound}
+            {(th.unread_inbound ?? 0) > 99 ? "99+" : th.unread_inbound}
           </span>
         )}
       </div>
       <div className="mt-1 flex items-center gap-2 pl-5 text-[11px] text-brand-muted">
         <span>
-          {t.message_count} mail{t.message_count === 1 ? "" : "s"}
+          {t(th.message_count === 1 ? "{n} mail" : "{n} mails", { n: th.message_count })}
         </span>
-        <span className="ml-auto text-brand-muted">{relTime(t.last_activity_at)}</span>
+        <span className="ml-auto text-brand-muted">{relTime(th.last_activity_at, t)}</span>
       </div>
     </button>
   );
@@ -2180,6 +2191,7 @@ function SearchBox({
   onChange: (v: string) => void;
   placeholder: string;
 }) {
+  const { t } = useT();
   return (
     <div className="relative">
       <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-brand-muted" />
@@ -2194,7 +2206,7 @@ function SearchBox({
           type="button"
           onClick={() => onChange("")}
           className="absolute right-2 top-1/2 -translate-y-1/2 text-brand-muted hover:text-brand-dark"
-          title="Clear"
+          title={t("Clear")}
         >
           <X size={12} />
         </button>
@@ -2224,6 +2236,7 @@ function MailBubble({
   onAssign: () => void;
   attachmentEndpoint: (id: number) => string;
 }) {
+  const { t } = useT();
   const isIncoming = mail.direction === "INCOMING";
   const tableRows = mail.table_rows ?? [];
   const bodyText = stripTableText(mail.body);
@@ -2238,7 +2251,7 @@ function MailBubble({
         }`}
       >
         <div className="mb-1 flex items-center justify-between gap-3">
-          <span className="truncate text-xs font-semibold text-brand-dark">{mail.subject || "(no subject)"}</span>
+          <span className="truncate text-xs font-semibold text-brand-dark">{mail.subject || t("(no subject)")}</span>
           <span className="rounded bg-subtle px-1.5 py-0.5 text-[10px] font-semibold uppercase text-brand-muted">
             {mail.sent_status}
           </span>
@@ -2246,7 +2259,7 @@ function MailBubble({
         {mail.table_format && (
           <div className="mb-2">
             <span className="rounded bg-subtle px-1.5 py-0.5 text-[10px] font-semibold uppercase text-brand-dark">
-              {mail.table_format === "PO_MATERIALS" ? "PO Material Table" : "Supplier Reply Table"}
+              {mail.table_format === "PO_MATERIALS" ? t("PO Material Table") : t("Supplier Reply Table")}
             </span>
           </div>
         )}
@@ -2262,12 +2275,12 @@ function MailBubble({
           <span>·</span>
           <span>{mail.mail_type || mail.source || "MAIL"}</span>
           <span>·</span>
-          <span>{isIncoming ? (mail.sender_email || mail.supplier_name || "Supplier") : (mail.supplier_name ?? "You")}</span>
+          <span>{isIncoming ? (mail.sender_email || mail.supplier_name || t("Supplier")) : (mail.supplier_name ?? t("You"))}</span>
         </div>
         <button
           onClick={onAssign}
           className="absolute -left-9 top-2 rounded-full border border-brand-border bg-card p-1.5 text-brand-muted opacity-0 shadow transition-opacity hover:text-signal-red group-hover:opacity-100"
-          title="Assign task from this mail"
+          title={t("Assign task from this mail")}
         >
           <UserPlus size={12} />
         </button>
@@ -2277,6 +2290,7 @@ function MailBubble({
 }
 
 function ThreadMessageTable({ rows }: { rows: ThreadTableRow[] }) {
+  const { t } = useT();
   return (
     <div className="mt-3 overflow-x-auto rounded border border-brand-border bg-card">
       <table className="min-w-full text-xs">
@@ -2287,7 +2301,7 @@ function ThreadMessageTable({ rows }: { rows: ThreadTableRow[] }) {
                 key={header}
                 className="whitespace-nowrap border-b border-brand-border px-2 py-1.5 text-left font-semibold text-brand-dark"
               >
-                {header}
+                {t(header)}
               </th>
             ))}
           </tr>
@@ -2319,7 +2333,8 @@ function ThreadMessageTable({ rows }: { rows: ThreadTableRow[] }) {
 // Task card
 // ─────────────────────────────────────────────────────────────────────────────
 function TaskCard({ task, onToggleDone }: { task: CommunicationTask; onToggleDone: () => void }) {
-  const due = fmtDueDate(task.due_date);
+  const { t } = useT();
+  const due = fmtDueDate(task.due_date, t);
   const done = task.status === "DONE";
   const sig = (task.signal || "YELLOW") as TaskSignal;
   return (
@@ -2334,7 +2349,7 @@ function TaskCard({ task, onToggleDone }: { task: CommunicationTask; onToggleDon
           className={`mt-0.5 grid h-4 w-4 shrink-0 place-items-center rounded-full border-2 ${
             done ? "border-emerald-500 bg-emerald-500" : "border-brand-border hover:border-signal-red"
           }`}
-          title={done ? "Reopen" : "Mark done"}
+          title={done ? t("Reopen") : t("Mark done")}
         >
           {done && <CheckCircle2 size={10} className="text-white" />}
         </button>
@@ -2354,7 +2369,7 @@ function TaskCard({ task, onToggleDone }: { task: CommunicationTask; onToggleDon
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-1.5">
           <span className={`rounded px-1.5 py-0.5 text-[9px] font-bold ${PRIORITY_CHIP[task.priority as TaskPriority] ?? "bg-subtle text-brand-muted"}`}>
-            {task.priority}
+            {t(task.priority)}
           </span>
           {task.assigned_to && (
             <span className="max-w-[100px] truncate text-[10px] text-brand-muted">@{task.assigned_to}</span>
@@ -2362,7 +2377,7 @@ function TaskCard({ task, onToggleDone }: { task: CommunicationTask; onToggleDon
         </div>
         <div className="flex items-center gap-2 text-[10px] text-brand-muted">
           {task.linked_mail_id && <MessagesSquare size={11} />}
-          {task.comments_count > 0 && <span>{task.comments_count}c</span>}
+          {task.comments_count > 0 && <span>{t("{n}c", { n: task.comments_count })}</span>}
           <span className={due.overdue && !done ? "font-semibold text-signal-red" : ""}>{due.text}</span>
         </div>
       </div>

@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { FileText, Loader2, Paperclip, X } from "lucide-react";
 
 import { getToken } from "@/lib/auth-token";
+import { useT } from "@/lib/i18n";
 import type { AttachmentMeta } from "@/lib/types";
 
 function fmtSize(bytes?: number) {
@@ -29,6 +30,7 @@ export function AttachmentDropArea({
   className?: string;
   disabled?: boolean;
 }) {
+  const { t } = useT();
   const [over, setOver] = useState(false);
   return (
     <div
@@ -50,7 +52,7 @@ export function AttachmentDropArea({
       {children}
       {over && !disabled && (
         <div className="pointer-events-none absolute inset-0 z-10 grid place-items-center rounded-lg border-2 border-dashed border-signal-red/60 bg-red-50/80 text-xs font-semibold text-signal-red">
-          Drop files to attach
+          {t("Drop files to attach")}
         </div>
       )}
     </div>
@@ -67,12 +69,13 @@ export function AttachButton({
   disabled?: boolean;
   className?: string;
 }) {
+  const { t } = useT();
   const inputRef = useRef<HTMLInputElement | null>(null);
   return (
     <>
       <button
         type="button"
-        title="Attach files"
+        title={t("Attach files")}
         disabled={disabled}
         onClick={() => inputRef.current?.click()}
         className={className ?? "rounded-md p-2 text-brand-muted hover:bg-subtle hover:text-brand-dark disabled:opacity-50"}
@@ -104,6 +107,7 @@ export function PendingAttachments({
   uploading?: number;
   onRemove: (id: number) => void;
 }) {
+  const { t } = useT();
   if (!items.length && !uploading) return null;
   return (
     <div className="flex flex-wrap items-center gap-1.5 pt-2">
@@ -117,7 +121,7 @@ export function PendingAttachments({
           {fmtSize(a.size_bytes) && <span className="shrink-0 text-brand-muted">{fmtSize(a.size_bytes)}</span>}
           <button
             type="button"
-            title="Remove"
+            title={t("Remove")}
             onClick={() => onRemove(a.id)}
             className="shrink-0 rounded-full p-0.5 text-brand-muted hover:bg-red-50 hover:text-signal-red"
           >
@@ -127,7 +131,8 @@ export function PendingAttachments({
       ))}
       {uploading ? (
         <span className="inline-flex items-center gap-1.5 rounded-full border border-brand-border bg-subtle px-2.5 py-1 text-[11px] text-brand-muted">
-          <Loader2 size={12} className="animate-spin" /> Uploading {uploading} file{uploading === 1 ? "" : "s"}…
+          <Loader2 size={12} className="animate-spin" />{" "}
+          {uploading === 1 ? t("Uploading {n} file…", { n: uploading }) : t("Uploading {n} files…", { n: uploading })}
         </span>
       ) : null}
     </div>
@@ -146,6 +151,7 @@ export function AttachmentChips({
   items?: AttachmentMeta[];
   endpointFor: (id: number) => string;
 }) {
+  const { t } = useT();
   const [busy, setBusy] = useState<number | null>(null);
   if (!items || !items.length) return null;
 
@@ -165,7 +171,7 @@ export function AttachmentChips({
       link.click();
       URL.revokeObjectURL(url);
     } catch {
-      window.alert("Attachment download failed.");
+      window.alert(t("Attachment download failed."));
     } finally {
       setBusy(null);
     }
@@ -182,7 +188,7 @@ export function AttachmentChips({
             e.stopPropagation();
             void download(a);
           }}
-          title={`Download ${a.filename}`}
+          title={t("Download {name}", { name: a.filename })}
           className="inline-flex max-w-[260px] items-center gap-1.5 rounded-full border border-brand-border bg-card px-2.5 py-1 text-[11px] font-medium text-brand-dark shadow-sm hover:bg-subtle disabled:opacity-60"
         >
           {busy === a.id ? (

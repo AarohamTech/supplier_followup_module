@@ -4,7 +4,10 @@ import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Ban, ChevronDown, ChevronRight, Loader2, SlidersHorizontal } from "lucide-react";
 
 import { overdueDays } from "@/lib/format";
+import { useT } from "@/lib/i18n";
 import type { EmployeePo, EmployeePoMaterial, PoDetail, PoMessage } from "@/lib/types";
+
+type TFn = ReturnType<typeof useT>["t"];
 
 const SIGNAL_CLASS: Record<string, string> = {
   GREEN: "bg-emerald-50 text-emerald-700 ring-emerald-100",
@@ -31,6 +34,7 @@ function fmtDate(d?: string | null) {
 
 // Receipt progress (GRN quantities from the CRM): green when fully received.
 function ReceiptChip({ status }: { status?: string | null }) {
+  const { t } = useT();
   const s = (status || "").toUpperCase();
   if (!s) return null;
   const cls =
@@ -42,7 +46,7 @@ function ReceiptChip({ status }: { status?: string | null }) {
   const label = s === "COMPLETED" ? "Received" : s === "PARTIAL" ? "Partly recd" : "Awaiting";
   return (
     <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ring-1 ring-inset ${cls}`}>
-      {label}
+      {t(label)}
     </span>
   );
 }
@@ -74,7 +78,7 @@ interface MaterialColumn {
   key: string;
   label: string;
   on: boolean;
-  render: (m: EmployeePoMaterial) => ReactNode;
+  render: (m: EmployeePoMaterial, t: TFn) => ReactNode;
 }
 
 const MATERIAL_COLUMNS: MaterialColumn[] = [
@@ -88,14 +92,14 @@ const MATERIAL_COLUMNS: MaterialColumn[] = [
   { key: "signal", label: "Signal", on: true, render: (m) => <SignalChip signal={m.signal} /> },
   { key: "ship_date", label: "Ship Date", on: true, render: (m) => fmtDate(m.shipment_date) },
   { key: "overdue", label: "Overdue", on: true,
-    render: (m) => overdueDays(m.shipment_date) > 0
-      ? <span className="font-semibold text-signal-red">{overdueDays(m.shipment_date)}d</span>
+    render: (m, t) => overdueDays(m.shipment_date) > 0
+      ? <span className="font-semibold text-signal-red">{t("{n}d", { n: overdueDays(m.shipment_date) })}</span>
       : <span className="text-brand-muted">—</span> },
   { key: "commitment", label: "Commitment", on: true, render: (m) => fmtDate(m.commitment_date) },
   { key: "ordered_qty", label: "Ordered Qty", on: false, render: (m) => m.po_qty ?? "—" },
   { key: "rate", label: "Rate", on: true, render: (m) => m.rate ?? "—" },
   { key: "lead_time", label: "Lead Time", on: false,
-    render: (m) => (m.lead_time != null ? `${m.lead_time}d` : "—") },
+    render: (m, t) => (m.lead_time != null ? t("{n}d", { n: m.lead_time }) : "—") },
   { key: "po_status", label: "PO Status", on: false, render: (m) => m.po_status || "—" },
   { key: "crm", label: "CRM No.", on: false, render: (m) => m.crm_no || "—" },
   { key: "supplier", label: "Supplier", on: false, render: (m) => m.supplier_name || "—" },
@@ -105,21 +109,22 @@ const MATERIAL_COLUMNS: MaterialColumn[] = [
 const MATERIAL_COLS_KEY = "eportal.poMaterialCols.v2";
 
 function MessageRow({ m }: { m: PoMessage }) {
+  const { t } = useT();
   const inbound = m.direction === "INCOMING";
   const when = inbound ? m.received_at || m.created_at : m.sent_at || m.created_at;
   return (
     <div className="border-t border-brand-border/60 py-2 first:border-t-0">
       <div className="flex flex-wrap items-center gap-2">
         <span className={`inline-flex rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase ${inbound ? "bg-blue-50 text-blue-700" : "bg-emerald-50 text-emerald-700"}`}>
-          {inbound ? "In" : "Out"}
+          {inbound ? t("In") : t("Out")}
         </span>
-        <span className="text-xs font-medium text-brand-dark">{m.subject || "(no subject)"}</span>
+        <span className="text-xs font-medium text-brand-dark">{m.subject || t("(no subject)")}</span>
         {m.status && <span className="text-[10px] uppercase text-brand-muted">{m.status}</span>}
         <span className="ml-auto text-[11px] text-brand-muted">{fmtDateTime(when)}</span>
       </div>
       {(m.sender_email || m.receiver_email) && (
         <div className="mt-0.5 text-[11px] text-brand-muted">
-          {inbound ? `from ${m.sender_email || "—"}` : `to ${m.receiver_email || "—"}`}
+          {inbound ? t("from {email}", { email: m.sender_email || "—" }) : t("to {email}", { email: m.receiver_email || "—" })}
         </div>
       )}
       {m.snippet && <div className="mt-1 text-xs text-brand-dark/80 line-clamp-3">{m.snippet}</div>}
@@ -136,6 +141,7 @@ export default function PoExpandableTable({
   loadDetail: (po: EmployeePo) => Promise<PoDetail>;
   requestCancel: (po: EmployeePo, remark: string) => Promise<void>;
 }) {
+  const { t } = useT();
   const [open, setOpen] = useState<string | null>(null);
   const [detail, setDetail] = useState<Record<string, PoDetail>>({});
   const [loading, setLoading] = useState<string | null>(null);
@@ -209,7 +215,7 @@ export default function PoExpandableTable({
   }
 
   if (!pos.length) {
-    return <div className="card p-6 text-center text-sm text-brand-muted">No purchase orders to show.</div>;
+    return <div className="card p-6 text-center text-sm text-brand-muted">{t("No purchase orders to show.")}</div>;
   }
 
   return (
@@ -221,16 +227,16 @@ export default function PoExpandableTable({
               type="button"
               onClick={() => setColMenuOpen((v) => !v)}
               className="inline-flex items-center gap-1.5 rounded-md border border-brand-border px-2.5 py-1 text-xs font-medium text-brand-dark hover:bg-subtle"
-              title="Show / hide material columns"
+              title={t("Show / hide material columns")}
             >
-              <SlidersHorizontal size={13} /> Columns
+              <SlidersHorizontal size={13} /> {t("Columns")}
             </button>
             {colMenuOpen && (
               <>
                 <div className="fixed inset-0 z-10" onClick={() => setColMenuOpen(false)} aria-hidden />
                 <div className="absolute right-0 z-20 mt-1 w-56 rounded-md border border-brand-border bg-card p-2 shadow-lg">
                   <div className="mb-1 px-1 text-[10px] font-semibold uppercase tracking-wider text-brand-muted">
-                    Material columns
+                    {t("Material columns")}
                   </div>
                   <div className="max-h-72 overflow-y-auto">
                     {MATERIAL_COLUMNS.map((c) => (
@@ -244,7 +250,7 @@ export default function PoExpandableTable({
                           onChange={() => toggleCol(c.key)}
                           className="accent-signal-red"
                         />
-                        {c.label}
+                        {t(c.label)}
                       </label>
                     ))}
                   </div>
@@ -257,13 +263,13 @@ export default function PoExpandableTable({
           <thead className="bg-subtle text-left text-[11px] uppercase tracking-wider text-brand-muted">
             <tr>
               <th className="w-8 px-3 py-2" />
-              <th className="px-3 py-2">Signal</th>
-              <th className="px-3 py-2">Vendor PO No.</th>
-              <th className="px-3 py-2">Vendor</th>
-              <th className="px-3 py-2">Materials</th>
-              <th className="px-3 py-2">Earliest Ship</th>
-              <th className="px-3 py-2">Status</th>
-              <th className="px-3 py-2 text-right">Cancel</th>
+              <th className="px-3 py-2">{t("Signal")}</th>
+              <th className="px-3 py-2">{t("Vendor PO No.")}</th>
+              <th className="px-3 py-2">{t("Vendor")}</th>
+              <th className="px-3 py-2">{t("Materials")}</th>
+              <th className="px-3 py-2">{t("Earliest Ship")}</th>
+              <th className="px-3 py-2">{t("Status")}</th>
+              <th className="px-3 py-2 text-right">{t("Cancel")}</th>
             </tr>
           </thead>
           <tbody>
@@ -283,22 +289,22 @@ export default function PoExpandableTable({
                       {p.po_short_ref && (
                         <div className="text-[10px] font-normal text-brand-muted">
                           #{p.supplier_po_no}
-                          {(p.po_ref_count ?? 0) > 1 ? ` · ${(p.po_ref_count ?? 0) - 1} more ref${(p.po_ref_count ?? 0) > 2 ? "s" : ""}` : ""}
+                          {(p.po_ref_count ?? 0) > 1 ? ` · ${t((p.po_ref_count ?? 0) > 2 ? "{n} more refs" : "{n} more ref", { n: (p.po_ref_count ?? 0) - 1 })}` : ""}
                         </div>
                       )}
                       {p.escalated && (
-                        <span className="ml-2 rounded bg-red-50 px-1.5 py-0.5 text-[10px] font-semibold text-signal-red">ESCALATED</span>
+                        <span className="ml-2 rounded bg-red-50 px-1.5 py-0.5 text-[10px] font-semibold text-signal-red">{t("ESCALATED")}</span>
                       )}
                     </td>
                     <td className="px-3 py-2 text-brand-dark">
                       <div>{p.supplier_name || "—"}</div>
                       {p.is_direct ? (
                         <span className="mt-0.5 inline-flex rounded bg-violet-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-violet-700 ring-1 ring-inset ring-violet-100">
-                          Direct PO
+                          {t("Direct PO")}
                         </span>
                       ) : p.customer_name ? (
                         <div className="text-[11px] text-brand-muted truncate max-w-[220px]" title={p.customer_name}>
-                          for {p.customer_name}
+                          {t("for {name}", { name: p.customer_name })}
                         </div>
                       ) : null}
                     </td>
@@ -310,9 +316,9 @@ export default function PoExpandableTable({
                         {isAwaitingApproval(p.po_status) && (
                           <span
                             className="inline-flex rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-amber-700 ring-1 ring-inset ring-amber-100"
-                            title="Internal only — the supplier will not see this PO until it is approved in the CRM"
+                            title={t("Internal only — the supplier will not see this PO until it is approved in the CRM")}
                           >
-                            Internal
+                            {t("Internal")}
                           </span>
                         )}
                         <ReceiptChip status={p.receipt_status} />
@@ -320,16 +326,16 @@ export default function PoExpandableTable({
                     </td>
                     <td className="px-3 py-2 text-right" onClick={(e) => e.stopPropagation()}>
                       {cancelStatusOf(p) === "CANCELLED" ? (
-                        <span className="inline-flex rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-semibold uppercase text-signal-red ring-1 ring-inset ring-red-100">Cancelled</span>
+                        <span className="inline-flex rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-semibold uppercase text-signal-red ring-1 ring-inset ring-red-100">{t("Cancelled")}</span>
                       ) : cancelStatusOf(p) === "PENDING" ? (
-                        <span className="inline-flex rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold uppercase text-amber-700 ring-1 ring-inset ring-amber-100">Pending cancellation</span>
+                        <span className="inline-flex rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold uppercase text-amber-700 ring-1 ring-inset ring-amber-100">{t("Pending cancellation")}</span>
                       ) : (
                         <button
                           type="button"
                           onClick={() => { setConfirmPo(p); setCancelRemark(""); setCancelError(null); }}
                           className="inline-flex items-center gap-1 rounded-md border border-brand-border px-2 py-1 text-[11px] font-medium text-signal-red hover:bg-red-50"
                         >
-                          <Ban size={12} /> Request cancel
+                          <Ban size={12} /> {t("Request cancel")}
                         </button>
                       )}
                     </td>
@@ -339,7 +345,7 @@ export default function PoExpandableTable({
                       <td colSpan={8} className="px-3 py-3">
                         {loading === key ? (
                           <div className="flex items-center gap-2 text-xs text-brand-muted">
-                            <Loader2 size={14} className="animate-spin" /> Loading details…
+                            <Loader2 size={14} className="animate-spin" /> {t("Loading details…")}
                           </div>
                         ) : d ? (
                           <div className="space-y-4">
@@ -347,13 +353,13 @@ export default function PoExpandableTable({
                             <div>
                               {/* No PO-PDF button here — the official PO document is
                                   admin/supplier-only per client decision (2026-07-20). */}
-                              <div className="mb-1 text-[11px] font-semibold uppercase text-brand-muted">Materials</div>
+                              <div className="mb-1 text-[11px] font-semibold uppercase text-brand-muted">{t("Materials")}</div>
                               {d.materials.length ? (
                                 <table className="w-full text-xs">
                                   <thead className="text-left text-[10px] uppercase text-brand-muted">
                                     <tr>
                                       {activeCols.map((c) => (
-                                        <th key={c.key} className="px-2 py-1 whitespace-nowrap">{c.label}</th>
+                                        <th key={c.key} className="px-2 py-1 whitespace-nowrap">{t(c.label)}</th>
                                       ))}
                                     </tr>
                                   </thead>
@@ -361,33 +367,33 @@ export default function PoExpandableTable({
                                     {d.materials.map((m) => (
                                       <tr key={m.procurement_record_id} className="border-t border-brand-border/60">
                                         {activeCols.map((c) => (
-                                          <td key={c.key} className="px-2 py-1">{c.render(m)}</td>
+                                          <td key={c.key} className="px-2 py-1">{c.render(m, t)}</td>
                                         ))}
                                       </tr>
                                     ))}
                                   </tbody>
                                 </table>
                               ) : (
-                                <div className="text-xs text-brand-muted">No materials.</div>
+                                <div className="text-xs text-brand-muted">{t("No materials.")}</div>
                               )}
                             </div>
 
                             {/* Communication */}
                             <div>
                               <div className="mb-1 text-[11px] font-semibold uppercase text-brand-muted">
-                                Communication ({d.messages.length})
+                                {t("Communication ({n})", { n: d.messages.length })}
                               </div>
                               {d.messages.length ? (
                                 <div className="rounded-md border border-brand-border/60 bg-card px-3">
                                   {d.messages.map((m) => <MessageRow key={m.id} m={m} />)}
                                 </div>
                               ) : (
-                                <div className="text-xs text-brand-muted">No messages on this PO yet.</div>
+                                <div className="text-xs text-brand-muted">{t("No messages on this PO yet.")}</div>
                               )}
                             </div>
                           </div>
                         ) : (
-                          <div className="text-xs text-brand-muted">Could not load details.</div>
+                          <div className="text-xs text-brand-muted">{t("Could not load details.")}</div>
                         )}
                       </td>
                     </tr>
@@ -402,31 +408,31 @@ export default function PoExpandableTable({
       {confirmPo && (
         <div className="fixed inset-0 z-50 bg-black/40 grid place-items-center p-4" onClick={() => !requesting && setConfirmPo(null)}>
           <div className="bg-card rounded-lg shadow-xl w-full max-w-sm" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
-            <div className="border-b border-brand-border px-5 py-3 font-semibold text-sm">Request PO cancellation</div>
+            <div className="border-b border-brand-border px-5 py-3 font-semibold text-sm">{t("Request PO cancellation")}</div>
             <div className="px-5 py-4 space-y-2 text-sm">
               <p>
-                Raise a cancellation for PO <span className="font-semibold">{poDisplayRef(confirmPo)}</span>
+                {t("Raise a cancellation for PO")} <span className="font-semibold">{poDisplayRef(confirmPo)}</span>
                 {confirmPo.po_short_ref ? <span className="text-brand-muted"> (#{confirmPo.supplier_po_no})</span> : null}
                 {confirmPo.supplier_name ? <> ({confirmPo.supplier_name})</> : null}?
               </p>
               <p className="text-xs text-brand-muted">
-                The PO will be marked <span className="font-medium">Pending cancellation</span> until it is confirmed.
+                {t("The PO will be marked")} <span className="font-medium">{t("Pending cancellation")}</span> {t("until it is confirmed.")}
               </p>
               <label className="block text-sm">
-                <span className="text-xs text-brand-muted">Remark (reason for cancellation — sent to the ERP)</span>
+                <span className="text-xs text-brand-muted">{t("Remark (reason for cancellation — sent to the ERP)")}</span>
                 <textarea
                   className="mt-1 w-full rounded-md border border-brand-border px-3 py-2 text-sm outline-none focus:border-signal-red"
                   rows={3}
                   maxLength={500}
                   value={cancelRemark}
                   onChange={(e) => setCancelRemark(e.target.value)}
-                  placeholder="e.g. Material no longer required / duplicate order"
+                  placeholder={t("e.g. Material no longer required / duplicate order")}
                 />
               </label>
               {cancelError && <p className="text-xs text-signal-red">{cancelError}</p>}
             </div>
             <div className="border-t border-brand-border px-5 py-3 flex items-center justify-end gap-2">
-              <button type="button" disabled={requesting} onClick={() => setConfirmPo(null)} className="btn-outline text-xs">Cancel</button>
+              <button type="button" disabled={requesting} onClick={() => setConfirmPo(null)} className="btn-outline text-xs">{t("Cancel")}</button>
               <button
                 type="button"
                 disabled={requesting}
@@ -434,7 +440,7 @@ export default function PoExpandableTable({
                 className="inline-flex items-center gap-1 rounded-md bg-signal-red px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-60"
               >
                 {requesting ? <Loader2 size={13} className="animate-spin" /> : <Ban size={13} />}
-                {requesting ? "Requesting…" : "Yes, request cancellation"}
+                {requesting ? t("Requesting…") : t("Yes, request cancellation")}
               </button>
             </div>
           </div>

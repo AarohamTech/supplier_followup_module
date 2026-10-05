@@ -2,6 +2,7 @@
 
 import { memo, useEffect, useRef, useState } from "react";
 import { Send } from "lucide-react";
+import { useT } from "@/lib/i18n";
 import { useDebouncedCallback, useRenderCount } from "./hooks";
 
 interface ReplyComposerProps {
@@ -30,6 +31,7 @@ function ReplyComposerBase({
   onSend,
 }: ReplyComposerProps) {
   useRenderCount("ReplyComposer");
+  const { t } = useT();
   const [text, setText] = useState("");
   const lastSeedNonce = useRef<number | null>(null);
 
@@ -83,13 +85,13 @@ function ReplyComposerBase({
       <textarea
         value={text}
         onChange={(e) => handleChange(e.target.value)}
-        placeholder={`Type your response to ${recipientName}…`}
-        aria-label={`Reply to ${recipientName}`}
+        placeholder={t("Type your response to {name}…", { name: recipientName })}
+        aria-label={t("Reply to {name}", { name: recipientName })}
         rows={2}
         className="min-h-[4.5rem] w-full resize-none rounded-lg border border-brand-border bg-subtle px-3 py-2.5 text-sm outline-none focus:border-signal-red/40 focus:bg-card"
       />
       <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-        <span className="text-[11px] text-brand-muted">Draft autosaved locally</span>
+        <span className="text-[11px] text-brand-muted">{t("Draft autosaved locally")}</span>
         <div className="flex items-center gap-2.5">
           <button
             type="button"
@@ -97,7 +99,7 @@ function ReplyComposerBase({
             disabled={sending || !text.trim()}
             className="inline-flex items-center gap-1.5 rounded-md bg-signal-red px-3.5 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
           >
-            {sending ? "Sending…" : "Send Response"}
+            {sending ? t("Sending…") : t("Send Response")}
             <Send className="h-3.5 w-3.5" />
           </button>
         </div>

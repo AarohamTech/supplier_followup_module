@@ -1,6 +1,7 @@
 "use client";
 
 import api from "@/lib/api";
+import { useT } from "@/lib/i18n";
 import ComposeWorkspace, { type ComposeAdapter } from "@/components/compose/ComposeWorkspace";
 
 // Employee compose — scoped to the employee's own suppliers/POs; no customer audience.
@@ -12,10 +13,11 @@ const employeeAdapter: ComposeAdapter = {
 };
 
 export default function EmployeeComposePage() {
+  const { t } = useT();
   return (
     <ComposeWorkspace
       adapter={employeeAdapter}
-      description="Write and send an email to one of your suppliers — delivered in your branded HTML format."
+      description={t("Write and send an email to one of your suppliers — delivered in your branded HTML format.")}
     />
   );
 }

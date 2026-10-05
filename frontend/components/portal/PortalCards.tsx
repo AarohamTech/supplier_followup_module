@@ -1,6 +1,7 @@
 "use client";
 
 import { CheckCircle2, Clock, Layers, ShieldAlert, Truck, Warehouse } from "lucide-react";
+import { useT } from "@/lib/i18n";
 import type { AsnSummary } from "@/lib/types";
 
 export function StatCard({
@@ -36,12 +37,13 @@ export function StatCard({
 
 /** The four shipment-tracking cards (Active / At Customs / Urgent / Finalized). */
 export function AsnCards({ s }: { s: AsnSummary | null }) {
+  const { t } = useT();
   return (
     <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-      <StatCard label="Active" sub="In transit" value={s?.active ?? 0} icon={Truck} tint="bg-indigo-50 text-indigo-600" />
-      <StatCard label="Pending" sub="At customs / hub" value={s?.pending ?? 0} icon={Warehouse} tint="bg-amber-50 text-amber-600" />
-      <StatCard label="Urgent" sub="Delayed / alert" value={s?.urgent ?? 0} icon={ShieldAlert} tint="bg-red-50 text-signal-red" strong />
-      <StatCard label="Finalized" sub="Delivered (30d)" value={s?.finalized ?? 0} icon={CheckCircle2} tint="bg-emerald-50 text-emerald-600" />
+      <StatCard label={t("Active")} sub={t("In transit")} value={s?.active ?? 0} icon={Truck} tint="bg-indigo-50 text-indigo-600" />
+      <StatCard label={t("Pending")} sub={t("At customs / hub")} value={s?.pending ?? 0} icon={Warehouse} tint="bg-amber-50 text-amber-600" />
+      <StatCard label={t("Urgent")} sub={t("Delayed / alert")} value={s?.urgent ?? 0} icon={ShieldAlert} tint="bg-red-50 text-signal-red" strong />
+      <StatCard label={t("Finalized")} sub={t("Delivered (30d)")} value={s?.finalized ?? 0} icon={CheckCircle2} tint="bg-emerald-50 text-emerald-600" />
     </div>
   );
 }

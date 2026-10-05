@@ -3,6 +3,7 @@
 import { useEffect, useId, useMemo, useState } from "react";
 import { Loader2, Mail, Save, Send, Sparkles, X } from "lucide-react";
 import PageHeader from "@/components/layout/PageHeader";
+import { useT } from "@/lib/i18n";
 
 export interface SupplierContact {
   supplier_name: string;
@@ -52,6 +53,7 @@ export default function ComposeWorkspace({
   title?: string;
   description?: string;
 }) {
+  const { t } = useT();
   const [audience, setAudience] = useState<"supplier" | "customer">("supplier");
   const [to, setTo] = useState<string[]>([]);
   const [cc, setCc] = useState<string[]>([]);
@@ -106,7 +108,7 @@ export default function ComposeWorkspace({
         recipient_name: supplierName ?? undefined,
       });
       setBody(res.body);
-      setToast({ tone: "ok", msg: res.source === "ai" ? "HI drafted the email." : "Draft ready (template)." });
+      setToast({ tone: "ok", msg: res.source === "ai" ? t("HI drafted the email.") : t("Draft ready (template).") });
     } catch (e) {
       setToast({ tone: "err", msg: (e as Error).message });
     } finally {
@@ -115,9 +117,9 @@ export default function ComposeWorkspace({
   };
 
   const submit = async (send: boolean) => {
-    if (to.length === 0) return setToast({ tone: "err", msg: "Add at least one recipient." });
-    if (!subject.trim()) return setToast({ tone: "err", msg: "Subject is required." });
-    if (!body.trim()) return setToast({ tone: "err", msg: "Message body is required." });
+    if (to.length === 0) return setToast({ tone: "err", msg: t("Add at least one recipient.") });
+    if (!subject.trim()) return setToast({ tone: "err", msg: t("Subject is required.") });
+    if (!body.trim()) return setToast({ tone: "err", msg: t("Message body is required.") });
     setSending(send ? "send" : "draft");
     try {
       const res = await adapter.compose({
@@ -132,13 +134,13 @@ export default function ComposeWorkspace({
         send,
       });
       if (send) {
-        setToast({ tone: res.sent ? "ok" : "err", msg: res.sent ? "Email sent." : `Queued (${res.status}).` });
+        setToast({ tone: res.sent ? "ok" : "err", msg: res.sent ? t("Email sent.") : t("Queued ({status}).", { status: res.status }) });
         if (res.sent) {
           setTo([]); setCc([]); setBcc([]); setSubject(""); setBody(""); setInstruction("");
           setSupplierName(null); setSupplierPoNo("");
         }
       } else {
-        setToast({ tone: "ok", msg: "Saved as draft." });
+        setToast({ tone: "ok", msg: t("Saved as draft.") });
       }
     } catch (e) {
       setToast({ tone: "err", msg: (e as Error).message });
@@ -150,8 +152,8 @@ export default function ComposeWorkspace({
   return (
     <div className="space-y-4">
       <PageHeader
-        title={title}
-        description={description}
+        title={t(title)}
+        description={t(description)}
         icon={Mail}
         tone="red"
         actions={
@@ -171,7 +173,7 @@ export default function ComposeWorkspace({
         {/* Audience */}
         {adapter.allowCustomer && (
           <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold text-brand-muted">To audience</span>
+            <span className="text-xs font-semibold text-brand-muted">{t("To audience")}</span>
             <div className="inline-flex rounded-lg border border-brand-border bg-subtle p-0.5 text-xs font-semibold">
               {(["supplier", "customer"] as const).map((a) => (
                 <button
@@ -181,7 +183,7 @@ export default function ComposeWorkspace({
                     audience === a ? "bg-card text-signal-red shadow-sm" : "text-brand-muted hover:text-brand-dark"
                   }`}
                 >
-                  {a}
+                  {a === "supplier" ? t("Supplier") : t("Customer")}
                 </button>
               ))}
             </div>
@@ -193,14 +195,14 @@ export default function ComposeWorkspace({
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="block">
               <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-brand-muted">
-                Load recipients from supplier
+                {t("Load recipients from supplier")}
               </span>
               <select
                 value={supplierName ?? ""}
                 onChange={(e) => pickSupplier(e.target.value)}
                 className="input h-9 w-full text-sm"
               >
-                <option value="">Select a supplier…</option>
+                <option value="">{t("Select a supplier…")}</option>
                 {contacts.map((c) => (
                   <option key={c.supplier_name} value={c.supplier_name}>
                     {c.supplier_name}
@@ -210,28 +212,28 @@ export default function ComposeWorkspace({
             </label>
             <label className="block">
               <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-brand-muted">
-                Link PO No. (optional)
+                {t("Link PO No. (optional)")}
               </span>
               <input
                 value={supplierPoNo}
                 onChange={(e) => setSupplierPoNo(e.target.value)}
-                placeholder="e.g. 000449"
+                placeholder={t("e.g. 000449")}
                 className="input h-9 w-full text-sm"
               />
             </label>
           </div>
         )}
 
-        <ChipField label="To" values={to} onChange={setTo} suggestions={emailSuggestions} required />
-        <ChipField label="Cc" values={cc} onChange={setCc} suggestions={emailSuggestions} />
-        <ChipField label="Bcc" values={bcc} onChange={setBcc} suggestions={emailSuggestions} />
+        <ChipField label={t("To")} values={to} onChange={setTo} suggestions={emailSuggestions} required />
+        <ChipField label={t("Cc")} values={cc} onChange={setCc} suggestions={emailSuggestions} />
+        <ChipField label={t("Bcc")} values={bcc} onChange={setBcc} suggestions={emailSuggestions} />
 
         <label className="block">
-          <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-brand-muted">Subject</span>
+          <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-brand-muted">{t("Subject")}</span>
           <input
             value={subject}
             onChange={(e) => setSubject(e.target.value)}
-            placeholder="Subject line"
+            placeholder={t("Subject line")}
             className="input h-9 w-full text-sm"
           />
         </label>
@@ -239,45 +241,45 @@ export default function ComposeWorkspace({
         {/* HI assist */}
         <div className="rounded-lg border border-signal-red/20 bg-red-50/50 p-3">
           <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-signal-red">
-            <Sparkles size={14} /> Harmony Intelligence — draft for you
+            <Sparkles size={14} /> {t("Harmony Intelligence — draft for you")}
           </div>
           <div className="flex flex-col gap-2 sm:flex-row">
             <input
               value={instruction}
               onChange={(e) => setInstruction(e.target.value)}
-              placeholder="What should this email say? e.g. request an updated commitment date for PO 000449"
+              placeholder={t("What should this email say? e.g. request an updated commitment date for PO 000449")}
               className="input h-9 flex-1 text-sm"
             />
             <button onClick={runDraft} disabled={drafting} className="btn-outline h-9 shrink-0">
               {drafting ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
-              Draft with HI
+              {t("Draft with HI")}
             </button>
           </div>
         </div>
 
         <label className="block">
-          <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-brand-muted">Message</span>
+          <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-brand-muted">{t("Message")}</span>
           <textarea
             value={body}
             onChange={(e) => setBody(e.target.value)}
             rows={10}
-            placeholder="Write your message… (sent in your branded HTML format)"
+            placeholder={t("Write your message… (sent in your branded HTML format)")}
             className="w-full resize-y rounded-lg border border-brand-border bg-subtle px-3 py-2.5 text-sm outline-none focus:border-signal-red/40 focus:bg-card"
           />
         </label>
 
         <div className="flex items-center justify-between gap-2">
-          <span className="text-[11px] text-brand-muted">Delivered as branded HTML via the mail engine.</span>
+          <span className="text-[11px] text-brand-muted">{t("Delivered as branded HTML via the mail engine.")}</span>
           <div className="flex items-center gap-2">
             <button onClick={() => submit(false)} disabled={!!sending} className="btn-ghost h-9">
-              {sending === "draft" ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Save draft
+              {sending === "draft" ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} {t("Save draft")}
             </button>
             <button
               onClick={() => submit(true)}
               disabled={!canSend}
               className="inline-flex h-9 items-center gap-1.5 rounded-md bg-signal-red px-4 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
             >
-              {sending === "send" ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />} Send
+              {sending === "send" ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />} {t("Send")}
             </button>
           </div>
         </div>
@@ -303,6 +305,7 @@ function ChipField({
   suggestions: string[];
   required?: boolean;
 }) {
+  const { t } = useT();
   const [input, setInput] = useState("");
   const listId = useId();
 
@@ -341,7 +344,7 @@ function ChipField({
             }
           }}
           onBlur={() => add(input)}
-          placeholder={values.length ? "" : "type an email, Enter to add"}
+          placeholder={values.length ? "" : t("type an email, Enter to add")}
           className="min-w-[12rem] flex-1 bg-transparent px-1 py-0.5 text-sm outline-none"
         />
         <datalist id={listId}>

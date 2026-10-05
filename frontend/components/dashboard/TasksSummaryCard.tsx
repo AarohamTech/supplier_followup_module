@@ -1,6 +1,7 @@
 "use client";
 import Link from "next/link";
 import { ListChecks } from "lucide-react";
+import { useT } from "@/lib/i18n";
 import type { PortalTaskDashboard } from "@/lib/types";
 
 /** Compact tasks-overview card. Works for any role — feed it the role's
@@ -12,6 +13,7 @@ export default function TasksSummaryCard({
   data: PortalTaskDashboard | null;
   href: string;
 }) {
+  const { t } = useT();
   const stats: { label: string; value: number; strong?: boolean }[] = [
     { label: "To do", value: data?.todo ?? 0 },
     { label: "Waiting", value: data?.waiting ?? 0 },
@@ -25,10 +27,10 @@ export default function TasksSummaryCard({
       <div className="mb-3 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <ListChecks size={14} className="text-signal-red" />
-          <div className="font-semibold text-sm">Tasks</div>
+          <div className="font-semibold text-sm">{t("Tasks")}</div>
         </div>
         <Link href={href} className="text-xs font-medium text-signal-red hover:underline">
-          Open →
+          {t("Open →")}
         </Link>
       </div>
       <div className="grid grid-cols-3 gap-3">
@@ -42,7 +44,7 @@ export default function TasksSummaryCard({
             >
               {s.value}
             </div>
-            <div className="text-[10px] uppercase tracking-wider text-brand-muted">{s.label}</div>
+            <div className="text-[10px] uppercase tracking-wider text-brand-muted">{t(s.label)}</div>
           </div>
         ))}
       </div>

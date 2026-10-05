@@ -3,6 +3,7 @@
 import { memo, useState } from "react";
 import { Inbox, Search } from "lucide-react";
 import type { CustomerMail } from "@/lib/types";
+import { useT } from "@/lib/i18n";
 import { MailCard } from "./MailCard";
 import { useRenderCount } from "./hooks";
 import type { QueueTab } from "./shared";
@@ -40,6 +41,7 @@ function MailQueueBase({
   loading,
 }: MailQueueProps) {
   useRenderCount("MailQueue");
+  const { t } = useT();
   const [visible, setVisible] = useState(PAGE);
   const shown = mails.slice(0, visible);
   const activeLabel = tabs.find((tab) => tab.key === activeTab)?.label ?? "this queue";
@@ -52,21 +54,21 @@ function MailQueueBase({
           <input
             value={searchInput}
             onChange={(e) => onSearchChange(e.target.value)}
-            placeholder="Search subject or sender…"
-            aria-label="Search mails by subject or sender"
+            placeholder={t("Search subject or sender…")}
+            aria-label={t("Search mails by subject or sender")}
             className="w-full rounded-lg border border-brand-border bg-card py-2 pl-8 pr-3 text-sm outline-none focus:border-signal-red/40"
           />
         </div>
       </div>
 
       <div className="flex flex-wrap gap-1.5 border-b border-brand-border px-3 py-2.5">
-        {tabs.map((t) => {
-          const active = t.key === activeTab;
+        {tabs.map((tab) => {
+          const active = tab.key === activeTab;
           return (
             <button
-              key={t.key}
+              key={tab.key}
               type="button"
-              onClick={() => onTabChange(t.key)}
+              onClick={() => onTabChange(tab.key)}
               className={[
                 "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-semibold transition",
                 active
@@ -74,13 +76,13 @@ function MailQueueBase({
                   : "text-brand-muted hover:bg-subtle",
               ].join(" ")}
             >
-              {t.label}
+              {t(tab.label)}
               <span
                 className={`rounded-full px-1.5 text-[10px] font-bold ${
                   active ? "bg-signal-red text-white" : "bg-subtle text-brand-muted"
                 }`}
               >
-                {counts[t.key] ?? 0}
+                {counts[tab.key] ?? 0}
               </span>
             </button>
           );
@@ -89,15 +91,15 @@ function MailQueueBase({
 
       <div className="flex-1 overflow-y-auto">
         {loading && mails.length === 0 ? (
-          <div className="py-8 text-center text-xs text-brand-muted">Loading…</div>
+          <div className="py-8 text-center text-xs text-brand-muted">{t("Loading…")}</div>
         ) : mails.length === 0 ? (
           <div className="flex flex-col items-center px-6 py-10 text-center">
             <span className="mb-3 grid h-9 w-9 place-items-center rounded-lg bg-subtle text-brand-muted">
               <Inbox className="h-4 w-4" />
             </span>
-            <p className="text-xs font-medium text-brand-dark">No conversations in {activeLabel}</p>
+            <p className="text-xs font-medium text-brand-dark">{t("No conversations in {queue}", { queue: t(activeLabel) })}</p>
             <p className="mt-1 text-[11px] leading-relaxed text-brand-muted">
-              New customer messages will appear here automatically.
+              {t("New customer messages will appear here automatically.")}
             </p>
           </div>
         ) : (
@@ -116,7 +118,7 @@ function MailQueueBase({
                 onClick={() => setVisible((v) => v + PAGE)}
                 className="w-full border-b border-brand-border py-2.5 text-xs text-brand-muted hover:bg-subtle"
               >
-                Load more ({mails.length - visible} remaining)
+                {t("Load more ({n} remaining)", { n: mails.length - visible })}
               </button>
             )}
           </>

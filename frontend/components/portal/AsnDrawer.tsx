@@ -6,6 +6,7 @@ import { AlertTriangle, RefreshCw, Send, X } from "lucide-react";
 import { api } from "@/lib/api";
 import { ADVANCE_STAGES, stageMeta } from "@/lib/asn";
 import { fmtDate } from "@/lib/format";
+import { useT } from "@/lib/i18n";
 import type { Asn } from "@/lib/types";
 import ShipmentMap from "./ShipmentMap";
 
@@ -25,6 +26,7 @@ export default function AsnDrawer({
   // works, but no add-event / submit actions.
   mode?: "staff" | "portal" | "eportal";
 }) {
+  const { t } = useT();
   const m = mode ?? (staff ? "staff" : "portal");
   const readOnly = m === "eportal";
   const addEvent = m === "staff" ? api.addAsnEvent : api.addPortalAsnEvent;
@@ -73,7 +75,7 @@ export default function AsnDrawer({
 
   const advance = async () => {
     if (!stage) {
-      setError("Choose a stage.");
+      setError(t("Choose a stage."));
       return;
     }
     setBusy(true);
@@ -124,8 +126,8 @@ export default function AsnDrawer({
             <div className="text-xs text-brand-muted">PO {asn.supplier_po_no}</div>
           </div>
           <div className="flex items-center gap-2">
-            <span className={"badge " + meta.badge}>{asn.status_label || meta.label}</span>
-            <button className="rounded p-1 hover:bg-subtle" onClick={onClose} aria-label="Close ASN details"><X size={18} /></button>
+            <span className={"badge " + meta.badge}>{t(asn.status_label || meta.label)}</span>
+            <button className="rounded p-1 hover:bg-subtle" onClick={onClose} aria-label={t("Close ASN details")}><X size={18} /></button>
           </div>
         </div>
 
@@ -135,14 +137,14 @@ export default function AsnDrawer({
           {asn.alert && (
             <div className="flex items-start gap-2 rounded-md bg-red-50 px-3 py-2 text-xs text-signal-red">
               <AlertTriangle size={14} className="mt-0.5 shrink-0" />
-              <span>{asn.alert_reason || "Shipment flagged as delayed / needs attention."}</span>
+              <span>{asn.alert_reason || t("Shipment flagged as delayed / needs attention.")}</span>
             </div>
           )}
 
           {/* Progress */}
           <div>
             <div className="mb-1 flex items-center justify-between text-xs">
-              <span className="font-medium text-brand-dark">{meta.label}</span>
+              <span className="font-medium text-brand-dark">{t(meta.label)}</span>
               <span className="text-brand-muted">{asn.progress_percent}%</span>
             </div>
             <div className="h-2 w-full overflow-hidden rounded-full bg-subtle">
@@ -152,26 +154,26 @@ export default function AsnDrawer({
 
           {/* Details */}
           <dl className="grid grid-cols-2 gap-3 text-sm">
-            <Detail label="Carrier" value={asn.carrier_name} />
-            <Detail label="Tracking" value={asn.tracking_no} />
-            <Detail label="Mode" value={asn.transport_mode} />
-            <Detail label="Route" value={asn.origin || asn.destination ? `${asn.origin || "—"} → ${asn.destination || "—"}` : null} />
-            <Detail label="Dispatch" value={fmtDate(asn.dispatch_date)} />
+            <Detail label={t("Carrier")} value={asn.carrier_name} />
+            <Detail label={t("Tracking")} value={asn.tracking_no} />
+            <Detail label={t("Mode")} value={asn.transport_mode} />
+            <Detail label={t("Route")} value={asn.origin || asn.destination ? `${asn.origin || "—"} → ${asn.destination || "—"}` : null} />
+            <Detail label={t("Dispatch")} value={fmtDate(asn.dispatch_date)} />
             <Detail label="ETA" value={fmtDate(asn.eta)} />
           </dl>
 
           {/* Items */}
           {asn.items.length > 0 && (
             <div>
-              <div className="mb-1 text-[10px] uppercase tracking-wider text-brand-muted font-semibold">Shipped Items</div>
+              <div className="mb-1 text-[10px] uppercase tracking-wider text-brand-muted font-semibold">{t("Shipped Items")}</div>
               <div className="rounded-md border border-brand-border divide-y divide-brand-border">
                 {asn.items.map((it) => (
                   <div key={it.id} className="px-3 py-2 text-sm">
                     <div className="truncate font-medium text-brand-dark">{it.material_name}</div>
                     <div className="mt-0.5 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-brand-muted">
                       <span>PO: {it.po_qty ?? "—"} {it.uom || ""}</span>
-                      <span>Shipped: <span className="font-medium text-brand-dark">{it.qty_shipped ?? "—"} {it.uom || ""}</span></span>
-                      {it.invoice_no && <span>Invoice: {it.invoice_no}</span>}
+                      <span>{t("Shipped:")} <span className="font-medium text-brand-dark">{it.qty_shipped ?? "—"} {it.uom || ""}</span></span>
+                      {it.invoice_no && <span>{t("Invoice: {no}", { no: it.invoice_no })}</span>}
                     </div>
                   </div>
                 ))}
@@ -181,29 +183,29 @@ export default function AsnDrawer({
 
           {/* Shipment map (geocoded checkpoints) */}
           <div>
-            <div className="mb-2 text-[10px] uppercase tracking-wider text-brand-muted font-semibold">Shipment Map</div>
+            <div className="mb-2 text-[10px] uppercase tracking-wider text-brand-muted font-semibold">{t("Shipment Map")}</div>
             <ShipmentMap events={asn.events} />
           </div>
 
           {/* Timeline */}
           <div>
             <div className="mb-2 flex items-center justify-between">
-              <span className="text-[10px] uppercase tracking-wider text-brand-muted font-semibold">Tracking Timeline</span>
+              <span className="text-[10px] uppercase tracking-wider text-brand-muted font-semibold">{t("Tracking Timeline")}</span>
               {trackable && (
                 <span className="flex items-center gap-1 text-[10px] text-brand-muted">
                   <RefreshCw size={11} className={refreshing ? "animate-spin" : ""} />
-                  {refreshing ? "Checking carrier…" : "Live courier tracking"}
+                  {refreshing ? t("Checking carrier…") : t("Live courier tracking")}
                 </span>
               )}
             </div>
             {asn.events.length === 0 ? (
-              <div className="text-xs text-brand-muted">No tracking updates yet.</div>
+              <div className="text-xs text-brand-muted">{t("No tracking updates yet.")}</div>
             ) : (
               <ol className="relative ml-2 border-l border-brand-border">
                 {[...asn.events].reverse().map((ev) => (
                   <li key={ev.id} className="mb-4 ml-4">
                     <span className="absolute -left-1.5 mt-1 h-3 w-3 rounded-full bg-signal-red" />
-                    <div className="text-sm font-medium text-brand-dark">{ev.status_label || ev.stage}</div>
+                    <div className="text-sm font-medium text-brand-dark">{t(ev.status_label || ev.stage)}</div>
                     <div className="text-xs text-brand-muted">
                       {fmtDate(ev.occurred_at)}{ev.location ? ` · ${ev.location}` : ""}
                     </div>
@@ -217,30 +219,30 @@ export default function AsnDrawer({
           {/* Actions */}
           {!readOnly && asn.status === "DRAFT" && (
             <button className="btn-primary w-full" disabled={busy} onClick={submitDraft}>
-              <Send size={14} /> Submit ASN
+              <Send size={14} /> {t("Submit ASN")}
             </button>
           )}
 
           {!readOnly && !isClosed && asn.status !== "DRAFT" && (
             <div className="rounded-lg border border-brand-border p-3 space-y-3">
-              <div className="text-[10px] uppercase tracking-wider text-brand-muted font-semibold">Add tracking update</div>
+              <div className="text-[10px] uppercase tracking-wider text-brand-muted font-semibold">{t("Add tracking update")}</div>
               <select className="input" value={stage} onChange={(e) => setStage(e.target.value)}>
-                <option value="">Select stage…</option>
+                <option value="">{t("Select stage…")}</option>
                 {ADVANCE_STAGES.map((s) => (
-                  <option key={s} value={s}>{stageMeta(s).label}</option>
+                  <option key={s} value={s}>{t(stageMeta(s).label)}</option>
                 ))}
               </select>
-              <input className="input" placeholder="Location (optional)" value={location} onChange={(e) => setLocation(e.target.value)} />
-              <input className="input" placeholder="Note (optional)" value={note} onChange={(e) => setNote(e.target.value)} />
+              <input className="input" placeholder={t("Location (optional)")} value={location} onChange={(e) => setLocation(e.target.value)} />
+              <input className="input" placeholder={t("Note (optional)")} value={note} onChange={(e) => setNote(e.target.value)} />
               <label className="flex items-center gap-2 text-sm">
                 <input type="checkbox" checked={alert} onChange={(e) => setAlert(e.target.checked)} />
-                Flag as delayed / needs attention
+                {t("Flag as delayed / needs attention")}
               </label>
               {alert && (
-                <input className="input" placeholder="Reason (e.g. Documentation Missing)" value={alertReason} onChange={(e) => setAlertReason(e.target.value)} />
+                <input className="input" placeholder={t("Reason (e.g. Documentation Missing)")} value={alertReason} onChange={(e) => setAlertReason(e.target.value)} />
               )}
               <button className="btn-primary w-full" disabled={busy} onClick={advance}>
-                {busy ? "Saving…" : "Add update"}
+                {busy ? t("Saving…") : t("Add update")}
               </button>
             </div>
           )}

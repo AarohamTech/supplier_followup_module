@@ -2,6 +2,7 @@
 
 import { memo } from "react";
 import type { CustomerMail } from "@/lib/types";
+import { useT } from "@/lib/i18n";
 import { useRenderCount } from "./hooks";
 import { PRIORITY_TONE, URGENCY_TONE, formatDateTime } from "./shared";
 
@@ -18,6 +19,7 @@ interface MailCardProps {
  */
 function MailCardBase({ mail, selected, onSelect }: MailCardProps) {
   useRenderCount("MailCard");
+  const { t } = useT();
   const openTasks = mail.open_task_count ?? 0;
 
   return (
@@ -31,13 +33,13 @@ function MailCardBase({ mail, selected, onSelect }: MailCardProps) {
     >
       <div className="flex items-center gap-2">
         <span className="flex-1 truncate text-sm font-semibold text-brand-dark">
-          {mail.subject || "(no subject)"}
+          {mail.subject || t("(no subject)")}
         </span>
         <span className="shrink-0 text-[10px] text-brand-muted">{formatDateTime(mail.received_at)}</span>
       </div>
 
       <div className="mt-0.5 truncate text-xs text-brand-muted">
-        {mail.from_name || mail.customer_name || mail.from_email || "Unknown sender"}
+        {mail.from_name || mail.customer_name || mail.from_email || t("Unknown sender")}
       </div>
 
       <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
@@ -46,7 +48,7 @@ function MailCardBase({ mail, selected, onSelect }: MailCardProps) {
             PRIORITY_TONE[mail.priority] || "bg-subtle text-brand-muted"
           }`}
         >
-          {mail.priority}
+          {t(mail.priority)}
         </span>
         {mail.linked_supplier_po_no && (
           <span className="rounded bg-red-50 px-1.5 py-0.5 text-[10px] font-medium text-signal-red">
@@ -55,7 +57,7 @@ function MailCardBase({ mail, selected, onSelect }: MailCardProps) {
         )}
         {openTasks > 0 && (
           <span className="rounded bg-subtle px-1.5 py-0.5 text-[10px] font-medium text-brand-dark">
-            {openTasks} task{openTasks === 1 ? "" : "s"}
+            {openTasks === 1 ? t("{n} task", { n: openTasks }) : t("{n} tasks", { n: openTasks })}
           </span>
         )}
         {mail.ai_urgency && (
@@ -63,11 +65,11 @@ function MailCardBase({ mail, selected, onSelect }: MailCardProps) {
             className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${
               URGENCY_TONE[mail.ai_urgency] || "bg-subtle text-brand-muted"
             }`}
-            title={`Harmony Intelligent triage${mail.ai_category ? ` · ${mail.ai_category}` : ""}${
+            title={`${t("Harmony Intelligent triage")}${mail.ai_category ? ` · ${mail.ai_category}` : ""}${
               mail.ai_action ? ` · ${mail.ai_action}` : ""
             }`}
           >
-            {mail.ai_urgency}
+            {t(mail.ai_urgency)}
           </span>
         )}
       </div>

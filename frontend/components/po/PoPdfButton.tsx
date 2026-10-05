@@ -4,6 +4,7 @@ import { useState } from "react";
 import { FileDown, Loader2 } from "lucide-react";
 
 import { getToken } from "@/lib/auth-token";
+import { useT } from "@/lib/i18n";
 
 /**
  * Download button for the official CRM PO PDF. Renders nothing when the line
@@ -24,6 +25,7 @@ export default function PoPdfButton({
   /** Optional text next to the icon (icon-only by default). */
   label?: string;
 }) {
+  const { t } = useT();
   const [busy, setBusy] = useState(false);
   if (!trnNo) return null;
   const trn = trnNo;
@@ -46,7 +48,7 @@ export default function PoPdfButton({
       a.click();
       URL.revokeObjectURL(url);
     } catch {
-      window.alert("PO PDF download failed.");
+      window.alert(t("PO PDF download failed."));
     } finally {
       setBusy(false);
     }
@@ -55,7 +57,7 @@ export default function PoPdfButton({
   return (
     <button
       type="button"
-      title="Download PO PDF"
+      title={t("Download PO PDF")}
       disabled={busy}
       onClick={download}
       className={className ?? "rounded p-0.5 text-brand-muted hover:bg-subtle hover:text-brand-dark disabled:opacity-50"}

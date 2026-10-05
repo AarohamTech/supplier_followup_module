@@ -4,6 +4,7 @@ import { AlertTriangle } from "lucide-react";
 
 import { stageMeta } from "@/lib/asn";
 import { fmtDate } from "@/lib/format";
+import { useT } from "@/lib/i18n";
 import type { Asn } from "@/lib/types";
 
 export default function AsnTable({
@@ -19,6 +20,7 @@ export default function AsnTable({
   showSupplier?: boolean;
   emptyLabel?: string;
 }) {
+  const { t } = useT();
   const cols = showSupplier
     ? ["ASN ID", "Supplier", "PO Reference", "Carrier / Tracking", "Progress", "Status"]
     : ["ASN ID", "PO Reference", "Carrier / Tracking", "Progress", "Status"];
@@ -29,16 +31,16 @@ export default function AsnTable({
         <thead className="bg-subtle">
           <tr>
             {cols.map((h) => (
-              <th key={h} className="px-4 py-3 text-left table-header whitespace-nowrap">{h}</th>
+              <th key={h} className="px-4 py-3 text-left table-header whitespace-nowrap">{t(h)}</th>
             ))}
           </tr>
         </thead>
         <tbody>
           {loading && (
-            <tr><td colSpan={cols.length} className="px-4 py-10 text-center text-brand-muted">Loading…</td></tr>
+            <tr><td colSpan={cols.length} className="px-4 py-10 text-center text-brand-muted">{t("Loading…")}</td></tr>
           )}
           {!loading && items.length === 0 && (
-            <tr><td colSpan={cols.length} className="px-4 py-10 text-center text-brand-muted">{emptyLabel}</td></tr>
+            <tr><td colSpan={cols.length} className="px-4 py-10 text-center text-brand-muted">{t(emptyLabel)}</td></tr>
           )}
           {items.map((a) => {
             const meta = stageMeta(a.status);
@@ -50,7 +52,7 @@ export default function AsnTable({
               >
                 <td className="px-4 py-3">
                   <div className="font-medium text-brand-dark">{a.asn_no}</div>
-                  <div className="text-[11px] text-brand-muted">Created {fmtDate(a.created_at)}</div>
+                  <div className="text-[11px] text-brand-muted">{t("Created {date}", { date: fmtDate(a.created_at) })}</div>
                 </td>
                 {showSupplier && <td className="px-4 py-3 text-xs">{a.supplier_name || "—"}</td>}
                 <td className="px-4 py-3">
@@ -62,7 +64,7 @@ export default function AsnTable({
                 </td>
                 <td className="px-4 py-3 min-w-[160px]">
                   <div className="mb-1 flex items-center justify-between text-[11px]">
-                    <span className="text-brand-muted">{meta.label}</span>
+                    <span className="text-brand-muted">{t(meta.label)}</span>
                     <span className="text-brand-muted">{a.progress_percent}%</span>
                   </div>
                   <div className="h-1.5 w-full overflow-hidden rounded-full bg-subtle">
@@ -71,8 +73,8 @@ export default function AsnTable({
                 </td>
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-1.5">
-                    <span className={"badge " + meta.badge}>{a.status_label || meta.label}</span>
-                    {a.alert && <AlertTriangle size={14} className="text-signal-red" aria-label="Delayed / alert" />}
+                    <span className={"badge " + meta.badge}>{t(a.status_label || meta.label)}</span>
+                    {a.alert && <AlertTriangle size={14} className="text-signal-red" aria-label={t("Delayed / alert")} />}
                   </div>
                 </td>
               </tr>

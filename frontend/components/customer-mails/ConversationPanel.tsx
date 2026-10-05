@@ -3,6 +3,7 @@
 import { memo } from "react";
 import { Calendar, Clock, PanelRightOpen } from "lucide-react";
 import type { CustomerMail } from "@/lib/types";
+import { useT } from "@/lib/i18n";
 import { ReplyComposer } from "./ReplyComposer";
 import { useRenderCount } from "./hooks";
 import { PRIORITY_TONE, formatDateTime, timeAgo } from "./shared";
@@ -14,11 +15,11 @@ export interface LocalReply {
   status?: string;
 }
 
-function replyStatusLabel(status?: string): string | null {
+function replyStatusLabel(t: (text: string) => string, status?: string): string | null {
   if (!status) return null;
-  if (status === "SENT") return "Sent";
-  if (status === "READY") return "Queued";
-  if (status === "FAILED") return "Failed";
+  if (status === "SENT") return t("Sent");
+  if (status === "READY") return t("Queued");
+  if (status === "FAILED") return t("Failed");
   return status;
 }
 
@@ -40,7 +41,8 @@ function ConversationPanelBase({
   onOpenContext,
 }: ConversationPanelProps) {
   useRenderCount("ConversationPanel");
-  const recipient = mail.from_name || mail.customer_name || mail.from_email || "customer";
+  const { t } = useT();
+  const recipient = mail.from_name || mail.customer_name || mail.from_email || t("customer");
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -48,26 +50,26 @@ function ConversationPanelBase({
       <div className="shrink-0 border-b border-brand-border px-5 py-3">
         <div className="flex items-center gap-2">
           <h2 className="min-w-0 flex-1 truncate text-base font-semibold text-brand-dark">
-            {mail.subject || "(no subject)"}
+            {mail.subject || t("(no subject)")}
           </h2>
           <span
             className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ${
               PRIORITY_TONE[mail.priority] || "bg-subtle text-brand-dark"
             }`}
           >
-            {mail.priority}
+            {t(mail.priority)}
           </span>
           <button
             type="button"
             className="rounded-md p-1.5 text-brand-muted hover:bg-subtle hover:text-brand-dark"
-            title="Schedule"
+            title={t("Schedule")}
           >
             <Calendar className="h-4 w-4" />
           </button>
           <button
             type="button"
             className="rounded-md p-1.5 text-brand-muted hover:bg-subtle hover:text-brand-dark"
-            title="History"
+            title={t("History")}
           >
             <Clock className="h-4 w-4" />
           </button>
@@ -75,18 +77,18 @@ function ConversationPanelBase({
             type="button"
             onClick={onOpenContext}
             className="rounded-md p-1.5 text-brand-muted hover:bg-subtle hover:text-brand-dark 2xl:hidden"
-            title="Procurement context"
+            title={t("Procurement context")}
           >
             <PanelRightOpen className="h-4 w-4" />
           </button>
         </div>
         <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-brand-muted">
           <span className="font-medium text-brand-dark">
-            {mail.from_name || mail.customer_name || "Unknown"}
+            {mail.from_name || mail.customer_name || t("Unknown")}
           </span>
           <span className="truncate">{mail.from_email}</span>
           {mail.linked_supplier_po_no && (
-            <span className="text-signal-red">· Ref {mail.linked_supplier_po_no}</span>
+            <span className="text-signal-red">· {t("Ref {po}", { po: mail.linked_supplier_po_no })}</span>
           )}
         </div>
       </div>
@@ -103,9 +105,9 @@ function ConversationPanelBase({
                 </span>
                 <div className="leading-tight">
                   <div className="text-sm font-semibold text-brand-dark">
-                    {mail.from_name || mail.customer_name || "Unknown"}
+                    {mail.from_name || mail.customer_name || t("Unknown")}
                   </div>
-                  <div className="text-[11px] text-brand-muted">to ProcureDirect Support</div>
+                  <div className="text-[11px] text-brand-muted">{t("to ProcureDirect Support")}</div>
                 </div>
               </div>
               <span className="shrink-0 text-[11px] text-brand-muted">
@@ -113,7 +115,7 @@ function ConversationPanelBase({
               </span>
             </div>
             <p className="whitespace-pre-wrap text-sm leading-relaxed text-brand-dark">
-              {mail.body || "(empty body)"}
+              {mail.body || t("(empty body)")}
             </p>
           </article>
         </div>
@@ -124,10 +126,10 @@ function ConversationPanelBase({
             <article className="max-w-[90%] rounded-xl border border-brand-border bg-subtle p-4 lg:max-w-[72ch]">
               <div className="mb-1.5 flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
-                  <span className="text-sm font-semibold text-brand-dark">You replied</span>
-                  {replyStatusLabel(reply.status) && (
+                  <span className="text-sm font-semibold text-brand-dark">{t("You replied")}</span>
+                  {replyStatusLabel(t, reply.status) && (
                     <span className="rounded-full border border-brand-border bg-card px-1.5 py-0.5 text-[10px] font-medium text-brand-muted">
-                      {replyStatusLabel(reply.status)}
+                      {replyStatusLabel(t, reply.status)}
                     </span>
                   )}
                 </div>
