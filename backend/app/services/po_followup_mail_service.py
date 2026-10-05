@@ -689,6 +689,39 @@ def _record_due_for_auto_mail(rec: ProcurementRecord, now: datetime) -> bool:
     return True
 
 
+def _send_realtime_now(db: Session, results: list[dict[str, Any]]) -> int:
+    """Send the PO confirmations (GREEN acks) just queued, right now.
+
+    The supplier expects the confirmation the moment the PO is released, so it
+    must not wait for the next send-cron tick. At most `per_minute_limit` go out
+    here (the SMTP provider's ceiling); any overflow stays READY and the cron
+    sends it first, since GREEN is a priority type. Best-effort, never raises.
+    """
+    from ..workers import mail_send_worker
+    from . import settings_service
+
+    ids = [
+        r["message_id"]
+        for r in results
+        if r.get("created") and r.get("message_id")
+        and (r.get("mail_type") or "").upper() in mail_send_worker.REALTIME_MAIL_TYPES
+    ]
+    if not ids:
+        return 0
+    try:
+        cap = int(settings_service.get_mail_send_window(db).get("per_minute_limit") or 25)
+    except Exception:  # noqa: BLE001
+        cap = 25
+    sent = 0
+    for mid in ids[:cap]:
+        try:
+            if mail_send_worker.send_message_now(db, mid).get("sent"):
+                sent += 1
+        except Exception:  # noqa: BLE001
+            log.exception("Immediate GREEN ack send failed for message id=%s (left READY)", mid)
+    return sent
+
+
 def queue_due_po_followups(
     db: Session,
     *,
@@ -718,7 +751,15 @@ def queue_due_po_followups(
     queued = 0
     skipped = 0
 
-    for (_, _), group_records in buckets.items():
+    # Never-mailed POs (the GREEN confirmation candidates) go first so a run that
+    # hits `limit` on routine chasers never pushes a fresh PO's confirmation to
+    # the next tick. sorted() is stable, so supplier/PO order holds within each.
+    def _never_mailed(recs: list[ProcurementRecord]) -> bool:
+        return any((r.mail_status or "NOT_SENT").upper() == "NOT_SENT" for r in recs)
+
+    ordered = sorted(buckets.values(), key=lambda recs: 0 if _never_mailed(recs) else 1)
+
+    for group_records in ordered:
         if queued >= limit:
             break
 
@@ -870,6 +911,7 @@ def queue_due_po_followups(
         db.rollback()
     else:
         db.commit()
+        _send_realtime_now(db, results)
 
     return {
         "enabled": True,

@@ -10,6 +10,7 @@ import PageHeader from "@/components/layout/PageHeader";
 import { AsnCards } from "@/components/portal/PortalCards";
 import AsnTable from "@/components/portal/AsnTable";
 import AsnDrawer from "@/components/portal/AsnDrawer";
+import { useT } from "@/lib/i18n";
 
 const TABS = [
   { key: "active", label: "Active" },
@@ -19,6 +20,7 @@ const TABS = [
 
 /** Employee view: shipments raised against MY purchase orders only. */
 export default function EmployeeShipmentsPage() {
+  const { t } = useT();
   const [tab, setTab] = useState<(typeof TABS)[number]["key"]>("active");
   const [summary, setSummary] = useState<AsnSummary | null>(null);
   const [items, setItems] = useState<Asn[]>([]);
@@ -66,14 +68,14 @@ export default function EmployeeShipmentsPage() {
   return (
     <div className="page-stack">
       <PageHeader
-        title="My Shipments"
-        description="Shipments raised against your purchase orders — live tracking and timeline."
+        title={t("My Shipments")}
+        description={t("Shipments raised against your purchase orders — live tracking and timeline.")}
         icon={Truck}
         actions={
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search ASN / PO / carrier…"
+            placeholder={t("Search ASN / PO / carrier…")}
             className="input max-w-xs"
           />
         }
@@ -83,24 +85,24 @@ export default function EmployeeShipmentsPage() {
 
       <div className="card">
         <div className="flex items-center gap-1 border-b border-brand-border px-3">
-          {TABS.map((t) => (
+          {TABS.map((tab_) => (
             <button
-              key={t.key || "all"}
-              onClick={() => setTab(t.key)}
+              key={tab_.key || "all"}
+              onClick={() => setTab(tab_.key)}
               className={cn(
                 "px-3 py-3 text-sm font-medium border-b-2 -mb-px",
-                tab === t.key
+                tab === tab_.key
                   ? "border-signal-red text-signal-red"
                   : "border-transparent text-brand-muted hover:text-brand-dark",
               )}
             >
-              {t.label}
+              {t(tab_.label)}
             </button>
           ))}
         </div>
         <div className="p-3">
           {error && <div className="mb-3 rounded-md bg-red-50 px-3 py-2 text-xs text-signal-red">{error}</div>}
-          <AsnTable items={items} loading={loading} onOpen={setSelected} showSupplier emptyLabel="No shipments on your POs yet." />
+          <AsnTable items={items} loading={loading} onOpen={setSelected} showSupplier emptyLabel={t("No shipments on your POs yet.")} />
         </div>
       </div>
 

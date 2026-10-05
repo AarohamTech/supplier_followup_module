@@ -341,7 +341,9 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
   // ── UI state ──
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Separate boxes: typing a PO number must not empty the supplier list.
   const [search, setSearch] = useState("");
+  const [poSearch, setPoSearch] = useState("");
   const [queueFilter, setQueueFilter] = useState<QueueFilter>("needs_reply");
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [headerMatsOpen, setHeaderMatsOpen] = useState(false);
@@ -497,7 +499,7 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
   // with or without the leading #), any counter the thread spans, and material
   // names — so searching a PO number from Orders finds its thread here.
   const filteredPoList = useMemo(() => {
-    const q = search.trim().toLowerCase().replace(/^#/, "");
+    const q = poSearch.trim().toLowerCase().replace(/^#/, "");
     if (!q) return poList;
     return poList.filter((p) => {
       if ((p.po_ref || "").toLowerCase().includes(q)) return true;
@@ -507,7 +509,7 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
         (m.material_name || "").toLowerCase().includes(q),
       );
     });
-  }, [poList, search]);
+  }, [poList, poSearch]);
 
   // ── Data loaders ──
   const loadKpis = useCallback(async () => {
@@ -640,6 +642,7 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
       setSelectedOtherKey(null);
       setOtherMails([]);
       setPoView("pos"); // new supplier → back to its PO list
+      setPoSearch("");
       setPoList([]);
       setThread(null);
       setTaskGroups(null);
@@ -1191,16 +1194,7 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
 
         {sourceToggle}
 
-        <div className="relative ml-auto w-full min-w-[200px] max-w-sm flex-1">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-brand-muted" />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search supplier or subject…"
-            className="input h-9 pl-9"
-          />
-        </div>
-        <button onClick={loadAll} className="btn-outline h-9" disabled={loading}>
+        <button onClick={loadAll} className="btn-outline ml-auto h-9" disabled={loading}>
           {loading ? <Loader2 size={14} className="animate-spin" /> : <RefreshCcw size={14} />}
           <span className="hidden sm:inline">Refresh</span>
         </button>
@@ -1261,6 +1255,9 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
           <div className="flex items-center justify-between px-4 py-2.5">
             <span className="text-xs font-semibold uppercase tracking-wide text-brand-muted">Suppliers</span>
             <span className="text-[11px] text-brand-muted">{filteredSuppliers.length}</span>
+          </div>
+          <div className="px-3 pb-2">
+            <SearchBox value={search} onChange={setSearch} placeholder="Search supplier or subject…" />
           </div>
 
           <div className="max-h-[44%] overflow-y-auto border-y border-brand-border">
@@ -1327,6 +1324,11 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
                 </button>
               </div>
             )}
+            {activeSupplier && poView === "pos" && (
+              <div className="mt-2">
+                <SearchBox value={poSearch} onChange={setPoSearch} placeholder="Search PO no. or material…" />
+              </div>
+            )}
           </div>
 
           <div className="flex-1 overflow-y-auto border-t border-brand-border">
@@ -1336,7 +1338,7 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
               poList.length === 0 && !loading ? (
                 <EmptyState icon={<Inbox size={18} />}>No POs for this supplier.</EmptyState>
               ) : filteredPoList.length === 0 ? (
-                <EmptyState icon={<Inbox size={18} />}>No POs match “{search.trim()}”.</EmptyState>
+                <EmptyState icon={<Inbox size={18} />}>No POs match “{poSearch.trim()}”.</EmptyState>
               ) : (
                 filteredPoList.map((p) => (
                   <PoRow
@@ -2166,6 +2168,38 @@ function RailIcon({
     >
       {children}
     </button>
+  );
+}
+
+function SearchBox({
+  value,
+  onChange,
+  placeholder,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder: string;
+}) {
+  return (
+    <div className="relative">
+      <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-brand-muted" />
+      <input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="input h-8 pl-8 pr-7 text-xs"
+      />
+      {value && (
+        <button
+          type="button"
+          onClick={() => onChange("")}
+          className="absolute right-2 top-1/2 -translate-y-1/2 text-brand-muted hover:text-brand-dark"
+          title="Clear"
+        >
+          <X size={12} />
+        </button>
+      )}
+    </div>
   );
 }
 

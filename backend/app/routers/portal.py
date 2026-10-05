@@ -405,6 +405,7 @@ def _supplier_task_out(t: CommunicationTask) -> CommunicationTaskOut:
     out.assigned_to = None
     out.assigned_to_user_id = None
     out.assigned_by = None
+    out.assigned_by_user_id = None
     out.assigned_at = None
     out.watchers = []
     out.ai_summary = None
@@ -440,6 +441,13 @@ def supplier_tasks(
 ) -> list[CommunicationTaskOut]:
     """Every internal task linked to this supplier — view only, internals stripped."""
     return [_supplier_task_out(t) for t in _supplier_task_rows(db, user)]
+
+
+@router.get("/tasks/board-columns")
+def task_board_columns(db: Session = Depends(get_db)) -> dict:
+    from ..services import task_board_service
+
+    return {"columns": task_board_service.get_columns(db), "colors": list(task_board_service.COLORS)}
 
 
 @router.get("/tasks/dashboard")

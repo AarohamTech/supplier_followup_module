@@ -64,6 +64,9 @@ class CommunicationTask(Base):
     # Assignment
     assigned_to: Mapped[str | None] = mapped_column(String(128), index=True)
     assigned_by: Mapped[str | None] = mapped_column(String(128))
+    # Who last (re)assigned the task — drives the "Assigned by you" panel.
+    # NULL on rows from before this column; those fall back to `assigned_by`.
+    assigned_by_user_id: Mapped[int | None] = mapped_column(Integer, index=True)
     # Real-user assignment (FK is source of truth; `assigned_to` keeps the
     # denormalized display name so cards render without a join).
     assigned_to_user_id: Mapped[int | None] = mapped_column(

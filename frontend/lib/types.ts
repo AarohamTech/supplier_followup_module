@@ -341,7 +341,8 @@ export interface ProcurementFilters {
 }
 
 // ─── Communication Tasks ─────────────────────────────────────────────────────
-export type TaskStatus =
+// The seven built-in statuses, plus admin-defined board columns (keys "C_*").
+export type BuiltinTaskStatus =
   | "BACKLOG"
   | "TODO"
   | "IN_PROGRESS"
@@ -349,6 +350,28 @@ export type TaskStatus =
   | "WAITING_CUSTOMER"
   | "BLOCKED"
   | "DONE";
+export type TaskStatus = BuiltinTaskStatus | `C_${string}`;
+
+/** One Task Manager board column (a column == a task status). */
+export interface TaskBoardColumn {
+  key: TaskStatus;
+  label: string;
+  color: string;
+  hidden: boolean;
+  builtin: boolean;
+}
+
+/** A file attached directly to a task. */
+export interface TaskAttachment {
+  id: number;
+  filename: string;
+  content_type?: string | null;
+  size_bytes?: number;
+  uploaded_by?: string | null;
+  uploaded_by_kind?: string | null;
+  uploaded_by_id?: number | null;
+  created_at?: string;
+}
 export type TaskPriority = "LOW" | "MEDIUM" | "HIGH";
 export type TaskSignal = "GREEN" | "YELLOW" | "RED" | "BLACK";
 export type TaskSource = "SUPPLIER" | "CUSTOMER" | "INTERNAL" | "ESCALATION";
@@ -563,6 +586,7 @@ export interface CommunicationTask {
   created_from_mail_id?: number | null;
   assigned_to?: string | null;
   assigned_by?: string | null;
+  assigned_by_user_id?: number | null;
   assigned_to_user_id?: number | null;
   assigned_at?: string | null;
   watchers: number[];

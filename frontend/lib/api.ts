@@ -106,6 +106,8 @@ import type {
   AppNotification,
   AdminDigestConfig,
   MailSendWindow,
+  TaskBoardColumn,
+  TaskAttachment,
 } from "./types";
 import { getToken, setToken, LOGIN_PATH } from "./auth-token";
 
@@ -841,6 +843,26 @@ export const api = {
   listTaskActivity: (taskId: number) =>
     http<TaskActivity[]>(`/api/tasks/${taskId}/activity`),
 
+  // Board columns (admin edits; every user type reads its own scoped route).
+  taskBoardColumns: () =>
+    http<{ columns: TaskBoardColumn[]; colors: string[] }>("/api/tasks/board-columns"),
+  saveTaskBoardColumns: (columns: Partial<TaskBoardColumn>[]) =>
+    http<{ columns: TaskBoardColumn[]; colors: string[] }>("/api/tasks/board-columns", {
+      method: "PUT",
+      body: JSON.stringify({ columns }),
+    }),
+
+  // Files attached to a task.
+  listTaskAttachments: (taskId: number) =>
+    http<TaskAttachment[]>(`/api/tasks/${taskId}/attachments`),
+  uploadTaskAttachment: (taskId: number, file: File) => {
+    const body = new FormData();
+    body.append("file", file);
+    return http<TaskAttachment>(`/api/tasks/${taskId}/attachments`, { method: "POST", body });
+  },
+  deleteTaskAttachment: (taskId: number, attachmentId: number) =>
+    http<void>(`/api/tasks/${taskId}/attachments/${attachmentId}`, { method: "DELETE" }),
+
   listAssignees: () => http<TaskAssignee[]>("/api/communication/assignees"),
 
   // Mention candidates for /hi: assignable users + recent customers.
@@ -1086,6 +1108,8 @@ export const api = {
     }),
   // Read-only Task Manager view (backend nulls internal fields server-side).
   portalTasks: () => http<CommunicationTask[]>("/api/portal/tasks"),
+  portalTaskBoardColumns: () =>
+    http<{ columns: TaskBoardColumn[]; colors: string[] }>("/api/portal/tasks/board-columns"),
   portalTasksDashboard: () => http<PortalTaskDashboard>("/api/portal/tasks/dashboard"),
   portalPoMessages: (supplierPoNo: string) =>
     http<PortalMessage[]>(`/api/portal/pos/${encodeURIComponent(supplierPoNo)}/messages`),
@@ -1290,6 +1314,17 @@ export const api = {
     http<void>(`/api/eportal/tasks/${id}`, { method: "DELETE" }),
   eportalTaskComments: (id: number) =>
     http<TaskComment[]>(`/api/eportal/tasks/${id}/comments`),
+  eportalTaskBoardColumns: () =>
+    http<{ columns: TaskBoardColumn[]; colors: string[] }>("/api/eportal/tasks/board-columns"),
+  eportalTaskAttachments: (id: number) =>
+    http<TaskAttachment[]>(`/api/eportal/tasks/${id}/attachments`),
+  eportalUploadTaskAttachment: (id: number, file: File) => {
+    const body = new FormData();
+    body.append("file", file);
+    return http<TaskAttachment>(`/api/eportal/tasks/${id}/attachments`, { method: "POST", body });
+  },
+  eportalDeleteTaskAttachment: (id: number, attachmentId: number) =>
+    http<void>(`/api/eportal/tasks/${id}/attachments/${attachmentId}`, { method: "DELETE" }),
   eportalAddTaskComment: (id: number, comment: string) =>
     http<TaskComment>(`/api/eportal/tasks/${id}/comments`, {
       method: "POST",

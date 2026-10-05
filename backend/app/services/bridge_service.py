@@ -24,7 +24,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..core.config import settings
-from ..models.communication_task import CommunicationTask
+from ..models.communication_task import TASK_STATUSES, CommunicationTask
 from ..models.user import User
 from . import task_assignment_service as assign
 
@@ -201,11 +201,17 @@ def notify_zanflow(
     if not base or not secret:
         return False
 
+    current = status if status is not None else task.status
+    # ZanFlow only knows the built-in statuses; an admin-defined board column
+    # (C_*) is work in flight, so it travels as IN_PROGRESS.
+    if current not in TASK_STATUSES:
+        current = "IN_PROGRESS"
+
     body: dict[str, Any] = {
         "external_ref": task.external_ref,
         "task_id": task.id,
         "event": event,
-        "status": status if status is not None else task.status,
+        "status": current,
         "progress_percent": (
             progress_percent if progress_percent is not None else task.progress_percent
         ),

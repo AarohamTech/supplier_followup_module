@@ -6,6 +6,7 @@ import { Ban, ClipboardList, Columns3, Loader2 } from "lucide-react";
 import { api } from "@/lib/api";
 import type { OrderLine } from "@/lib/types";
 import Pager from "@/components/ui/Pager";
+import { useT } from "@/lib/i18n";
 
 const SIZE = 50;
 // v2: Rate became default-visible (client: "we not showing rates anywhere").
@@ -84,6 +85,7 @@ const STATUSES = ["", "APPROVED", "NOT APPROVED", "NOT GENERATED"];
 /** Employee "My Orders" — the admin Orders experience, server-scoped to the
  *  logged-in employee's own PO lines. */
 export default function EmployeeOrdersPage() {
+  const { t } = useT();
   const [rows, setRows] = useState<OrderLine[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -192,8 +194,8 @@ export default function EmployeeOrdersPage() {
     <div className="page-stack">
       <div className="page-header">
         <div>
-          <h1 className="page-title">My Orders</h1>
-          <p className="page-subtitle">Every PO line assigned to you, material-wise — live from the CRM.</p>
+          <h1 className="page-title">{t("My Orders")}</h1>
+          <p className="page-subtitle">{t("Every PO line assigned to you, material-wise — live from the CRM.")}</p>
         </div>
         <span className="grid h-9 w-9 place-items-center rounded-lg bg-red-50 text-signal-red"><ClipboardList size={17} /></span>
       </div>
@@ -202,39 +204,39 @@ export default function EmployeeOrdersPage() {
       <div className="card flex flex-wrap items-center gap-2 p-3">
         <input
           className="border border-brand-border rounded px-3 py-2 text-sm w-full max-w-xs"
-          placeholder="Search PO / vendor / material / customer / CRM…"
+          placeholder={t("Search PO / vendor / material / customer / CRM…")}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
         <select className="border border-brand-border rounded px-2 py-2 text-sm bg-card" value={signal} onChange={(e) => setSignal(e.target.value)}>
-          {SIGNALS.map((s) => <option key={s} value={s}>{s || "All signals"}</option>)}
+          {SIGNALS.map((s) => <option key={s} value={s}>{s || t("All signals")}</option>)}
         </select>
         <select className="border border-brand-border rounded px-2 py-2 text-sm bg-card" value={poStatus} onChange={(e) => setPoStatus(e.target.value)}>
-          {STATUSES.map((s) => <option key={s} value={s}>{s || "All statuses"}</option>)}
+          {STATUSES.map((s) => <option key={s} value={s}>{s || t("All statuses")}</option>)}
         </select>
         <label className="flex items-center gap-1 text-xs text-brand-muted">
-          Ship from
+          {t("Ship from")}
           <input type="date" className="border border-brand-border rounded px-2 py-1.5 text-sm" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
         </label>
         <label className="flex items-center gap-1 text-xs text-brand-muted">
-          to
+          {t("to")}
           <input type="date" className="border border-brand-border rounded px-2 py-1.5 text-sm" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
         </label>
         <label className="flex items-center gap-1.5 text-xs text-brand-muted">
           <input type="checkbox" checked={includeClosed} onChange={(e) => setIncludeClosed(e.target.checked)} />
-          Include closed
+          {t("Include closed")}
         </label>
 
         <div className="relative ml-auto" ref={colMenuRef}>
           <button type="button" onClick={() => setColMenuOpen((v) => !v)} className="btn-outline text-xs inline-flex items-center gap-1">
-            <Columns3 size={13} /> Columns
+            <Columns3 size={13} /> {t("Columns")}
           </button>
           {colMenuOpen && (
             <div className="absolute right-0 z-40 mt-1 w-48 rounded-md border border-brand-border bg-card p-2 shadow-xl">
               {COLUMNS.map((c) => (
                 <label key={c.key} className="flex items-center gap-2 rounded px-2 py-1 text-xs hover:bg-subtle cursor-pointer">
                   <input type="checkbox" checked={show(c.key)} onChange={() => toggleCol(c.key)} />
-                  {c.label}
+                  {t(c.label)}
                 </label>
               ))}
             </div>
@@ -244,7 +246,7 @@ export default function EmployeeOrdersPage() {
 
       {loading ? (
         <div className="card p-6 text-center text-sm text-brand-muted">
-          <Loader2 className="inline animate-spin" size={16} /> Loading…
+          <Loader2 className="inline animate-spin" size={16} /> {t("Loading…")}
         </div>
       ) : (
         <>
@@ -252,33 +254,33 @@ export default function EmployeeOrdersPage() {
             <table className="w-full min-w-[1080px] text-xs">
               <thead className="bg-subtle text-left text-[10px] uppercase tracking-wider text-brand-muted">
                 <tr>
-                  {show("customer") && <th className="px-3 py-2">Customer</th>}
-                  {show("material") && <th className="px-3 py-2">Material</th>}
-                  {show("qty") && <th className="px-3 py-2 text-right">Qty</th>}
-                  {show("vendor_po") && <th className="px-3 py-2">Vendor PO No.</th>}
-                  {show("po_date") && <th className="px-3 py-2 text-right">PO Date</th>}
-                  {show("vendor") && <th className="px-3 py-2">Vendor</th>}
-                  {show("stock") && <th className="px-3 py-2 text-right">Stock</th>}
-                  {show("signal") && <th className="px-3 py-2">Signal</th>}
-                  {show("status") && <th className="px-3 py-2">Status</th>}
-                  {show("ship_date") && <th className="px-3 py-2 text-right">Ship Date</th>}
-                  {show("commitment") && <th className="px-3 py-2 text-right">Commitment</th>}
-                  {show("remark") && <th className="px-3 py-2">Customer Remark</th>}
-                  {show("supplier_remark") && <th className="px-3 py-2">Supplier Remark</th>}
-                  {show("crm") && <th className="px-3 py-2">CRM No.</th>}
-                  {show("rate") && <th className="px-3 py-2 text-right">Rate</th>}
-                  {show("lead_time") && <th className="px-3 py-2 text-right">Lead Time</th>}
-                  {show("ordered_qty") && <th className="px-3 py-2 text-right">Ordered Qty</th>}
-                  {show("grn_qty") && <th className="px-3 py-2 text-right">Recd (GRN)</th>}
-                  {show("pending_qty") && <th className="px-3 py-2 text-right">Pending Qty</th>}
-                  {show("receipt") && <th className="px-3 py-2">Receipt</th>}
-                  {show("escalation") && <th className="px-3 py-2">Escalation</th>}
-                  <th className="px-3 py-2 text-right">Cancel</th>
+                  {show("customer") && <th className="px-3 py-2">{t("Customer")}</th>}
+                  {show("material") && <th className="px-3 py-2">{t("Material")}</th>}
+                  {show("qty") && <th className="px-3 py-2 text-right">{t("Qty")}</th>}
+                  {show("vendor_po") && <th className="px-3 py-2">{t("Vendor PO No.")}</th>}
+                  {show("po_date") && <th className="px-3 py-2 text-right">{t("PO Date")}</th>}
+                  {show("vendor") && <th className="px-3 py-2">{t("Vendor")}</th>}
+                  {show("stock") && <th className="px-3 py-2 text-right">{t("Stock")}</th>}
+                  {show("signal") && <th className="px-3 py-2">{t("Signal")}</th>}
+                  {show("status") && <th className="px-3 py-2">{t("Status")}</th>}
+                  {show("ship_date") && <th className="px-3 py-2 text-right">{t("Ship Date")}</th>}
+                  {show("commitment") && <th className="px-3 py-2 text-right">{t("Commitment")}</th>}
+                  {show("remark") && <th className="px-3 py-2">{t("Customer Remark")}</th>}
+                  {show("supplier_remark") && <th className="px-3 py-2">{t("Supplier Remark")}</th>}
+                  {show("crm") && <th className="px-3 py-2">{t("CRM No.")}</th>}
+                  {show("rate") && <th className="px-3 py-2 text-right">{t("Rate")}</th>}
+                  {show("lead_time") && <th className="px-3 py-2 text-right">{t("Lead Time")}</th>}
+                  {show("ordered_qty") && <th className="px-3 py-2 text-right">{t("Ordered Qty")}</th>}
+                  {show("grn_qty") && <th className="px-3 py-2 text-right">{t("Recd (GRN)")}</th>}
+                  {show("pending_qty") && <th className="px-3 py-2 text-right">{t("Pending Qty")}</th>}
+                  {show("receipt") && <th className="px-3 py-2">{t("Receipt")}</th>}
+                  {show("escalation") && <th className="px-3 py-2">{t("Escalation")}</th>}
+                  <th className="px-3 py-2 text-right">{t("Cancel")}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-brand-border">
                 {rows.length === 0 && (
-                  <tr><td colSpan={visibleCount} className="px-4 py-8 text-center text-brand-muted">No order lines found.</td></tr>
+                  <tr><td colSpan={visibleCount} className="px-4 py-8 text-center text-brand-muted">{t("No order lines found.")}</td></tr>
                 )}
                 {rows.map((r) => (
                   <tr key={r.procurement_record_id} className={`hover:bg-subtle/50 ${r.closed ? "opacity-60" : ""}`}>
@@ -321,7 +323,7 @@ export default function EmployeeOrdersPage() {
                       <td className="px-3 py-2 whitespace-nowrap">
                         {r.po_status || "—"}
                         {r.closed && (
-                          <span className="ml-1.5 inline-flex rounded bg-subtle px-1.5 py-0.5 text-[10px] font-semibold uppercase text-brand-muted ring-1 ring-inset ring-gray-200">Closed</span>
+                          <span className="ml-1.5 inline-flex rounded bg-subtle px-1.5 py-0.5 text-[10px] font-semibold uppercase text-brand-muted ring-1 ring-inset ring-gray-200">{t("Closed")}</span>
                         )}
                       </td>
                     )}
@@ -349,9 +351,9 @@ export default function EmployeeOrdersPage() {
                       {r.closed ? (
                         <span className="text-brand-muted">—</span>
                       ) : cancelStatusOf(r) === "CANCELLED" ? (
-                        <span className="inline-flex rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-semibold uppercase text-signal-red ring-1 ring-inset ring-red-100">Cancelled</span>
+                        <span className="inline-flex rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-semibold uppercase text-signal-red ring-1 ring-inset ring-red-100">{t("Cancelled")}</span>
                       ) : cancelStatusOf(r) === "PENDING" ? (
-                        <span className="inline-flex rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold uppercase text-amber-700 ring-1 ring-inset ring-amber-100">Pending cancellation</span>
+                        <span className="inline-flex rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold uppercase text-amber-700 ring-1 ring-inset ring-amber-100">{t("Pending cancellation")}</span>
                       ) : (
                         <button
                           type="button"
@@ -374,7 +376,7 @@ export default function EmployeeOrdersPage() {
       {confirmLine && (
         <div className="fixed inset-0 z-50 bg-black/40 grid place-items-center p-4" onClick={() => !requesting && setConfirmLine(null)}>
           <div className="bg-card rounded-lg shadow-xl w-full max-w-sm" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
-            <div className="border-b border-brand-border px-5 py-3 font-semibold text-sm">Cancel material</div>
+            <div className="border-b border-brand-border px-5 py-3 font-semibold text-sm">{t("Cancel material")}</div>
             <div className="px-5 py-4 space-y-2 text-sm">
               <p>
                 Request cancellation for <span className="font-semibold">{confirmLine.material_name}</span> on PO{" "}
@@ -385,20 +387,20 @@ export default function EmployeeOrdersPage() {
                 Only this material line is marked <span className="font-medium">Pending cancellation</span> until the ERP confirms.
               </p>
               <label className="block text-sm">
-                <span className="text-xs text-brand-muted">Remark (reason — sent to the ERP)</span>
+                <span className="text-xs text-brand-muted">{t("Remark (reason — sent to the ERP)")}</span>
                 <textarea
                   className="mt-1 w-full rounded-md border border-brand-border px-3 py-2 text-sm outline-none focus:border-signal-red"
                   rows={3}
                   maxLength={500}
                   value={remark}
                   onChange={(e) => setRemark(e.target.value)}
-                  placeholder="e.g. Material no longer required / duplicate order"
+                  placeholder={t("e.g. Material no longer required / duplicate order")}
                 />
               </label>
               {cancelError && <p className="text-xs text-signal-red">{cancelError}</p>}
             </div>
             <div className="border-t border-brand-border px-5 py-3 flex items-center justify-end gap-2">
-              <button type="button" disabled={requesting} onClick={() => setConfirmLine(null)} className="btn-outline text-xs">Back</button>
+              <button type="button" disabled={requesting} onClick={() => setConfirmLine(null)} className="btn-outline text-xs">{t("Back")}</button>
               <button
                 type="button"
                 disabled={requesting}
@@ -406,7 +408,7 @@ export default function EmployeeOrdersPage() {
                 className="inline-flex items-center gap-1 rounded-md bg-signal-red px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-60"
               >
                 {requesting ? <Loader2 size={13} className="animate-spin" /> : <Ban size={13} />}
-                {requesting ? "Requesting…" : "Yes, request cancellation"}
+                {requesting ? t("Requesting…") : t("Yes, request cancellation")}
               </button>
             </div>
           </div>

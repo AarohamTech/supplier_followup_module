@@ -348,6 +348,9 @@ def download_attachment(
     if att is None:
         raise HTTPException(404, "Attachment not found")
     allowed = att.uploaded_by_kind == "employee" and att.uploaded_by_id == user.id
+    if not allowed and att.task_id:
+        task = db.get(CommunicationTask, att.task_id)
+        allowed = bool(task and _task_in_scope(user, _owned_po_numbers(db, user.emp_code), task))
     if not allowed and att.message_id:
         cm = db.get(CommunicationMessage, att.message_id)
         allowed = bool(
@@ -718,8 +721,9 @@ def _owned_po_numbers(db: Session, emp_code: str | None) -> list[str]:
 
 
 def _task_in_scope(user: User, owned: list[str], task: CommunicationTask) -> bool:
-    """A task belongs to an employee if it's assigned to them or on a PO they own."""
-    if task.assigned_to_user_id == user.id:
+    """A task belongs to an employee if it's assigned to them, was assigned BY
+    them (their "Assigned by you" list), or is on a PO they own."""
+    if task.assigned_to_user_id == user.id or task.assigned_by_user_id == user.id:
         return True
     return bool(task.supplier_po_no and task.supplier_po_no in owned)
 
@@ -768,7 +772,10 @@ def my_tasks(
 ) -> list[CommunicationTask]:
     """The employee's tasks: assigned to them, or on a PO they own."""
     owned = _owned_po_numbers(db, user.emp_code)
-    conds = [CommunicationTask.assigned_to_user_id == user.id]
+    conds = [
+        CommunicationTask.assigned_to_user_id == user.id,
+        CommunicationTask.assigned_by_user_id == user.id,
+    ]
     if owned:
         conds.append(CommunicationTask.supplier_po_no.in_(owned))
     stmt = select(CommunicationTask).where(or_(*conds))
@@ -856,6 +863,43 @@ def delete_my_task(
 ):
     _scoped_task_or_404(db, user, task_id)
     comm.delete_task(task_id=task_id, db=db)
+
+
+@router.get("/tasks/board-columns")
+def task_board_columns(db: Session = Depends(get_db)) -> dict:
+    return comm.board_columns(db=db)
+
+
+@router.get("/tasks/{task_id}/attachments")
+def task_attachments(
+    task_id: int,
+    user: User = Depends(get_current_employee),
+    db: Session = Depends(get_db),
+) -> list[dict]:
+    _scoped_task_or_404(db, user, task_id)
+    return comm.list_task_attachments(db, task_id)
+
+
+@router.post("/tasks/{task_id}/attachments", status_code=201)
+async def upload_task_attachment(
+    task_id: int,
+    file: UploadFile = File(...),
+    user: User = Depends(get_current_employee),
+    db: Session = Depends(get_db),
+) -> dict:
+    task = _scoped_task_or_404(db, user, task_id)
+    return await comm.add_task_attachment(db, task, file, user)
+
+
+@router.delete("/tasks/{task_id}/attachments/{attachment_id}", status_code=204)
+def delete_task_attachment(
+    task_id: int,
+    attachment_id: int,
+    user: User = Depends(get_current_employee),
+    db: Session = Depends(get_db),
+):
+    task = _scoped_task_or_404(db, user, task_id)
+    comm.remove_task_attachment(db, task, attachment_id, user)
 
 
 @router.get("/tasks/{task_id}/comments")

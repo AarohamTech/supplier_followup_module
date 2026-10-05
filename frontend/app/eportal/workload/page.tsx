@@ -17,10 +17,12 @@ import {
   ThroughputChart,
   Tile,
 } from "@/components/reports/WorkloadShared";
+import { useT } from "@/lib/i18n";
 
 /** Employee "My Workload" — the admin per-user workload report, always scoped
  *  to the logged-in employee (server-side). */
 export default function EmployeeWorkloadPage() {
+  const { t } = useT();
   const { user } = useAuth();
   const [data, setData] = useState<WorkloadUserDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -36,7 +38,7 @@ export default function EmployeeWorkloadPage() {
     };
   }, []);
 
-  const name = user?.full_name || user?.username || "My workload";
+  const name = user?.full_name || user?.username || t("My workload");
 
   return (
     <div className="space-y-4">
@@ -48,45 +50,45 @@ export default function EmployeeWorkloadPage() {
 
       {!data && !error && (
         <div className="empty-state">
-          <Loader2 className="mx-auto mb-2 h-5 w-5 animate-spin text-brand-muted" /> Building your report…
+          <Loader2 className="mx-auto mb-2 h-5 w-5 animate-spin text-brand-muted" /> {t("Building your report…")}
         </div>
       )}
 
       {data && (
         <>
           <PageHeader
-            title={`Workload — ${name}`}
+            title={t("Workload — {name}", { name })}
             description={[
               data.user.emp_code ? `desk ${data.user.emp_code}` : null,
               data.user.last_login_at ? `last login ${fmtDate(data.user.last_login_at)}` : null,
             ]
               .filter(Boolean)
-              .join(" · ") || "Your POs, tasks and throughput."}
+              .join(" · ") || t("Your POs, tasks and throughput.")}
             icon={PieChart}
             tone="red"
             actions={
               <ExportButton
                 url={api.eportalWorkloadExportUrl()}
                 filename={`my-workload-${new Date().toISOString().slice(0, 10)}.xlsx`}
-                label="Export my report"
+                label={t("Export my report")}
               />
             }
           />
 
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-8">
-            <Tile label="Pending POs" value={data.pos.pending} />
-            <Tile label="Overdue POs" value={data.pos.overdue} accent />
-            <Tile label="Red / Black POs" value={data.pos.red + data.pos.black} accent />
-            <Tile label="Open tasks" value={data.tasks.open} />
-            <Tile label="Overdue tasks" value={data.tasks.overdue} accent />
-            <Tile label="Due today" value={data.tasks.due_today} />
-            <Tile label="Done (all time)" value={data.tasks.done} />
-            <Tile label="Avg cycle (h)" value={data.avg_cycle_hours ?? "—"} />
+            <Tile label={t("Pending POs")} value={data.pos.pending} />
+            <Tile label={t("Overdue POs")} value={data.pos.overdue} accent />
+            <Tile label={t("Red / Black POs")} value={data.pos.red + data.pos.black} accent />
+            <Tile label={t("Open tasks")} value={data.tasks.open} />
+            <Tile label={t("Overdue tasks")} value={data.tasks.overdue} accent />
+            <Tile label={t("Due today")} value={data.tasks.due_today} />
+            <Tile label={t("Done (all time)")} value={data.tasks.done} />
+            <Tile label={t("Avg cycle (h)")} value={data.avg_cycle_hours ?? "—"} />
           </div>
 
           <div className="grid gap-3 lg:grid-cols-2">
             <SignalDonut
-              title="My PO signal mix"
+              title={t("My PO signal mix")}
               green={data.pos.green}
               yellow={data.pos.yellow}
               red={data.pos.red}
@@ -96,8 +98,8 @@ export default function EmployeeWorkloadPage() {
           </div>
 
           <div className="grid gap-3 lg:grid-cols-2">
-            <BreakdownChips title="Tasks by status" data={data.by_status} />
-            <BreakdownChips title="Tasks by priority" data={data.by_priority} />
+            <BreakdownChips title={t("Tasks by status")} data={data.by_status} />
+            <BreakdownChips title={t("Tasks by priority")} data={data.by_priority} />
           </div>
 
           <PendingPoTable rows={data.pending_pos} showSupplier />

@@ -107,3 +107,37 @@ class PoFollowupMailServiceTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SendRealtimeNowTests(unittest.TestCase):
+    """GREEN acks (the PO confirmation) are sent the moment they are queued."""
+
+    def _results(self):
+        return [
+            {"created": True, "message_id": 1, "mail_type": "PO_FOLLOWUP_GREEN"},
+            {"created": True, "message_id": 2, "mail_type": "PO_FOLLOWUP_RED"},
+            {"created": False, "message_id": 3, "mail_type": "PO_FOLLOWUP_GREEN"},
+            {"created": True, "message_id": 4, "mail_type": "PO_FOLLOWUP_GREEN"},
+        ]
+
+    def test_only_newly_queued_green_acks_are_sent_now(self) -> None:
+        from app.workers import mail_send_worker
+
+        with patch.object(mail_send_worker, "send_message_now", return_value={"sent": True}) as send, \
+             patch.object(service.settings_service if hasattr(service, "settings_service") else
+                          __import__("app.services.settings_service", fromlist=["x"]),
+                          "get_mail_send_window", return_value={"per_minute_limit": 25}):
+            sent = service._send_realtime_now(MagicMock(), self._results())
+
+        self.assertEqual([c.args[1] for c in send.call_args_list], [1, 4])
+        self.assertEqual(sent, 2)
+
+    def test_immediate_sends_respect_the_per_minute_cap(self) -> None:
+        from app.services import settings_service
+        from app.workers import mail_send_worker
+
+        with patch.object(mail_send_worker, "send_message_now", return_value={"sent": True}) as send, \
+             patch.object(settings_service, "get_mail_send_window", return_value={"per_minute_limit": 1}):
+            service._send_realtime_now(MagicMock(), self._results())
+
+        self.assertEqual([c.args[1] for c in send.call_args_list], [1])

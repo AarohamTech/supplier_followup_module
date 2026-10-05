@@ -243,6 +243,17 @@ class WorkerGateTests(unittest.TestCase):
         self.assertEqual(out["attempted"], 2)
         self.assertEqual(len(sent), 2)
 
+    def test_green_ack_and_credentials_jump_a_capped_backlog(self) -> None:
+        # At 19:00 the day's held follow-ups drain at the per-minute cap. A PO
+        # confirmation or login mail queued behind them must still go out in
+        # the very next run, not after the whole backlog.
+        with _temp_db() as Session:
+            ids = self._seed(Session)  # GREEN + credentials are NOT the oldest rows
+            with self._worker(Session, cfg={"per_minute_limit": 2}) as (w, sent):
+                w.send_ready_messages(now=IST_2300)
+
+        self.assertEqual(set(sent), {ids["auto_green"], ids["credentials"]})
+
 
 if __name__ == "__main__":
     unittest.main()

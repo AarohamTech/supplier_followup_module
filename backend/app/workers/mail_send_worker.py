@@ -16,7 +16,7 @@ from email.utils import make_msgid, parseaddr
 from html import unescape
 from typing import Any
 
-from sqlalchemy import or_, select
+from sqlalchemy import case, or_, select
 from sqlalchemy.orm import Session
 
 from ..core.config import settings
@@ -44,6 +44,11 @@ AUTO_FOLLOWUP_MAIL_TYPE_PREFIX = "PO_FOLLOWUP"
 # Non-follow-up mail (credentials, compose, customer replies) never had a prefix
 # match and is never held.
 REALTIME_MAIL_TYPES: frozenset[str] = frozenset({"PO_FOLLOWUP_GREEN"})
+# Mail a person is actively waiting on: the PO confirmation (GREEN ack) and portal
+# login details. These jump the queue in every send run, so a night-time backlog
+# of held follow-ups (drained at the per-minute cap) can never sit in front of
+# them, and they are also sent the moment they are queued (send_message_now).
+PRIORITY_MAIL_TYPES: frozenset[str] = REALTIME_MAIL_TYPES | frozenset({"SUPPLIER_PORTAL_CREDENTIALS"})
 
 
 def is_held_mail_type(mail_type: str | None) -> bool:
@@ -414,7 +419,13 @@ def send_ready_messages(
             )
         ids = list(
             db.scalars(
-                stmt.order_by(CommunicationMessage.created_at.asc()).limit(limit)
+                stmt.order_by(
+                    case(
+                        (CommunicationMessage.mail_type.in_(sorted(PRIORITY_MAIL_TYPES)), 0),
+                        else_=1,
+                    ),
+                    CommunicationMessage.created_at.asc(),
+                ).limit(limit)
             ).all()
         )
     finally:

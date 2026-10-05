@@ -50,6 +50,7 @@ from ..services import hi_agent_history_service as agent_history
 from ..services import notification_service as notif
 from ..services import user_service
 from ..services import po_followup_mail_service
+from ..services import task_board_service
 from ..services import po_followup_service
 from ..services.reply_table_parser import parse_reply_table
 
@@ -1318,7 +1319,7 @@ def create_hub_task(
 ) -> dict[str, Any]:
     """Create a communication task. Only writes to communication_tasks table."""
     _validate_enum("priority", payload.priority or "MEDIUM", TASK_PRIORITIES)
-    _validate_enum("status", payload.status or "TODO", TASK_STATUSES)
+    _validate_enum("status", payload.status or "TODO", task_board_service.valid_status_keys(db))
     _validate_enum("signal", payload.signal or "YELLOW", TASK_SIGNALS)
 
     row = CommunicationTask(**payload.model_dump())
@@ -1346,7 +1347,7 @@ def update_hub_task(
     if "priority" in data:
         _validate_enum("priority", data["priority"], TASK_PRIORITIES)
     if "status" in data:
-        _validate_enum("status", data["status"], TASK_STATUSES)
+        _validate_enum("status", data["status"], task_board_service.valid_status_keys(db))
     if "signal" in data:
         _validate_enum("signal", data["signal"], TASK_SIGNALS)
 

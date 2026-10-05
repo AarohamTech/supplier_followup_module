@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -15,6 +15,7 @@ from ..models.communication_task import (
     TASK_STATUSES,
     CommunicationTask,
 )
+from ..models.message_attachment import MessageAttachment
 from ..models.user import User
 from ..schemas.communication_task import (
     CommunicationTaskCreate,
@@ -22,9 +23,11 @@ from ..schemas.communication_task import (
     CommunicationTaskUpdate,
 )
 from ..services import ai_service
+from ..services import attachment_service
 from ..services import bridge_service as bridge
 from ..services import task_analytics_service as analytics
 from ..services import task_assignment_service as assign
+from ..services import task_board_service as board
 from ..services import task_collaboration_service as collab
 
 router = APIRouter(prefix="/api/communication", tags=["communication"])
@@ -92,7 +95,7 @@ def create_task(
     actor: User = Depends(get_current_staff),
 ):
     _validate_enum("priority", payload.priority, TASK_PRIORITIES)
-    _validate_enum("status", payload.status, TASK_STATUSES)
+    _validate_enum("status", payload.status, board.valid_status_keys(db))
     _validate_enum("signal", payload.signal, TASK_SIGNALS)
     if payload.task_source:
         _validate_enum("task_source", payload.task_source, TASK_SOURCES)
@@ -106,6 +109,7 @@ def create_task(
         data["assigned_to"] = name
         data["assigned_at"] = datetime.utcnow()
     data["assigned_by"] = assign.display_name(actor)
+    data["assigned_by_user_id"] = actor.id
 
     row = CommunicationTask(**data)
     db.add(row)
@@ -138,7 +142,7 @@ def update_task(
     if "priority" in data:
         _validate_enum("priority", data["priority"], TASK_PRIORITIES)
     if "status" in data:
-        _validate_enum("status", data["status"], TASK_STATUSES)
+        _validate_enum("status", data["status"], board.valid_status_keys(db))
     if "signal" in data:
         _validate_enum("signal", data["signal"], TASK_SIGNALS)
     if "task_source" in data and data["task_source"] is not None:
@@ -154,6 +158,10 @@ def update_task(
             raise HTTPException(422, str(e))
         data["assigned_to"] = name
         data["assigned_at"] = datetime.utcnow()
+        if data["assigned_to_user_id"] != row.assigned_to_user_id:
+            # Whoever hands the task to someone becomes its assigner.
+            data["assigned_by"] = actor_name
+            data["assigned_by_user_id"] = actor.id
 
     # Progress convenience rules.
     if data.get("status") == "DONE":
@@ -311,6 +319,130 @@ def tasks_index(
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# Board columns (a column == a task status; admins customise the layout)
+# ──────────────────────────────────────────────────────────────────────────────
+@tasks_router.get("/board-columns")
+def board_columns(db: Session = Depends(get_db)):
+    return {"columns": board.get_columns(db), "colors": list(board.COLORS)}
+
+
+@tasks_router.put("/board-columns")
+def update_board_columns(
+    body: dict = Body(...),
+    db: Session = Depends(get_db),
+    _admin: User = Depends(require_admin),
+):
+    columns = body.get("columns")
+    if not isinstance(columns, list):
+        raise HTTPException(422, "columns must be a list")
+    try:
+        cols = board.set_columns(db, columns)
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    return {"columns": cols, "colors": list(board.COLORS)}
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Task attachments (files on the task itself, stored like chat attachments)
+# ──────────────────────────────────────────────────────────────────────────────
+def _uploader_kind(user: User) -> str:
+    return "employee" if user.emp_code else "staff"
+
+
+def list_task_attachments(db: Session, task_id: int) -> list[dict]:
+    return [attachment_service.task_out(a) for a in attachment_service.for_task(db, task_id)]
+
+
+async def add_task_attachment(db: Session, task: CommunicationTask, file: UploadFile, actor: User) -> dict:
+    """Upload + bind in one step (a task has no "send" moment to bind on)."""
+    if not attachment_service.storage_enabled():
+        raise HTTPException(503, attachment_service.disabled_reason())
+    data = await file.read()
+    try:
+        att = attachment_service.save_upload(
+            db,
+            data=data,
+            filename=file.filename,
+            content_type=file.content_type,
+            uploaded_by_kind=_uploader_kind(actor),
+            uploaded_by_id=actor.id,
+            uploaded_by_label=assign.display_name(actor),
+            supplier_id=task.supplier_id,
+            commit=False,
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc))
+    att.task_id = task.id
+    task.attachment_count = (task.attachment_count or 0) + 1
+    collab.log_activity(
+        db,
+        task_id=task.id,
+        activity_type="ATTACHMENT_ADDED",
+        new_value=att.filename,
+        created_by=assign.display_name(actor),
+        created_by_id=actor.id,
+    )
+    db.commit()
+    db.refresh(att)
+    return attachment_service.task_out(att)
+
+
+def remove_task_attachment(db: Session, task: CommunicationTask, attachment_id: int, actor: User) -> None:
+    from ..core import roles as roles_mod
+    from ..core.roles import Role
+
+    att = db.get(MessageAttachment, attachment_id)
+    if att is None or att.task_id != task.id:
+        raise HTTPException(404, "Attachment not found")
+    own = att.uploaded_by_kind == _uploader_kind(actor) and att.uploaded_by_id == actor.id
+    if not own and not roles_mod.role_at_least(actor.role, Role.ADMIN):
+        raise HTTPException(403, "Only the uploader or an admin can remove this file")
+    task.attachment_count = max(0, (task.attachment_count or 0) - 1)
+    collab.log_activity(
+        db,
+        task_id=task.id,
+        activity_type="ATTACHMENT_REMOVED",
+        old_value=att.filename,
+        created_by=assign.display_name(actor),
+        created_by_id=actor.id,
+    )
+    attachment_service.delete(db, att)
+
+
+def _task_or_404(db: Session, task_id: int) -> CommunicationTask:
+    row = db.get(CommunicationTask, task_id)
+    if row is None:
+        raise HTTPException(404, "Task not found")
+    return row
+
+
+@tasks_router.get("/{task_id}/attachments")
+def task_attachments(task_id: int, db: Session = Depends(get_db)):
+    _task_or_404(db, task_id)
+    return list_task_attachments(db, task_id)
+
+
+@tasks_router.post("/{task_id}/attachments", status_code=201)
+async def upload_task_attachment(
+    task_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    actor: User = Depends(get_current_staff),
+):
+    return await add_task_attachment(db, _task_or_404(db, task_id), file, actor)
+
+
+@tasks_router.delete("/{task_id}/attachments/{attachment_id}", status_code=204)
+def delete_task_attachment(
+    task_id: int,
+    attachment_id: int,
+    db: Session = Depends(get_db),
+    actor: User = Depends(get_current_staff),
+):
+    remove_task_attachment(db, _task_or_404(db, task_id), attachment_id, actor)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Task comments + activity log
 # ──────────────────────────────────────────────────────────────────────────────
 def _comment_out(c) -> dict:
@@ -423,6 +555,6 @@ def generate_ai_summary(
 # ──────────────────────────────────────────────────────────────────────────────
 # Helpers
 # ──────────────────────────────────────────────────────────────────────────────
-def _validate_enum(field: str, value: str, allowed: tuple[str, ...]) -> None:
+def _validate_enum(field: str, value: str | None, allowed: tuple[str, ...]) -> None:
     if value not in allowed:
         raise HTTPException(422, f"{field} must be one of: {', '.join(allowed)}")

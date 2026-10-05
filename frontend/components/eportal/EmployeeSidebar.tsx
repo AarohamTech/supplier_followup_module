@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { ClipboardList, LayoutDashboard, FileSpreadsheet, Inbox, MessagesSquare, ListChecks, ListFilter, PieChart, Send, Truck, X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { useT } from "@/lib/i18n";
 
 const items = [
   { href: "/eportal", label: "Dashboard", icon: LayoutDashboard },
@@ -25,6 +26,7 @@ function isActive(path: string, href: string) {
 }
 
 function NavList({ onNavigate }: { onNavigate?: () => void }) {
+  const { t } = useT();
   const path = usePathname();
   return (
     <nav aria-label="Employee navigation" className="space-y-1">
@@ -49,7 +51,7 @@ function NavList({ onNavigate }: { onNavigate?: () => void }) {
               strokeWidth={1.8}
               className={cn("shrink-0", active ? "text-signal-red" : "text-brand-muted group-hover:text-brand-muted")}
             />
-            <span className="truncate">{it.label}</span>
+            <span className="truncate">{t(it.label)}</span>
           </Link>
         );
       })}
@@ -58,12 +60,13 @@ function NavList({ onNavigate }: { onNavigate?: () => void }) {
 }
 
 export default function EmployeeSidebar({ open = false, onClose }: { open?: boolean; onClose?: () => void }) {
+  const { t } = useT();
   return (
     <>
       <aside className="hidden w-64 shrink-0 border-r border-brand-border bg-subtle md:block">
         <div className="sticky top-16 h-[calc(100vh-4rem)] overflow-y-auto px-3 py-5">
           <div className="mb-1.5 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-brand-muted">
-            Employee Portal
+            {t("Employee Portal")}
           </div>
           <NavList />
         </div>
@@ -75,8 +78,8 @@ export default function EmployeeSidebar({ open = false, onClose }: { open?: bool
           <aside className="mobile-nav-drawer relative h-full w-[min(20rem,86vw)] border-r border-brand-border bg-subtle shadow-2xl">
             <div className="flex h-16 items-center justify-between border-b border-brand-border px-4">
               <div>
-                <div className="text-sm font-semibold text-brand-dark">Employee Portal</div>
-                <div className="text-[11px] text-brand-muted">Your purchase orders</div>
+                <div className="text-sm font-semibold text-brand-dark">{t("Employee Portal")}</div>
+                <div className="text-[11px] text-brand-muted">{t("Your purchase orders")}</div>
               </div>
               <button type="button" onClick={onClose} className="rounded-md p-2 text-brand-muted hover:bg-subtle" aria-label="Close navigation">
                 <X size={18} />

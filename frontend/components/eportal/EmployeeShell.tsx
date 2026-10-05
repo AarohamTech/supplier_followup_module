@@ -9,6 +9,7 @@ import EmployeeSidebar from "@/components/eportal/EmployeeSidebar";
 import CompanySwitcher from "@/components/layout/CompanySwitcher";
 import NotificationBell from "@/components/NotificationBell";
 import ThemeToggle from "@/components/layout/ThemeToggle";
+import { LanguageToggle, useT } from "@/lib/i18n";
 
 /**
  * Chrome for internal employee portal accounts: a branded topbar + the employee
@@ -25,6 +26,7 @@ export default function EmployeeShell({
   onMenuClick: () => void;
   onClose: () => void;
 }) {
+  const { t } = useT();
   const { user, company, logout } = useAuth();
   const pathname = usePathname();
   const name = user?.full_name || user?.username || user?.email || "Employee";
@@ -49,28 +51,29 @@ export default function EmployeeShell({
               <Logo size={30} />
             </span>
             <div className="flex min-w-0 flex-col">
-              <span className="truncate text-sm font-semibold leading-tight text-brand-dark sm:text-[15px]">Employee Portal</span>
+              <span className="truncate text-sm font-semibold leading-tight text-brand-dark sm:text-[15px]">{t("Employee Portal")}</span>
               <span className="hidden text-xs text-brand-muted leading-tight sm:block">
-                {brandName} · your assigned purchase orders
+                {brandName} · {t("your assigned purchase orders")}
               </span>
             </div>
           </div>
           <div className="flex-1" />
           <div className="flex items-center gap-1 sm:gap-2.5">
             <CompanySwitcher />
+            <LanguageToggle className="hidden sm:inline-flex" />
             <ThemeToggle />
             <NotificationBell />
             <div className="hidden h-6 w-px bg-brand-border sm:block" />
             <div className="hidden text-right sm:block">
               <div className="text-sm font-medium">{name}</div>
-              <div className="text-[10px] uppercase text-brand-muted tracking-wider">Employee</div>
+              <div className="text-[10px] uppercase text-brand-muted tracking-wider">{t("Employee")}</div>
             </div>
             <div className="flex h-8 w-8 items-center justify-center rounded-full bg-red-50 text-xs font-semibold text-signal-red ring-1 ring-inset ring-red-100">
               {initial}
             </div>
             <button
               onClick={logout}
-              title="Sign out"
+              title={t("Sign out")}
               className="grid h-9 w-9 place-items-center rounded-md text-brand-muted hover:bg-subtle hover:text-signal-red"
             >
               <LogOut size={18} />

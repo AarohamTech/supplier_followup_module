@@ -227,8 +227,7 @@ export function OpenTaskTable({ rows }: { rows: WorkloadOpenTask[] }) {
               <th className="px-3 py-2 font-semibold">Source</th>
               <th className="px-3 py-2 font-semibold">Supplier / PO</th>
               <th className="px-3 py-2 text-right font-semibold">Due</th>
-              <th className="px-3 py-2 text-right font-semibold">Days overdue</th>
-              <th className="px-4 py-2 text-right font-semibold">Progress</th>
+              <th className="px-4 py-2 text-right font-semibold">Days overdue</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-brand-border">
@@ -238,20 +237,19 @@ export function OpenTaskTable({ rows }: { rows: WorkloadOpenTask[] }) {
                   <div className="truncate font-medium text-brand-dark" title={t.title}>{t.title}</div>
                 </td>
                 <td className="px-3 py-2 font-semibold text-brand-dark">{t.priority}</td>
-                <td className="px-3 py-2 text-brand-dark">{t.status.replaceAll("_", " ")}</td>
+                <td className="px-3 py-2 text-brand-dark">{t.status.replace(/^C_/, "").replaceAll("_", " ")}</td>
                 <td className="px-3 py-2 text-brand-muted">{t.task_source || "—"}</td>
                 <td className="max-w-[180px] px-3 py-2">
                   <div className="truncate text-brand-dark">{t.supplier_name || "—"}</div>
                   {t.supplier_po_no && <div className="text-[10px] text-brand-muted">PO {t.supplier_po_no}</div>}
                 </td>
                 <td className="px-3 py-2 text-right text-brand-dark">{t.due_date ? fmtDate(t.due_date) : "—"}</td>
-                <td className="px-3 py-2 text-right"><Num v={t.days_overdue ?? 0} warn /></td>
-                <td className="px-4 py-2 text-right tabular-nums text-brand-dark">{t.progress_percent}%</td>
+                <td className="px-4 py-2 text-right"><Num v={t.days_overdue ?? 0} warn /></td>
               </tr>
             ))}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={8} className="px-4 py-8 text-center text-brand-muted">No open tasks.</td>
+                <td colSpan={7} className="px-4 py-8 text-center text-brand-muted">No open tasks.</td>
               </tr>
             )}
           </tbody>

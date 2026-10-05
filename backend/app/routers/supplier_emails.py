@@ -145,7 +145,7 @@ def update(
     eid: int,
     payload: SupplierEmailUpdate,
     db: Session = Depends(get_db),
-    actor: User = Depends(get_current_staff),
+    actor: User = Depends(require_admin),  # any staff can add a mapping; only admins change it
 ):
     row = db.get(SupplierEmail, eid)
     if not row:

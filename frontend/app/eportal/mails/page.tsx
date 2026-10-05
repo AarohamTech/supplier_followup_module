@@ -10,11 +10,13 @@ import { MailQueue } from "@/components/customer-mails/MailQueue";
 import { ConversationPanel, type LocalReply } from "@/components/customer-mails/ConversationPanel";
 import { QUEUE_TABS } from "@/components/customer-mails/shared";
 import { useDebouncedValue } from "@/components/customer-mails/hooks";
+import { useT } from "@/lib/i18n";
 
 /** Employee view: customer mails linked to MY POs or allocated to me — a lean
  * version of the staff Customer Response Workspace (list + conversation +
  * reply + HI draft; no triage/task panels). */
 export default function EmployeeMailsPage() {
+  const { t } = useT();
   const [searchInput, setSearchInput] = useState("");
   const search = useDebouncedValue(searchInput, 350);
   const [activeTab, setActiveTab] = useState(QUEUE_TABS[0].key);
@@ -144,8 +146,8 @@ export default function EmployeeMailsPage() {
     <div className="flex h-[calc(100vh-128px)] flex-col">
       <PageHeader
         className="mb-3"
-        title="My Customer Mails"
-        description="Customer and other emails linked to your POs or allocated to you."
+        title={t("My Customer Mails")}
+        description={t("Customer and other emails linked to your POs or allocated to you.")}
         icon={Inbox}
         tone="red"
         actions={
@@ -157,14 +159,14 @@ export default function EmployeeMailsPage() {
                 onClick={() => setMailScope("customer")}
                 className={`rounded-md px-3 py-1.5 transition ${mailScope === "customer" ? "bg-card text-signal-red shadow-sm" : "text-brand-muted hover:text-brand-dark"}`}
               >
-                Customers
+                {t("Customers")}
               </button>
               <button
                 type="button"
                 onClick={() => setMailScope("other")}
                 className={`rounded-md px-3 py-1.5 transition ${mailScope === "other" ? "bg-card text-signal-red shadow-sm" : "text-brand-muted hover:text-brand-dark"}`}
               >
-                Other Mails
+                {t("Other Mails")}
               </button>
             </div>
             {selected && (
@@ -173,10 +175,10 @@ export default function EmployeeMailsPage() {
                 onClick={handleDraft}
                 disabled={drafting}
                 className="btn-outline text-xs"
-                title="Draft a reply with Harmony Intelligent"
+                title={t("Draft a reply with Harmony Intelligent")}
               >
                 {drafting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
-                HI Draft
+                {t("HI Draft")}
               </button>
             )}
           </>
@@ -213,7 +215,7 @@ export default function EmployeeMailsPage() {
             </div>
           ) : (
             <div className="flex h-full w-full items-center justify-center text-sm text-brand-muted">
-              {loadingList ? "Loading…" : "No customer mails on your POs yet."}
+              {loadingList ? t("Loading…") : t("No customer mails on your POs yet.")}
             </div>
           )}
         </section>

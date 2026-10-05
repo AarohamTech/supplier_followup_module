@@ -32,7 +32,9 @@ export default function Page() {
   const reload = useStore((s) => s.loadSuppliers);
   const { hasRole } = useAuth();
   const isAdmin = hasRole("admin");
-  const canEdit = hasRole("user"); // admin/manager/user (writers); viewers read-only
+  // Any writer (admin/manager/user) can ADD a mapping; changing or deleting one
+  // is admin-only (backend enforces both).
+  const canAdd = hasRole("user");
   const [showAudit, setShowAudit] = useState(false);
   const [editing, setEditing] = useState<Partial<SupplierEmail> | null>(null);
   const [busy, setBusy] = useState(false);
@@ -136,7 +138,7 @@ export default function Page() {
                 <History size={14} /> Change Log
               </button>
             )}
-            {canEdit && (
+            {canAdd && (
               <button onClick={() => { setError(null); setEditing({ ...EMPTY }); }} className="btn-primary">
                 <Plus size={14} /> Add Mapping
               </button>
@@ -236,8 +238,8 @@ export default function Page() {
                         <KeyRound size={14} />
                       </button>
                     )}
-                    {canEdit && (
-                      <button title="Edit" onClick={() => edit(mapping)} className="p-1 rounded hover:bg-subtle">
+                    {isAdmin && (
+                      <button title="Edit (admin only)" onClick={() => edit(mapping)} className="p-1 rounded hover:bg-subtle">
                         <Pencil size={14} />
                       </button>
                     )}

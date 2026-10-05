@@ -22,6 +22,8 @@ class MessageAttachment(Base):
     message_id: Mapped[int | None] = mapped_column(
         ForeignKey("communication_messages.id"), index=True
     )
+    # Set instead of message_id for a file attached to a Task Manager task.
+    task_id: Mapped[int | None] = mapped_column(Integer, index=True)
     filename: Mapped[str] = mapped_column(String(255), nullable=False)
     content_type: Mapped[str | None] = mapped_column(String(128))
     size_bytes: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

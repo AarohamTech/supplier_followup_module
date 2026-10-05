@@ -5,8 +5,10 @@ import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import type { EmployeePo } from "@/lib/types";
 import PoExpandableTable from "@/components/po/PoExpandableTable";
+import { useT } from "@/lib/i18n";
 
 export default function EmployeePosPage() {
+  const { t } = useT();
   const [pos, setPos] = useState<EmployeePo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -39,13 +41,13 @@ export default function EmployeePosPage() {
     <div className="page-stack">
       <div className="page-header">
         <div>
-          <h1 className="page-title">My Purchase Orders</h1>
-          <p className="page-subtitle">{loading ? "Loading…" : `${pos.length} PO(s) assigned to you`}</p>
+          <h1 className="page-title">{t("My Purchase Orders")}</h1>
+          <p className="page-subtitle">{loading ? t("Loading…") : t("{n} PO(s) assigned to you", { n: pos.length })}</p>
         </div>
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="Search PO / vendor / CRM…"
+          placeholder={t("Search PO / vendor / CRM…")}
           className="input max-w-xs"
         />
       </div>

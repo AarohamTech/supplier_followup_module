@@ -1,6 +1,7 @@
 import "./globals.css";
 import type { Metadata } from "next";
 import { AuthProvider } from "@/lib/auth";
+import { LanguageProvider } from "@/lib/i18n";
 import AppShell from "@/components/layout/AppShell";
 import ThemeInit from "@/components/layout/ThemeInit";
 
@@ -21,9 +22,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body>
         <ThemeInit />
-        <AuthProvider>
-          <AppShell>{children}</AppShell>
-        </AuthProvider>
+        <LanguageProvider>
+          <AuthProvider>
+            <AppShell>{children}</AppShell>
+          </AuthProvider>
+        </LanguageProvider>
       </body>
     </html>
   );

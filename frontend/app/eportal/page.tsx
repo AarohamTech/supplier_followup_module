@@ -15,6 +15,7 @@ import OverdueDonut from "@/components/dashboard/OverdueDonut";
 import AIInsights from "@/components/dashboard/AIInsights";
 import TasksSummaryCard from "@/components/dashboard/TasksSummaryCard";
 import SupplierChart from "@/components/dashboard/SupplierChart";
+import { useT } from "@/lib/i18n";
 
 const QUICK_LINKS = [
   { href: "/eportal/pos", label: "My Purchase Orders", icon: FileSpreadsheet },
@@ -29,6 +30,7 @@ const QUICK_LINKS = [
  * the shared store (scope='employee'), plus a tasks overview and the owned-PO list.
  */
 export default function EmployeeDashboard() {
+  const { t } = useT();
   const { user } = useAuth();
   const setScope = useStore((s) => s.setScope);
   const refresh = useStore((s) => s.refresh);
@@ -64,11 +66,11 @@ export default function EmployeeDashboard() {
     <div className="page-stack">
       <div className="page-header">
         <div>
-          <h1 className="page-title">Welcome, {name}</h1>
-          <p className="page-subtitle">Your assigned purchase orders at a glance, live from the CRM.</p>
+          <h1 className="page-title">{t("Welcome, {name}", { name })}</h1>
+          <p className="page-subtitle">{t("Your assigned purchase orders at a glance, live from the CRM.")}</p>
         </div>
         <Link href="/eportal/pos" className="btn-primary">
-          <FileSpreadsheet size={14} /> My Purchase Orders
+          <FileSpreadsheet size={14} /> {t("My Purchase Orders")}
         </Link>
       </div>
 
@@ -85,15 +87,15 @@ export default function EmployeeDashboard() {
         <div className="lg:col-span-2">
           <div className="mb-2 flex items-center justify-between">
             <div className="text-[11px] font-semibold uppercase tracking-wider text-brand-muted">
-              Your Purchase Orders
+              {t("Your Purchase Orders")}
               {breakdown ? (
                 <span className="ml-2 rounded-full bg-red-50 px-1.5 py-0.5 text-[10px] font-semibold text-signal-red">
-                  {breakdown.pending_count} pending
+                  {t("{n} pending", { n: breakdown.pending_count })}
                 </span>
               ) : null}
             </div>
             <Link href="/eportal/pos" className="text-xs font-medium text-signal-red hover:underline">
-              View all →
+              {t("View all →")}
             </Link>
           </div>
           <PoExpandableTable
@@ -106,7 +108,7 @@ export default function EmployeeDashboard() {
           <AIInsights />
           <div className="card p-4">
             <div className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-brand-muted">
-              Quick actions
+              {t("Quick actions")}
             </div>
             <div className="space-y-1">
               {QUICK_LINKS.map(({ href, label, icon: Icon }) => (
@@ -116,7 +118,7 @@ export default function EmployeeDashboard() {
                   className="flex items-center gap-2.5 rounded-md px-2 py-2 text-sm text-brand-dark hover:bg-subtle"
                 >
                   <Icon size={15} className="text-brand-muted" />
-                  {label}
+                  {t(label)}
                 </Link>
               ))}
             </div>

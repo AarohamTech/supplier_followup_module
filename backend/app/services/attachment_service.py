@@ -192,3 +192,36 @@ def load_for_email(db: Session, message_id: int) -> list[tuple[str, str, bytes]]
         (att.filename, att.content_type or "application/octet-stream", get_bytes(att))
         for att in rows
     ]
+
+
+def for_task(db: Session, task_id: int) -> list[MessageAttachment]:
+    return list(
+        db.scalars(
+            select(MessageAttachment)
+            .where(MessageAttachment.task_id == task_id)
+            .order_by(MessageAttachment.id.asc())
+        ).all()
+    )
+
+
+def task_out(att: MessageAttachment) -> dict[str, Any]:
+    return {
+        **out(att),
+        "uploaded_by": att.uploaded_by_label,
+        "uploaded_by_kind": att.uploaded_by_kind,
+        "uploaded_by_id": att.uploaded_by_id,
+        "created_at": att.created_at,
+    }
+
+
+def delete(db: Session, att: MessageAttachment, *, commit: bool = True) -> None:
+    """Drop the row, then the object (best-effort: an orphaned object in a private
+    bucket is harmless, a row pointing at nothing is not)."""
+    key = att.storage_key
+    db.delete(att)
+    if commit:
+        db.commit()
+    try:
+        _client().delete_object(Bucket=settings.S3_BUCKET, Key=key)
+    except Exception:  # noqa: BLE001
+        log.warning("Could not delete attachment object %s (row already removed)", key)

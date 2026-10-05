@@ -1,18 +1,14 @@
+import re
 from datetime import datetime
-from typing import Literal, Optional
+from typing import Annotated, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
 
 
-TaskStatus = Literal[
-    "BACKLOG",
-    "TODO",
-    "IN_PROGRESS",
-    "WAITING_SUPPLIER",
-    "WAITING_CUSTOMER",
-    "BLOCKED",
-    "DONE",
-]
+# A status is a board column key: the seven built-ins or an admin-defined custom
+# column (C_*). Shape-checked here; membership is checked against the live board
+# config by the routers (task_board_service.valid_status_keys).
+TaskStatus = Annotated[str, StringConstraints(pattern=r"^[A-Z0-9_]{1,32}$")]
 TaskPriority = Literal["LOW", "MEDIUM", "HIGH"]
 TaskSignal = Literal["GREEN", "YELLOW", "RED", "BLACK"]
 TaskSource = Literal["SUPPLIER", "CUSTOMER", "INTERNAL", "ESCALATION"]
@@ -97,9 +93,7 @@ class CommunicationTaskOut(CommunicationTaskBase):
     @field_validator("status", mode="before")
     @classmethod
     def _coerce_status(cls, v):
-        valid = {"BACKLOG", "TODO", "IN_PROGRESS", "WAITING_SUPPLIER",
-                 "WAITING_CUSTOMER", "BLOCKED", "DONE"}
-        return v if v in valid else "TODO"
+        return v if isinstance(v, str) and re.match(r"^[A-Z0-9_]{1,32}$", v) else "TODO"
 
     @field_validator("signal", mode="before")
     @classmethod
@@ -123,6 +117,7 @@ class CommunicationTaskOut(CommunicationTaskBase):
     external_ref: Optional[str] = None
     external_url: Optional[str] = None
 
+    assigned_by_user_id: Optional[int] = None
     comments_count: int = 0
     attachment_count: int = 0
     closed_at: Optional[datetime] = None

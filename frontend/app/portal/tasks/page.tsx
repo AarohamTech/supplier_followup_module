@@ -8,6 +8,7 @@ import PortalTaskWorkspace, { type PortalTaskAdapter } from "@/components/portal
 const supplierAdapter: PortalTaskAdapter = {
   listTasks: () => api.portalTasks(),
   dashboard: () => api.portalTasksDashboard(),
+  boardColumns: () => api.portalTaskBoardColumns(),
 };
 
 export default function SupplierTasksPage() {
