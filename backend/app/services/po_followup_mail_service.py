@@ -602,6 +602,32 @@ def create_po_followup_mail(
     )
 
 
+def _group_po_trn_no(db: Session, group: dict[str, Any]) -> str | None:
+    """CRM transaction number of the PO document this group is about. Taken
+    from the group's own lines: the counter (supplier_po_no) is recycled across
+    suppliers, so looking it up by counter alone can return another supplier's
+    PO. Prefers the line whose vendor ref matches the one shown in the mail."""
+    ids = group.get("procurement_record_ids") or []
+    # NOT GENERATED lines carry the placeholder TrnNo "0" — never a real PO.
+    stmt = select(ProcurementRecord.po_trn_no, ProcurementRecord.po_short_ref).where(
+        ProcurementRecord.po_trn_no.isnot(None), ProcurementRecord.po_trn_no != "0"
+    )
+    if ids:
+        stmt = stmt.where(ProcurementRecord.id.in_(ids))
+    else:
+        name = (group.get("supplier_name") or "").strip().upper()
+        if not name or not group.get("supplier_po_no"):
+            return None
+        stmt = stmt.where(
+            ProcurementRecord.supplier_po_no == group["supplier_po_no"],
+            func.upper(ProcurementRecord.supplier_name) == name,
+        )
+    rows = db.execute(stmt.order_by(ProcurementRecord.id)).all()
+    ref = group.get("po_ref")
+    match = next((r.po_trn_no for r in rows if ref and r.po_short_ref == ref), None)
+    return match or (rows[0].po_trn_no if rows else None)
+
+
 def _attach_po_pdf_to_green_ack(db: Session, msg: Any, group: dict[str, Any]) -> None:
     """Client decision (2026-07-20): the GREEN acknowledgement mail carries the
     official PO PDF for the supplier, and the internal PO owners are notified.
@@ -613,12 +639,7 @@ def _attach_po_pdf_to_green_ack(db: Session, msg: Any, group: dict[str, Any]) ->
     attached = False
     try:
         if attachment_service.storage_enabled():
-            trn = db.scalar(
-                select(ProcurementRecord.po_trn_no).where(
-                    ProcurementRecord.supplier_po_no == group["supplier_po_no"],
-                    ProcurementRecord.po_trn_no.isnot(None),
-                ).limit(1)
-            )
+            trn = _group_po_trn_no(db, group)
             cfg = get_current_crm_config(db) if trn else None
             if trn and cfg:
                 from . import crm_ingest_service

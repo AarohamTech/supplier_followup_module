@@ -18,3 +18,7 @@ backend/_test_*.sqlite
 
 # Employee PII (DOB, mobile) — never commit
 docs/Hariom Employee details.xlsx
+
+# Database dumps (contain user data + password hashes)
+*.backup
+*.backup.gz
