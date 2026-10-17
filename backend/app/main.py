@@ -15,7 +15,7 @@ from .core.deps import (
     require_writer_for_writes,
 )
 from .core.logging import setup_logging
-from .core.schema_evolve import ensure_columns
+from .core.schema_evolve import drop_cross_company_fks, ensure_columns
 from .core.tenant_middleware import TenantMiddleware
 from .database import Base, engine, ensure_schema, SessionLocal
 from .routers import (
@@ -72,6 +72,7 @@ async def lifespan(app: FastAPI):
             changes = ensure_columns(engine)
             if changes:
                 log.info("Schema evolve added columns: %s", ", ".join(changes))
+            drop_cross_company_fks(engine)
         except Exception:  # noqa: BLE001
             log.exception("Schema evolve failed (continuing)")
         # pgvector knowledge store (Postgres only; no-op + safe on SQLite).

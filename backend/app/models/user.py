@@ -5,7 +5,7 @@ Passwords are never stored in plaintext — only the bcrypt hash produced by
 """
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ..core.roles import DEFAULT_ROLE
@@ -31,9 +31,11 @@ class User(Base):
     # External supplier accounts link to a supplier_master row. NULL → internal
     # staff account (the 4-tier RBAC). Set → supplier portal account scoped to
     # that supplier's data. See core/roles.py (Role.SUPPLIER) and core/deps.py.
-    supplier_id: Mapped[int | None] = mapped_column(
-        ForeignKey("supplier_master.id"), index=True, nullable=True
-    )
+    # Deliberately NOT a foreign key: `users` is shared in `public`, while each
+    # company keeps its own supplier_master — the id is only meaningful inside
+    # the company in `company_id`. An FK to public.supplier_master made every
+    # company-101 supplier login fail (see schema_evolve.drop_cross_company_fks).
+    supplier_id: Mapped[int | None] = mapped_column(Integer, index=True, nullable=True)
     # Internal employee accounts carry their CRM employee code (CRM `EmpCode`).
     # Set → employee portal account scoped to POs where owner_emp_code == this.
     # NULL → staff or supplier account. See core/roles.py (Role.EMPLOYEE).

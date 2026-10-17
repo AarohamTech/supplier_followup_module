@@ -128,3 +128,36 @@ def ensure_columns_in_schema(engine: Engine, schema: str) -> list[str]:
             except Exception:  # noqa: BLE001
                 log.exception("Schema evolve failed for %s.%s.%s", schema, table.name, col.name)
     return changes
+
+
+# Foreign keys from a shared `public` table into a per-company table. They point
+# at public's copy only, so rows belonging to another company always violate
+# them (company-101 supplier logins could never be created). Dropped on boot;
+# the models no longer declare them.
+CROSS_COMPANY_FKS: tuple[tuple[str, str], ...] = (
+    ("users", "users_supplier_id_fkey"),
+)
+
+
+def drop_cross_company_fks(engine: Engine) -> list[str]:
+    """Drop the stale FKs in CROSS_COMPANY_FKS. Postgres only; idempotent."""
+    if not engine.url.get_backend_name().startswith("postgresql"):
+        return []
+    dropped: list[str] = []
+    for table, constraint in CROSS_COMPANY_FKS:
+        try:
+            with engine.begin() as conn:
+                exists = conn.execute(
+                    text(
+                        "SELECT 1 FROM pg_constraint WHERE conname = :c "
+                        "AND conrelid = to_regclass(:t)"
+                    ),
+                    {"c": constraint, "t": f"public.{table}"},
+                ).first()
+                if exists:
+                    conn.execute(text(f'ALTER TABLE public."{table}" DROP CONSTRAINT "{constraint}"'))
+                    dropped.append(f"public.{table}.{constraint}")
+                    log.info("Schema evolve: dropped FK public.%s.%s", table, constraint)
+        except Exception:  # noqa: BLE001
+            log.exception("Schema evolve failed dropping FK %s.%s", table, constraint)
+    return dropped
