@@ -13,3 +13,15 @@ Register-ScheduledTask -TaskName $task -Action $action -Trigger $trigger `
     -Principal $principal -Settings $settings -Force | Out-Null
 Start-ScheduledTask -TaskName $task
 "registered and started '$task'"
+
+# Nightly database backup (D:\hconnect-backups, 14 days kept).
+if ($PSScriptRoot -ne 'C:\hconnect') {
+    Copy-Item "$PSScriptRoot\backup_db.ps1" 'C:\hconnect\backup_db.ps1' -Force
+}
+$bAction = New-ScheduledTaskAction -Execute 'powershell.exe' `
+    -Argument '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File C:\hconnect\backup_db.ps1'
+$bTrigger = New-ScheduledTaskTrigger -Daily -At '02:30'
+$bSettings = New-ScheduledTaskSettingsSet -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Hours 2)
+Register-ScheduledTask -TaskName 'HConnect DB Backup' -Action $bAction -Trigger $bTrigger `
+    -Principal $principal -Settings $bSettings -Force | Out-Null
+"registered 'HConnect DB Backup' (daily 02:30)"
