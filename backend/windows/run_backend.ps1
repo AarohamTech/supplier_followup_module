@@ -9,7 +9,7 @@
 #   dbpw.txt            password of the local Postgres role "hconnect"
 #   logs\               backend-YYYYMMDD.log
 $root = 'C:\hconnect'
-$port = 8010
+$port = 3000
 $backend = "$root\app\backend"
 New-Item -ItemType Directory -Force "$root\logs" | Out-Null
 
