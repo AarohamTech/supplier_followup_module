@@ -12,12 +12,10 @@ name: Deploy backend to EC2
 # runners (practically: 0.0.0.0/0, key-only auth) — a "My IP"-scoped rule
 # breaks this job with "dial tcp *:22: i/o timeout" on every push.
 
+# RETIRED 2026-10-24: the backend now runs on the Windows server (see
+# backend/deploy_to_windows_server.ps1). Auto-deploy to EC2 is off so a push can
+# no longer restart the old AWS service; manual dispatch is kept for rollback.
 on:
-  push:
-    branches: [main]
-    paths:
-      - "backend/**"
-      - ".github/workflows/deploy-backend.yml"
   workflow_dispatch: {}
 
 concurrency:
