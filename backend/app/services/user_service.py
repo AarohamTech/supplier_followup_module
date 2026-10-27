@@ -1,6 +1,7 @@
 """User persistence + authentication. No FastAPI imports — pure service layer."""
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 
 from sqlalchemy import func, select
@@ -9,6 +10,8 @@ from sqlalchemy.orm import Session
 from ..core.roles import DEFAULT_ROLE, Role, normalize_role
 from ..core.security import hash_password, verify_password
 from ..models.user import User
+
+log = logging.getLogger(__name__)
 
 
 class EmailTakenError(ValueError):
@@ -161,10 +164,19 @@ def set_password(
     return user
 
 
-def _complete_login(db: Session, user: User | None, password: str) -> User | None:
-    if user is None or not user.is_active:
+def _complete_login(
+    db: Session, user: User | None, password: str, identifier: str = ""
+) -> User | None:
+    # Failed sign-ins are logged with the reason (never the password) so a
+    # "can't sign in" report can be traced from the server log.
+    if user is None:
+        log.warning("login failed: unknown account %r", identifier)
+        return None
+    if not user.is_active:
+        log.warning("login failed: inactive account id=%s %r", user.id, identifier)
         return None
     if not verify_password(password, user.hashed_password):
+        log.warning("login failed: wrong password for id=%s %r", user.id, identifier)
         return None
     user.last_login_at = datetime.utcnow()
     db.commit()
@@ -173,11 +185,11 @@ def _complete_login(db: Session, user: User | None, password: str) -> User | Non
 
 
 def authenticate(db: Session, email: str, password: str) -> User | None:
-    return _complete_login(db, get_by_email(db, email), password)
+    return _complete_login(db, get_by_email(db, email), password, email)
 
 
 def authenticate_by_username(db: Session, username: str, password: str) -> User | None:
-    return _complete_login(db, get_by_username(db, username), password)
+    return _complete_login(db, get_by_username(db, username), password, username)
 
 
 def ensure_seed_admin(
