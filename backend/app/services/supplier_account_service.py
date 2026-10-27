@@ -73,27 +73,37 @@ def send_credentials_email(
     supplier_name: str | None,
     supplier_id: int | None = None,
     is_reset: bool = False,
+    audience: str = "supplier",
+    login_id: str | None = None,
 ) -> bool:
     """Queue + immediately send a branded credentials email. Best-effort:
     returns True if it was sent now, False if queued/skipped (SMTP off etc.).
     Never raises — the temp password is also returned to the admin as a fallback.
+
+    ``audience="employee"`` words it for the employee portal, where people sign
+    in with a username (``login_id``) rather than their email.
     """
-    portal_url = f"{_app_base_url()}/login" if _app_base_url() else "the supplier portal"
-    heading = "Password reset" if is_reset else "Welcome to the Supplier Portal"
-    intro = (
-        "Your supplier portal password has been reset."
-        if is_reset
-        else f"A supplier portal account has been created for {supplier_name or 'your company'}."
-    )
+    employee = audience == "employee"
+    portal = "Employee Portal" if employee else "Supplier Portal"
+    portal_url = f"{_app_base_url()}/login" if _app_base_url() else f"the {portal.lower()}"
+    login_label = "Username" if employee and login_id else "Login email"
+    login_value = login_id if employee and login_id else email
+    heading = "Password reset" if is_reset else f"Welcome to the {portal}"
+    if is_reset:
+        intro = f"Your {portal.lower()} password has been reset."
+    elif employee:
+        intro = f"An employee portal account has been created for {supplier_name or 'you'}."
+    else:
+        intro = f"A supplier portal account has been created for {supplier_name or 'your company'}."
     inner = (
-        brand_email.header_html("Supplier Portal access")
+        brand_email.header_html(f"{portal} access")
         + '<div style="padding:20px 22px;color:#1f2937;font-size:14px;line-height:1.6;">'
         f"<h2 style='margin:0 0 10px;font-size:18px;color:#111827;'>{heading}</h2>"
         f"<p style='margin:0 0 14px;'>{intro}</p>"
         "<table role='presentation' cellpadding='0' cellspacing='0' "
         "style='border-collapse:collapse;margin:0 0 14px;font-size:14px;'>"
-        f"<tr><td style='padding:4px 16px 4px 0;color:#6B7280;'>Login email</td>"
-        f"<td style='padding:4px 0;font-weight:600;'>{email}</td></tr>"
+        f"<tr><td style='padding:4px 16px 4px 0;color:#6B7280;'>{login_label}</td>"
+        f"<td style='padding:4px 0;font-weight:600;'>{login_value}</td></tr>"
         f"<tr><td style='padding:4px 16px 4px 0;color:#6B7280;'>Temporary password</td>"
         f"<td style='padding:4px 0;font-weight:600;font-family:monospace;'>{temp_password}</td></tr>"
         "</table>"
@@ -108,15 +118,16 @@ def send_credentials_email(
     body_html = brand_email.shell(inner)
     body_text = (
         f"{intro}\n\n"
-        f"Login email: {email}\n"
+        f"{login_label}: {login_value}\n"
         f"Temporary password: {temp_password}\n\n"
         f"Sign in at {portal_url}. You'll be asked to set a new password on first login."
     )
     subject = (
-        "Your Supplier Portal password has been reset"
+        f"Your {portal} password has been reset"
         if is_reset
-        else "Your Supplier Portal login details"
+        else f"Your {portal} login details"
     )
+    mail_type = "EMPLOYEE_PORTAL_CREDENTIALS" if employee else "SUPPLIER_PORTAL_CREDENTIALS"
 
     try:
         msg = msg_service.queue_outgoing_message(
@@ -128,7 +139,7 @@ def send_credentials_email(
             body_html=body_html,
             to_emails=[email],
             receiver_email=email,
-            mail_type="SUPPLIER_PORTAL_CREDENTIALS",
+            mail_type=mail_type,
         )
     except Exception:  # noqa: BLE001
         log.exception("Failed to queue credentials email for %s", email)

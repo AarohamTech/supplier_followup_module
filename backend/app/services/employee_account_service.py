@@ -5,7 +5,9 @@ and are scoped to POs where ``owner_emp_code == User.emp_code``. Accounts are
 provisioned from the Hariom employee sheet: username = ``EMPLOYEE_LOGIN_ID``,
 emp_code = ``EMPLOYEE_ID``, a random temp password, and ``must_change_password``
 so the first login forces a change. Credentials are handed back to the admin as
-an Excel (there is no email channel). Pure service layer: no FastAPI imports.
+an Excel; a password reset is also emailed when an admin has set a real email
+on the account (not the @employee.local placeholder). Pure service layer: no
+FastAPI imports.
 """
 from __future__ import annotations
 
@@ -193,15 +195,38 @@ def update_employee(
     return user
 
 
+def _real_email(email: str | None) -> str | None:
+    """The employee's mailbox, or None for the generated @employee.local placeholder."""
+    if not email or email.lower().endswith("@" + _PLACEHOLDER_DOMAIN):
+        return None
+    return email
+
+
 def reset_employee_password(db: Session, user: User) -> dict[str, Any]:
-    """Admin reset: new temp password + force change on next login."""
+    """Admin reset: new temp password + force change on next login. The temp
+    password is always returned for the admin to hand out, and is also emailed
+    when the employee has a real email address."""
+    from . import supplier_account_service
+
     temp_password = generate_temp_password()
     user_service.set_password(db, user, temp_password, must_change=True)
+    email = _real_email(user.email)
+    emailed = bool(email) and supplier_account_service.send_credentials_email(
+        db,
+        email=email,
+        temp_password=temp_password,
+        supplier_name=user.full_name,
+        is_reset=True,
+        audience="employee",
+        login_id=user.username,
+    )
     return {
         "id": user.id,
         "username": user.username,
         "full_name": user.full_name,
         "temp_password": temp_password,
+        "email": email,
+        "emailed": emailed,
     }
 
 

@@ -48,7 +48,9 @@ REALTIME_MAIL_TYPES: frozenset[str] = frozenset({"PO_FOLLOWUP_GREEN"})
 # login details. These jump the queue in every send run, so a night-time backlog
 # of held follow-ups (drained at the per-minute cap) can never sit in front of
 # them, and they are also sent the moment they are queued (send_message_now).
-PRIORITY_MAIL_TYPES: frozenset[str] = REALTIME_MAIL_TYPES | frozenset({"SUPPLIER_PORTAL_CREDENTIALS"})
+PRIORITY_MAIL_TYPES: frozenset[str] = REALTIME_MAIL_TYPES | frozenset(
+    {"SUPPLIER_PORTAL_CREDENTIALS", "EMPLOYEE_PORTAL_CREDENTIALS"}
+)
 
 
 def is_held_mail_type(mail_type: str | None) -> bool:

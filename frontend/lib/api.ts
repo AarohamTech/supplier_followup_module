@@ -1564,7 +1564,15 @@ export const api = {
       body: JSON.stringify(body),
     }),
   resetEmployeeLogin: (userId: number) =>
-    http<{ ok: boolean; id: number; username: string | null; full_name: string | null; temp_password: string }>(
+    http<{
+      ok: boolean;
+      id: number;
+      username: string | null;
+      full_name: string | null;
+      temp_password: string;
+      email: string | null;
+      emailed: boolean;
+    }>(
       `/api/employee-accounts/${userId}/reset-password`,
       { method: "POST" },
     ),

@@ -130,7 +130,13 @@ export default function EmployeesAdminPage() {
     try {
       const r = await api.resetEmployeeLogin(u.id);
       setCreds([{ username: r.username, full_name: r.full_name, temp_password: r.temp_password }]);
-      setCredsNote(`Reset password for ${r.username}.`);
+      setCredsNote(
+        r.emailed
+          ? `Reset password for ${r.username} — also emailed to ${r.email}.`
+          : r.email
+            ? `Reset password for ${r.username}. The email to ${r.email} could not be sent — hand this password over directly.`
+            : `Reset password for ${r.username}. No email on file — hand this password over directly.`,
+      );
       await load();
     } catch (e) {
       setError((e as Error).message);
