@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Inbox,
   Loader2,
+  Mail,
   MessagesSquare,
   Package,
   RefreshCcw,
@@ -19,6 +20,7 @@ import {
   AttachmentDropArea,
   PendingAttachments,
 } from "@/components/attachments/Attachments";
+import { EmailHtmlView } from "@/components/EmailHtmlView";
 
 // ─── Normalized PO row shape (works for both EmployeePo and PortalPo) ────────
 export interface CommHubPoRow {
@@ -43,6 +45,8 @@ export interface CommHubAdapter {
   /** Optional context-panel data. */
   listMaterials?: (supplierPoNo: string) => Promise<{ material_name: string; signal?: string | null; commitment_date?: string | null }[]>;
   listTasks?: (supplierPoNo: string) => Promise<PortalTask[]>;
+  /** Supplier only: addressing for "Open in Outlook" (company inbox + PO subject). */
+  outlookCompose?: (supplierPoNo: string) => Promise<{ to: string[]; subject: string }>;
 }
 
 const SIGNAL_DOT: Record<string, string> = {
@@ -209,6 +213,24 @@ export default function PortalCommHub({
     }
   };
 
+  // Open the supplier's own mail app (Outlook etc.) addressed to the company
+  // inbox; the mail is read back into this PO thread by the inbox fetcher.
+  const openInOutlook = async () => {
+    if (!active || !adapter.outlookCompose) return;
+    try {
+      const { to, subject } = await adapter.outlookCompose(active);
+      const body = composer.trim();
+      window.location.href =
+        `mailto:${encodeURIComponent(to.join(","))}?subject=${encodeURIComponent(subject)}` +
+        (body ? `&body=${encodeURIComponent(body)}` : "");
+      if (pendingFiles.length > 0) {
+        setError("Attach your files again in Outlook — they can't be passed over to it.");
+      }
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+
   const addFiles = async (files: File[]) => {
     if (!active) return;
     setUploadingCount((n) => n + files.length);
@@ -331,10 +353,21 @@ export default function PortalCommHub({
                         }
                       }}
                       placeholder="Type your message…  (Enter to send, Shift+Enter for a new line; drop files to attach)"
-                      className="h-24 w-full resize-none rounded-lg border border-brand-border bg-subtle p-3 pr-24 text-sm outline-none focus:border-signal-red/40 focus:bg-card"
+                      className={`h-24 w-full resize-none rounded-lg border border-brand-border bg-subtle p-3 ${
+                        adapter.outlookCompose ? "pr-44" : "pr-24"
+                      } text-sm outline-none focus:border-signal-red/40 focus:bg-card`}
                     />
                     <div className="absolute bottom-3 right-3 flex items-center gap-1.5">
                       <AttachButton onFiles={(files) => void addFiles(files)} disabled={sending} />
+                      {adapter.outlookCompose && (
+                        <button
+                          className="inline-flex items-center gap-1 rounded-md border border-brand-border bg-card px-2 py-1.5 text-xs font-medium text-brand-dark hover:bg-subtle"
+                          onClick={() => void openInOutlook()}
+                          title="Write this message in Outlook (or your mail app) instead"
+                        >
+                          <Mail size={14} /> Outlook
+                        </button>
+                      )}
                       <button
                         className="rounded-md bg-signal-red p-2 text-white shadow-sm hover:opacity-90 disabled:opacity-50"
                         disabled={(!composer.trim() && pendingFiles.length === 0) || sending || uploadingCount > 0}
@@ -511,7 +544,11 @@ function MessageBubble({
         {m.subject && (
           <div className="mb-1 truncate text-xs font-semibold text-brand-dark">{m.subject}</div>
         )}
-        <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-brand-dark">{m.body}</p>
+        {m.body_html ? (
+          <EmailHtmlView html={m.body_html} />
+        ) : (
+          <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-brand-dark">{m.body}</p>
+        )}
         <AttachmentChips items={m.attachments} endpointFor={attachmentEndpoint} />
         <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] text-brand-muted">
           <span>{fmtTime(m.at)}</span>

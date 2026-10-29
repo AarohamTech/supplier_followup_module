@@ -93,6 +93,7 @@ import type {
   PortalCommitmentItem,
   PortalTask,
   PortalMessage,
+  PortalOutlookCompose,
   PortalMe,
   EmployeeSummary,
   EmployeePo,
@@ -1118,6 +1119,9 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ body, subject, attachment_ids: attachmentIds ?? [] }),
     }),
+  // Addressing for the supplier's "Open in Outlook" mail (company inbox + PO subject).
+  portalPoOutlook: (supplierPoNo: string) =>
+    http<PortalOutlookCompose>(`/api/portal/pos/${encodeURIComponent(supplierPoNo)}/outlook`),
   // Supplier chat-file upload (bind the returned id to a message on send).
   portalUploadAttachment: (file: File) => {
     const body = new FormData();

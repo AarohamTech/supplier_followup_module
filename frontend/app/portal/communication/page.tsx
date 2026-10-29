@@ -19,6 +19,7 @@ const supplierAdapter: CommHubAdapter = {
   listMessages: (po) => api.portalPoMessages(po),
   sendMessage: (po, body, attachmentIds) => api.sendPortalPoMessage(po, body, undefined, attachmentIds),
   markRead: (po) => api.portalMarkPoRead(po),
+  outlookCompose: (po) => api.portalPoOutlook(po),
   uploadAttachment: (file) => api.portalUploadAttachment(file),
   attachmentEndpoint: (id) => `/api/portal/attachments/${id}/download`,
   listMaterials: async (po) => {

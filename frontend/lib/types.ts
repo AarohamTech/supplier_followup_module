@@ -782,6 +782,8 @@ export interface CommHubMessage {
   escalation_emails?: string[];
   subject: string | null;
   body: string | null;
+  /** The email as it was sent/received — rendered sandboxed when present. */
+  body_html?: string | null;
   mail_type: string | null;
   sent_status: string;
   created_at: string;
@@ -1665,10 +1667,17 @@ export interface PortalMessage {
   author: string;
   subject?: string | null;
   body: string;
+  /** The email as it was sent/received — rendered sandboxed; null for chat messages. */
+  body_html?: string | null;
   mail_type?: string | null;
   status: string;
   at?: string | null;
   attachments?: AttachmentMeta[];
+}
+
+export interface PortalOutlookCompose {
+  to: string[];
+  subject: string;
 }
 
 export interface PortalPoListResponse {

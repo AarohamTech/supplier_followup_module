@@ -46,10 +46,19 @@ class PortalMessage(BaseModel):
     author: str
     subject: Optional[str] = None
     body: str
+    # The email as it was sent/received (rendered sandboxed by the portal);
+    # None for plain chat messages.
+    body_html: Optional[str] = None
     mail_type: Optional[str] = None
     status: str
     at: Optional[datetime] = None
     attachments: list[AttachmentOut] = Field(default_factory=list)
+
+
+class PortalOutlookCompose(BaseModel):
+    """What the supplier's "Open in Outlook" mailto is addressed with."""
+    to: list[str]
+    subject: str
 
 
 class PortalMessageCreate(BaseModel):

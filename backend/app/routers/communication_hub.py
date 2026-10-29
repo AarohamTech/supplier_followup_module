@@ -41,6 +41,7 @@ from ..services.followup_engine import apply_followup_logic, get_followup_rule
 from ..services.mail_template_service import build_context, pick_template, render
 from ..services import ai_service
 from ..services import compose_service
+from ..services import message_html
 from .. import seed as seed_mod
 from ..services import agent_subscription_service as agent_subs
 from ..services import attachment_service
@@ -722,6 +723,7 @@ def get_thread(
             "escalation_emails": m.escalation_emails,
             "subject": m.subject,
             "body": m.body,
+            "body_html": message_html.text_and_html(m)[1],
             "mail_type": m.mail_type,
             "sent_status": m.sent_status,
             "created_at": m.created_at.isoformat(),
@@ -780,6 +782,7 @@ def get_thread(
                 "escalation_emails": [],
                 "subject": cm.subject,
                 "body": cm.body,
+                "body_html": message_html.text_and_html(cm)[1],
                 "mail_type": cm.mail_type,
                 "sent_status": cm.status,
                 "created_at": cm.created_at.isoformat(),
@@ -1062,6 +1065,7 @@ def _non_po_message_dict(cm: CommunicationMessage) -> dict[str, Any]:
         "escalation_emails": [],
         "subject": cm.subject,
         "body": cm.body,
+        "body_html": message_html.text_and_html(cm)[1],
         "mail_type": cm.mail_type,
         "sent_status": cm.status,
         "created_at": cm.created_at.isoformat(),

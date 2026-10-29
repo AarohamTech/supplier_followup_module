@@ -6,7 +6,6 @@ trust `user.supplier_id`. Suppliers only ever see their own POs/ASNs.
 from __future__ import annotations
 
 import logging
-import re
 from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
@@ -33,6 +32,7 @@ from ..schemas.portal import (
     PortalEscalateIn,
     PortalMessage,
     PortalMessageCreate,
+    PortalOutlookCompose,
     PortalPo,
     PortalPoListResponse,
     PortalPoMaterial,
@@ -44,6 +44,7 @@ from ..services import ai_tools_service
 from ..services import asn_service
 from ..services import attachment_service
 from ..services import courier_tracking_service
+from ..services import mail_config_service, message_html
 from ..services import communication_message_service as msg_service
 from ..services import notification_service as notif
 from ..services import po_followup_service
@@ -57,7 +58,6 @@ router = APIRouter(prefix="/api/portal", tags=["portal"])
 # sent or in-flight to them (incl. READY = queued/portal-posted). Only internal
 # DRAFTs awaiting approval stay hidden.
 _VISIBLE_OUTGOING = {"SENT", "SENT_MANUALLY", "READY", "COPIED", "MAILTO_OPENED"}
-_TAG_RE = re.compile(r"<[^>]+>")
 
 
 # ── Scope helpers ─────────────────────────────────────────────────────────────
@@ -568,14 +568,6 @@ def download_attachment(
 
 
 # ── PO messaging (shared thread with the staff Communication Hub) ─────────────
-def _message_text(cm: CommunicationMessage) -> str:
-    if cm.body and cm.body.strip():
-        return cm.body.strip()
-    if cm.body_html:
-        return re.sub(r"\s+", " ", _TAG_RE.sub(" ", cm.body_html)).strip()
-    return ""
-
-
 def _to_portal_message(
     cm: CommunicationMessage,
     supplier_name: str | None,
@@ -583,13 +575,15 @@ def _to_portal_message(
 ) -> PortalMessage:
     mine = cm.direction == "INCOMING"  # supplier-authored
     author = (supplier_name or "You") if mine else "Procurement · Harmony × Hariom"
+    text, html = message_html.text_and_html(cm)
     return PortalMessage(
         id=cm.id,
         direction=cm.direction,
         mine=mine,
         author=author,
         subject=cm.subject,
-        body=_message_text(cm),
+        body=text,
+        body_html=html,
         mail_type=cm.mail_type,
         status=cm.status,
         at=cm.sent_at or cm.received_at or cm.created_at,
@@ -630,6 +624,28 @@ def list_po_messages(
     ]
     atts = attachment_service.for_messages(db, [cm.id for cm in visible])
     return [_to_portal_message(cm, name, atts.get(cm.id)) for cm in visible]
+
+
+@router.get("/pos/{supplier_po_no}/outlook", response_model=PortalOutlookCompose)
+def po_outlook_compose(
+    supplier_po_no: str,
+    user: User = Depends(get_current_supplier),
+    db: Session = Depends(get_db),
+) -> PortalOutlookCompose:
+    """Addressing for the supplier's "Open in Outlook" mail: the company inbox
+    H-Connect reads (so the mail flows back into this PO thread), with the PO
+    number the supplier knows in the subject for matching."""
+    name = _supplier_name(db, user)
+    rec = _po_is_owned(db, name, supplier_po_no)
+    if rec is None:
+        raise HTTPException(404, "PO not found for your account")
+    inbox = (mail_config_service.get_imap_config(db).user or "").strip()
+    if "@" not in inbox:
+        inbox = (mail_config_service.get_smtp_config(db).from_addr or "").strip()
+    if "@" not in inbox:
+        raise HTTPException(503, "No company mailbox is configured")
+    ref = rec.po_short_ref or supplier_po_no
+    return PortalOutlookCompose(to=[inbox], subject=f"PO {ref} | {name or 'Supplier'}")
 
 
 @router.post("/pos/{supplier_po_no}/messages", response_model=PortalMessage, status_code=201)

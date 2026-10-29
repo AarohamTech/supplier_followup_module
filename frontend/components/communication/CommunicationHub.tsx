@@ -6,6 +6,7 @@ import { useStore } from "@/lib/store";
 import { overdueDays } from "@/lib/format";
 import { useT } from "@/lib/i18n";
 import TaskCreateForm from "@/components/tasks/TaskCreateForm";
+import { EmailHtmlView } from "@/components/EmailHtmlView";
 import CustomerWorkspace from "@/components/customer-mails/CustomerWorkspace";
 import {
   AttachButton,
@@ -2263,12 +2264,19 @@ function MailBubble({
             </span>
           </div>
         )}
-        {bodyText && (
-          <p className="whitespace-pre-wrap text-sm leading-relaxed text-brand-dark">
-            {truncate(bodyText, tableRows.length > 0 ? 1200 : 600)}
-          </p>
+        {mail.body_html ? (
+          // The real email (includes its own material table).
+          <EmailHtmlView html={mail.body_html} />
+        ) : (
+          <>
+            {bodyText && (
+              <p className="whitespace-pre-wrap text-sm leading-relaxed text-brand-dark">
+                {truncate(bodyText, tableRows.length > 0 ? 1200 : 600)}
+              </p>
+            )}
+            {tableRows.length > 0 && <ThreadMessageTable rows={tableRows} />}
+          </>
         )}
-        {tableRows.length > 0 && <ThreadMessageTable rows={tableRows} />}
         <AttachmentChips items={mail.attachments} endpointFor={attachmentEndpoint} />
         <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] text-brand-muted">
           <span>{fmtTime(mail.sent_at ?? mail.received_at ?? mail.created_at)}</span>
