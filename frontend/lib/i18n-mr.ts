@@ -9,6 +9,8 @@ import { MR_DASHBOARD } from "./i18n-mr/dashboard";
 import { MR_FOLLOWUPS } from "./i18n-mr/followups";
 import { MR_HUB } from "./i18n-mr/hub";
 import { MR_MAILS } from "./i18n-mr/mails";
+import { MR_MANAGE } from "./i18n-mr/manage";
+import { MR_TASKS } from "./i18n-mr/tasks";
 
 // Shared-screen dictionaries come first so the hand-tuned core strings below win.
 export const MR: Record<string, string> = {
@@ -16,6 +18,8 @@ export const MR: Record<string, string> = {
   ...MR_FOLLOWUPS,
   ...MR_DASHBOARD,
   ...MR_MAILS,
+  ...MR_MANAGE,
+  ...MR_TASKS,
   // ── Common ──
   "Loading…": "लोड होत आहे…",
   Cancel: "रद्द करा",
@@ -219,6 +223,36 @@ export const MR: Record<string, string> = {
   "Ordered Qty": "ऑर्डर नग",
   "Recd (GRN)": "मिळालेले (GRN)",
   "Pending Qty": "बाकी नग",
+  // Shared ordered / inward / pending quantity columns.
+  "Inward Qty": "आवक नग",
+  "PO Qty (feed)": "PO नग (फीड)",
+  Ordered: "ऑर्डर",
+  Inward: "आवक",
+  "Closed / received in the CRM — hidden from the supplier's open lines":
+    "CRM मध्ये बंद / मिळाले — सप्लायरच्या चालू ओळींमधून लपवले",
+  // Message chips (lib/messageLabels).
+  "Sent manually": "हाताने पाठवले",
+  Held: "थांबवले",
+  Sending: "पाठवत आहे",
+  Copied: "कॉपी केले",
+  "Opened in Outlook": "Outlook मध्ये उघडले",
+  Bounced: "परत आले",
+  "No email on file": "ईमेल नोंद नाही",
+  Skipped: "वगळले",
+  Approved: "मंजूर",
+  "Outlook reply": "Outlook उत्तर",
+  "Hub reply": "हब उत्तर",
+  "New mail": "नवीन मेल",
+  Portal: "पोर्टल",
+  "Follow-up": "फॉलो-अप",
+  "Follow-up · On track": "फॉलो-अप · वेळेवर",
+  "Follow-up · Reminder": "फॉलो-अप · स्मरण",
+  "Follow-up · Action needed": "फॉलो-अप · कृती आवश्यक",
+  "Follow-up · Overdue": "फॉलो-अप · मुदत संपली",
+  "PO release": "PO जारी",
+  "Auto acknowledgement": "स्वयं पोचपावती",
+  "HI summary": "HI सारांश",
+  "Customer reply": "ग्राहक उत्तर",
   Receipt: "प्राप्ती",
   "No order lines found.": "कोणत्याही ऑर्डर ओळी सापडल्या नाहीत.",
   "Pending cancellation": "रद्द करणे प्रलंबित",

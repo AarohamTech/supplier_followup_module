@@ -6,6 +6,7 @@ import { Ban, ClipboardList, Columns3, FileDown, Loader2 } from "lucide-react";
 import { api } from "@/lib/api";
 import { getToken } from "@/lib/auth-token";
 import { useAuth } from "@/lib/auth";
+import { fmtQtyUom } from "@/lib/format";
 import type { OrderLine } from "@/lib/types";
 import PageHeader from "@/components/layout/PageHeader";
 import Pager from "@/components/ui/Pager";
@@ -61,7 +62,7 @@ function ReceiptChip({ status }: { status?: string | null }) {
 const COLUMNS: { key: string; label: string; on: boolean }[] = [
   { key: "customer", label: "Customer", on: true },
   { key: "material", label: "Material", on: true },
-  { key: "qty", label: "Qty", on: true },
+  { key: "qty", label: "Ordered Qty", on: true },
   { key: "vendor_po", label: "Vendor PO No.", on: true },
   { key: "po_date", label: "PO Date", on: true },
   { key: "vendor", label: "Vendor", on: true },
@@ -76,9 +77,9 @@ const COLUMNS: { key: string; label: string; on: boolean }[] = [
   { key: "crm", label: "CRM No.", on: false },
   { key: "rate", label: "Rate", on: true },
   { key: "lead_time", label: "Lead Time", on: false },
-  { key: "ordered_qty", label: "Ordered Qty", on: false },
-  { key: "grn_qty", label: "Recd (GRN)", on: false },
-  { key: "pending_qty", label: "Pending Qty", on: false },
+  { key: "ordered_qty", label: "PO Qty (feed)", on: false },
+  { key: "grn_qty", label: "Inward Qty", on: true },
+  { key: "pending_qty", label: "Pending Qty", on: true },
   { key: "receipt", label: "Receipt", on: false },
   { key: "escalation", label: "Escalation", on: false },
 ];
@@ -308,7 +309,7 @@ export default function OrdersPage() {
                 <tr>
                   {show("customer") && <th className="px-3 py-2">Customer</th>}
                   {show("material") && <th className="px-3 py-2">Material</th>}
-                  {show("qty") && <th className="px-3 py-2 text-right">Qty</th>}
+                  {show("qty") && <th className="px-3 py-2 text-right">Ordered Qty</th>}
                   {show("vendor_po") && <th className="px-3 py-2">Vendor PO No.</th>}
                   {show("po_date") && <th className="px-3 py-2 text-right">PO Date</th>}
                   {show("vendor") && <th className="px-3 py-2">Vendor</th>}
@@ -323,8 +324,8 @@ export default function OrdersPage() {
                   {show("crm") && <th className="px-3 py-2">CRM No.</th>}
                   {show("rate") && <th className="px-3 py-2 text-right">Rate</th>}
                   {show("lead_time") && <th className="px-3 py-2 text-right">Lead Time</th>}
-                  {show("ordered_qty") && <th className="px-3 py-2 text-right">Ordered Qty</th>}
-                  {show("grn_qty") && <th className="px-3 py-2 text-right">Recd (GRN)</th>}
+                  {show("ordered_qty") && <th className="px-3 py-2 text-right">PO Qty (feed)</th>}
+                  {show("grn_qty") && <th className="px-3 py-2 text-right">Inward Qty</th>}
                   {show("pending_qty") && <th className="px-3 py-2 text-right">Pending Qty</th>}
                   {show("receipt") && <th className="px-3 py-2">Receipt</th>}
                   {show("escalation") && <th className="px-3 py-2">Escalation</th>}
@@ -355,7 +356,7 @@ export default function OrdersPage() {
                     )}
                     {show("qty") && (
                       <td className="px-3 py-2 text-right tabular-nums">
-                        {r.qty != null ? `${r.qty.toLocaleString()}${r.uom ? ` ${r.uom}` : ""}` : "—"}
+                        {fmtQtyUom(r.ordered_qty ?? r.qty, r.uom)}
                       </td>
                     )}
                     {show("vendor_po") && (
@@ -410,7 +411,7 @@ export default function OrdersPage() {
                     {show("rate") && <td className="px-3 py-2 text-right tabular-nums">{r.rate != null ? r.rate.toLocaleString() : "—"}</td>}
                     {show("lead_time") && <td className="px-3 py-2 text-right tabular-nums">{r.lead_time != null ? `${r.lead_time}d` : "—"}</td>}
                     {show("ordered_qty") && <td className="px-3 py-2 text-right tabular-nums">{r.po_qty != null ? r.po_qty.toLocaleString() : "—"}</td>}
-                    {show("grn_qty") && <td className="px-3 py-2 text-right tabular-nums">{r.grn_qty != null ? r.grn_qty.toLocaleString() : "—"}</td>}
+                    {show("grn_qty") && <td className="px-3 py-2 text-right tabular-nums">{r.inward_qty != null ? r.inward_qty.toLocaleString() : "—"}</td>}
                     {show("pending_qty") && <td className="px-3 py-2 text-right tabular-nums">{r.pending_qty != null ? r.pending_qty.toLocaleString() : "—"}</td>}
                     {show("receipt") && <td className="px-3 py-2"><ReceiptChip status={r.receipt_status} /></td>}
                     {show("escalation") && <td className="px-3 py-2 whitespace-nowrap">{r.escalation_level || "—"}</td>}

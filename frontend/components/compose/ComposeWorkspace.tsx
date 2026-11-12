@@ -15,6 +15,10 @@ export interface ComposeResult {
   ok: boolean;
   sent: boolean;
   status: string;
+  message_id?: number;
+  /** Why the immediate send failed (the send worker retries it). */
+  error?: string | null;
+  will_retry?: boolean;
 }
 
 export interface ComposeAdapter {
@@ -40,9 +44,41 @@ export interface ComposeAdapter {
     recipient_name?: string | null;
   }) => Promise<{ body: string; source: "ai" | "template" }>;
   loadSupplierContacts: () => Promise<SupplierContact[]>;
+  /** Where the sender can follow delivery (staff: Mail Log). Optional. */
+  mailLogHref?: string;
 }
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const EMAIL_RE = /^[^\s@<>,;"]+@[^\s@<>,;"]+\.[^\s@<>,;"]+$/;
+
+/** Split raw text / stored entries into single addresses. Handles pasted lists
+ *  ("a@x.com; b@y.com"), display names ("Name <a@x.com>") and stray separators.
+ *  Returns valid addresses (deduped, case-insensitive) and the invalid leftovers. */
+export function splitEmails(raw: string | string[]): { valid: string[]; invalid: string[] } {
+  const entries = Array.isArray(raw) ? raw : [raw];
+  const valid: string[] = [];
+  const invalid: string[] = [];
+  const seen = new Set<string>();
+  for (const entry of entries) {
+    for (const part of (entry || "").split(/[;,]+/)) {
+      const angled = [...part.matchAll(/<([^<>]+)>/g)].map((m) => m[1]);
+      const tokens = angled.length ? angled : part.split(/\s+/);
+      for (let tok of tokens) {
+        tok = tok.trim().replace(/^mailto:/i, "").replace(/^['"]|['"]$/g, "").replace(/\.$/, "");
+        if (!tok) continue;
+        if (EMAIL_RE.test(tok)) {
+          const key = tok.toLowerCase();
+          if (!seen.has(key)) {
+            seen.add(key);
+            valid.push(tok);
+          }
+        } else {
+          invalid.push(tok);
+        }
+      }
+    }
+  }
+  return { valid, invalid };
+}
 
 export default function ComposeWorkspace({
   adapter,
@@ -68,14 +104,34 @@ export default function ComposeWorkspace({
   const [sending, setSending] = useState<false | "send" | "draft">(false);
   const [drafting, setDrafting] = useState(false);
   const [toast, setToast] = useState<{ tone: "ok" | "err"; msg: string } | null>(null);
+  // Outcome of the last Send — stays on screen until the next send so a failed
+  // delivery is never just a 3-second flash.
+  const [lastSend, setLastSend] = useState<{ ok: boolean; text: string } | null>(null);
+  // Recipients that came from the supplier picker, so choosing another supplier
+  // REPLACES them instead of stacking; addresses typed by hand are kept.
+  const [autoTo, setAutoTo] = useState<string[]>([]);
+  const [autoCc, setAutoCc] = useState<string[]>([]);
 
   useEffect(() => {
-    adapter.loadSupplierContacts().then(setContacts).catch(() => setContacts([]));
+    adapter
+      .loadSupplierContacts()
+      .then((rows) =>
+        // Email Master entries can hold "a@x.com; b@y.com" in one value — split
+        // them so every chip is one deliverable address.
+        setContacts(
+          rows.map((c) => ({
+            ...c,
+            to_emails: splitEmails(c.to_emails ?? []).valid,
+            cc_emails: splitEmails(c.cc_emails ?? []).valid,
+          })),
+        ),
+      )
+      .catch(() => setContacts([]));
   }, [adapter]);
 
   useEffect(() => {
     if (!toast) return;
-    const id = setTimeout(() => setToast(null), 3000);
+    const id = setTimeout(() => setToast(null), toast.tone === "err" ? 8000 : 3000);
     return () => clearTimeout(id);
   }, [toast]);
 
@@ -88,13 +144,19 @@ export default function ComposeWorkspace({
   const pickSupplier = (name: string) => {
     const c = contacts.find((x) => x.supplier_name === name);
     setSupplierName(name || null);
-    if (c) {
-      setTo(dedupe([...to, ...c.to_emails.filter(Boolean)]));
-      setCc(dedupe([...cc, ...c.cc_emails.filter(Boolean)]));
-    }
+    const nextTo = c ? c.to_emails.filter(Boolean) : [];
+    const nextCc = c ? c.cc_emails.filter(Boolean) : [];
+    const lower = (list: string[]) => new Set(list.map((e) => e.toLowerCase()));
+    const prevTo = lower(autoTo);
+    const prevCc = lower(autoCc);
+    // Drop what the previous supplier added, keep manual entries, add the new set.
+    setTo(dedupe([...to.filter((e) => !prevTo.has(e.toLowerCase())), ...nextTo]));
+    setCc(dedupe([...cc.filter((e) => !prevCc.has(e.toLowerCase())), ...nextCc]));
+    setAutoTo(nextTo);
+    setAutoCc(nextCc);
   };
 
-  const canSend = to.length > 0 && subject.trim() && body.trim() && !sending;
+  const canSend = subject.trim() && body.trim() && !sending;
 
   const runDraft = async () => {
     setDrafting(true);
@@ -134,16 +196,26 @@ export default function ComposeWorkspace({
         send,
       });
       if (send) {
-        setToast({ tone: res.sent ? "ok" : "err", msg: res.sent ? t("Email sent.") : t("Queued ({status}).", { status: res.status }) });
         if (res.sent) {
+          setToast({ tone: "ok", msg: t("Email sent.") });
+          setLastSend({ ok: true, text: t("Email sent to {to}.", { to: to.join(", ") }) });
           setTo([]); setCc([]); setBcc([]); setSubject(""); setBody(""); setInstruction("");
-          setSupplierName(null); setSupplierPoNo("");
+          setSupplierName(null); setSupplierPoNo(""); setAutoTo([]); setAutoCc([]);
+        } else {
+          // Not delivered yet: the mail stays queued and the send worker retries it.
+          const why = res.error ? ` ${t("Reason: {error}", { error: res.error })}` : "";
+          setToast({ tone: "err", msg: t("Not sent yet — queued ({status}).", { status: res.status }) });
+          setLastSend({
+            ok: false,
+            text: `${t("The email was not delivered yet. It is queued and will be retried automatically.")}${why}`,
+          });
         }
       } else {
         setToast({ tone: "ok", msg: t("Saved as draft.") });
       }
     } catch (e) {
       setToast({ tone: "err", msg: (e as Error).message });
+      if (send) setLastSend({ ok: false, text: `${t("The email was not sent.")} ${(e as Error).message}` });
     } finally {
       setSending(false);
     }
@@ -268,6 +340,24 @@ export default function ComposeWorkspace({
           />
         </label>
 
+        {lastSend && (
+          <div
+            role={lastSend.ok ? "status" : "alert"}
+            className={`flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md border px-3 py-2 text-xs ${
+              lastSend.ok
+                ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                : "border-red-200 bg-red-50 text-signal-red"
+            }`}
+          >
+            <span className="min-w-0 flex-1 break-words">{lastSend.text}</span>
+            {!lastSend.ok && adapter.mailLogHref && (
+              <a href={adapter.mailLogHref} className="shrink-0 font-semibold underline">
+                {t("Open Mail Log")}
+              </a>
+            )}
+          </div>
+        )}
+
         <div className="flex items-center justify-between gap-2">
           <span className="text-[11px] text-brand-muted">{t("Delivered as branded HTML via the mail engine.")}</span>
           <div className="flex items-center gap-2">
@@ -307,14 +397,18 @@ function ChipField({
 }) {
   const { t } = useT();
   const [input, setInput] = useState("");
+  const [bad, setBad] = useState(false);
   const listId = useId();
 
   const add = (raw: string) => {
-    const v = raw.trim().replace(/[;,]+$/, "");
-    if (!v) return;
-    if (!EMAIL_RE.test(v)) return; // ignore obviously invalid tokens
-    onChange(dedupe([...values, v]));
-    setInput("");
+    if (!raw.trim()) return;
+    // Accept pasted lists ("a@x.com; b@y.com") and "Name <a@x.com>" forms.
+    const { valid, invalid } = splitEmails(raw);
+    if (valid.length) onChange(dedupe([...values, ...valid]));
+    // Keep anything unparseable in the box (flagged) instead of silently
+    // dropping it — a lost address is how a mail "doesn't go".
+    setInput(invalid.join(" "));
+    setBad(invalid.length > 0);
   };
 
   return (
@@ -322,7 +416,11 @@ function ChipField({
       <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-brand-muted">
         {label} {required && <span className="text-signal-red">*</span>}
       </span>
-      <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-brand-border bg-subtle px-2 py-1.5 focus-within:border-signal-red/40 focus-within:bg-card">
+      <div
+        className={`flex flex-wrap items-center gap-1.5 rounded-lg border bg-subtle px-2 py-1.5 focus-within:border-signal-red/40 focus-within:bg-card ${
+          bad ? "border-signal-red" : "border-brand-border"
+        }`}
+      >
         {values.map((e) => (
           <span key={e} className="inline-flex items-center gap-1 rounded bg-card px-2 py-0.5 text-xs text-brand-dark ring-1 ring-brand-border">
             {e}
@@ -334,7 +432,17 @@ function ChipField({
         <input
           value={input}
           list={listId}
-          onChange={(e) => setInput(e.target.value)}
+          onChange={(e) => {
+            setInput(e.target.value);
+            if (bad) setBad(false);
+          }}
+          onPaste={(e) => {
+            const text = e.clipboardData.getData("text");
+            if (/[;,\s]/.test(text.trim())) {
+              e.preventDefault();
+              add(`${input} ${text}`);
+            }
+          }}
           onKeyDown={(e) => {
             if (e.key === "Enter" || e.key === "," || e.key === ";") {
               e.preventDefault();

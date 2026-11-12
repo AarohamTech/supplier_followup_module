@@ -40,3 +40,9 @@ export const signalDot: Record<string, string> = {
   RED: "bg-red-600",
   BLACK: "bg-gray-900",
 };
+
+/** A quantity with its unit ("12 NOS"), "—" when unknown. */
+export function fmtQtyUom(n?: number | null, uom?: string | null): string {
+  if (n === null || n === undefined) return "—";
+  return `${Number(n).toLocaleString()}${uom ? ` ${uom}` : ""}`;
+}

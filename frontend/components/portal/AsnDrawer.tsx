@@ -16,10 +16,13 @@ export default function AsnDrawer({
   onUpdated,
   staff = false,
   mode,
+  poLabel,
 }: {
   asn: Asn;
   onClose: () => void;
   onUpdated: (asn: Asn) => void;
+  /** Maps the PO counter to the number shown (supplier portal: the vendor ref). */
+  poLabel?: (supplierPoNo: string) => string;
   // staff=true → drive the internal /api/asns endpoints instead of the portal ones.
   staff?: boolean;
   // "eportal" → employee read-only view (own-PO scope): live tracking refresh
@@ -123,7 +126,7 @@ export default function AsnDrawer({
         <div className="flex items-center justify-between border-b border-brand-border bg-card px-5 py-3">
           <div>
             <div className="font-semibold text-brand-dark">{asn.asn_no}</div>
-            <div className="text-xs text-brand-muted">PO {asn.supplier_po_no}</div>
+            <div className="text-xs text-brand-muted">PO {poLabel ? poLabel(asn.supplier_po_no) : asn.supplier_po_no}</div>
           </div>
           <div className="flex items-center gap-2">
             <span className={"badge " + meta.badge}>{t(asn.status_label || meta.label)}</span>

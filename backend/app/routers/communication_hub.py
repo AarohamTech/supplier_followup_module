@@ -11,12 +11,12 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
-from ..core.deps import get_current_user, require_manager, require_writer
+from ..core.deps import get_current_staff, get_current_user, require_manager, require_writer
 from ..database import get_db
 from ..models.user import User
 from ..models.communication_task import (
@@ -52,7 +52,9 @@ from ..services import notification_service as notif
 from ..services import user_service
 from ..services import po_followup_mail_service
 from ..services import task_board_service
+from ..services import task_visibility as task_vis
 from ..services import po_followup_service
+from ..services.po_open_lines import open_line_clause, open_lines
 from ..services.reply_table_parser import parse_reply_table
 
 log = logging.getLogger(__name__)
@@ -292,8 +294,11 @@ def _looks_like_po_draft_echo(body: str | None) -> bool:
 # 1. Dashboard
 # ─────────────────────────────────────────────────────────────────────────────
 @router.get("/dashboard")
-def comm_dashboard(db: Session = Depends(get_db)) -> dict[str, Any]:
-    """Aggregate KPI counts from existing data sources."""
+def comm_dashboard(
+    db: Session = Depends(get_db), viewer: User = Depends(get_current_staff)
+) -> dict[str, Any]:
+    """Aggregate KPI counts from existing data sources. Task counters follow
+    task visibility (admins: all; others: open tasks they are involved in)."""
 
     def _count(model: Any, *conds: Any) -> int:
         stmt = select(func.count(model.id))
@@ -301,15 +306,26 @@ def comm_dashboard(db: Session = Depends(get_db)) -> dict[str, Any]:
             stmt = stmt.where(c)
         return db.execute(stmt).scalar_one()
 
+    def _task_count(*conds: Any) -> int:
+        stmt = select(CommunicationTask)
+        for c in conds:
+            stmt = stmt.where(c)
+        if task_vis.is_task_admin(viewer):
+            return _count(CommunicationTask, *conds)
+        return len(task_vis.filter_visible(db.scalars(task_vis.scope_stmt(stmt, viewer)).all(), viewer))
+
     return {
         "active_suppliers": _count(SupplierMaster, SupplierMaster.is_active.is_(True)),
-        "active_pos": _count(ProcurementRecord),
+        # Open lines only (po_open_lines), same as every other PO count.
+        "active_pos": _count(ProcurementRecord, open_line_clause()),
         "draft_mails": _count(MailHistory, MailHistory.sent_status == "DRAFT"),
         "sent_mails": _count(MailHistory, MailHistory.sent_status != "DRAFT"),
-        "open_tasks": _count(CommunicationTask, CommunicationTask.status != "DONE"),
-        "critical_escalations": _count(CommunicationTask, CommunicationTask.signal == "BLACK"),
-        "delayed_pos": _count(ProcurementRecord, ProcurementRecord.signal.in_(["RED", "BLACK"])),
-        "waiting_supplier": _count(CommunicationTask, CommunicationTask.status == "WAITING_SUPPLIER"),
+        "open_tasks": _task_count(CommunicationTask.status != "DONE"),
+        "critical_escalations": _task_count(CommunicationTask.signal == "BLACK"),
+        "delayed_pos": _count(
+            ProcurementRecord, ProcurementRecord.signal.in_(["RED", "BLACK"]), open_line_clause()
+        ),
+        "waiting_supplier": _task_count(CommunicationTask.status == "WAITING_SUPPLIER"),
         "unread_inbound": _count(
             CommunicationMessage,
             CommunicationMessage.direction == "INCOMING",
@@ -366,9 +382,12 @@ def _build_supplier_entry(
 ) -> dict[str, Any]:
     upper = supplier_name.strip().upper()
 
+    # Open lines only (po_open_lines): closed lines neither count as open POs
+    # nor lift the supplier's signal.
     pos = db.scalars(
         select(ProcurementRecord).where(
-            func.upper(ProcurementRecord.supplier_name) == upper
+            func.upper(ProcurementRecord.supplier_name) == upper,
+            open_line_clause(),
         )
     ).all()
 
@@ -476,6 +495,16 @@ def pos_by_supplier_name(
     return _pos_for_supplier(db, master.id if master else None, supplier_name)
 
 
+def _ack_fields(row: Any) -> dict[str, Any]:
+    """`acknowledged_at` (ISO, UTC) + `acknowledged_via` for a hub PO row."""
+    if row is None:
+        return {"acknowledged_at": None, "acknowledged_via": None}
+    return {
+        "acknowledged_at": row.acknowledged_at.isoformat() + "Z" if row.acknowledged_at else None,
+        "acknowledged_via": row.via,
+    }
+
+
 def _pos_for_supplier(
     db: Session, supplier_id: Optional[int], supplier_name: str
 ) -> list[dict[str, Any]]:
@@ -493,9 +522,31 @@ def _pos_for_supplier(
     ).all()
 
     buckets = po_followup_service.vendor_ref_buckets(records)
+    from ..services import po_ack_service
+
+    acks = po_ack_service.acks_for_supplier(db, supplier_name)
 
     result: list[dict[str, Any]] = []
-    for _key, items in buckets.items():
+    for _key, bucket_items in buckets.items():
+        # Open lines only (po_open_lines). A fully closed PO thread is hidden,
+        # unless the supplier wrote and nobody has read it yet — a reply must
+        # never vanish from the hub. Such a thread is flagged "closed".
+        items = open_lines(bucket_items)
+        po_closed = not items
+        if po_closed:
+            all_counters = sorted({r.supplier_po_no for r in bucket_items if r.supplier_po_no})
+            unread_closed = db.execute(
+                select(func.count(CommunicationMessage.id)).where(
+                    CommunicationMessage.direction == "INCOMING",
+                    CommunicationMessage.read_at.is_(None),
+                    _msg_group_clause(
+                        all_counters, [r.id for r in bucket_items], supplier_name, supplier_id
+                    ),
+                )
+            ).scalar_one() or 0
+            if not unread_closed:
+                continue
+            items = list(bucket_items)
         po_no = items[0].supplier_po_no
         group = po_followup_service.build_po_group_payload(
             db, items, supplier_name, po_no
@@ -555,6 +606,7 @@ def _pos_for_supplier(
                 ) or None,
                 "shipment_date": group.get("earliest_due_date"),
                 "signal": signal,
+                "closed": po_closed,
                 "risk_level": _RISK_LEVEL.get(signal, "MEDIUM"),
                 "mail_count": mail_count,
                 "task_count": open_task_count,
@@ -569,6 +621,8 @@ def _pos_for_supplier(
                 "material_count": group["material_count"],
                 "materials": group["materials"],
                 "procurement_record_ids": record_ids,
+                # Supplier PO acknowledgement (link / portal), if any.
+                **_ack_fields(acks.get(po_ack_service.po_key(po_no, group.get("po_ref")))),
             }
         )
 
@@ -1256,9 +1310,11 @@ def get_hub_tasks(
     procurement_record_id: Optional[int] = None,
     supplier_po_no: Optional[str] = None,
     db: Session = Depends(get_db),
+    viewer: User = Depends(get_current_staff),
 ) -> dict[str, list[dict[str, Any]]]:
-    """Return communication tasks for the given context, grouped by status."""
-    stmt = select(CommunicationTask)
+    """Return communication tasks for the given context, grouped by status.
+    Only tasks `viewer` may see (admins: all; others: open + involved)."""
+    stmt = task_vis.scope_stmt(select(CommunicationTask), viewer)
     if supplier_id is not None:
         stmt = stmt.where(CommunicationTask.supplier_id == supplier_id)
     if procurement_record_id is not None:
@@ -1266,8 +1322,13 @@ def get_hub_tasks(
     if supplier_po_no:
         stmt = stmt.where(CommunicationTask.supplier_po_no == supplier_po_no)
 
-    all_tasks = db.scalars(stmt.order_by(CommunicationTask.created_at.desc())).all()
+    all_tasks = task_vis.filter_visible(
+        db.scalars(stmt.order_by(CommunicationTask.created_at.desc())).all(), viewer
+    )
+    return group_tasks(all_tasks)
 
+
+def group_tasks(all_tasks: list[CommunicationTask]) -> dict[str, list[dict[str, Any]]]:
     grouped: dict[str, list[dict[str, Any]]] = {
         "todo": [],
         "waiting_supplier": [],
@@ -1298,8 +1359,13 @@ def _task_dict(t: CommunicationTask) -> dict[str, Any]:
         "supplier_po_no": t.supplier_po_no,
         "procurement_record_id": t.procurement_record_id,
         "linked_mail_id": t.linked_mail_id,
+        "source_message_id": t.source_message_id,
+        "task_source": t.task_source,
         "assigned_to": t.assigned_to,
+        "assigned_to_user_id": t.assigned_to_user_id,
         "assigned_by": t.assigned_by,
+        "assigned_by_user_id": t.assigned_by_user_id,
+        "created_by_user_id": t.created_by_user_id,
         "watchers": t.watchers or [],
         "priority": t.priority,
         "status": t.status,
@@ -1319,17 +1385,20 @@ def _task_dict(t: CommunicationTask) -> dict[str, Any]:
 # ─────────────────────────────────────────────────────────────────────────────
 @router.post("/tasks", status_code=201)
 def create_hub_task(
-    payload: CommunicationTaskCreate, db: Session = Depends(get_db)
+    payload: CommunicationTaskCreate,
+    db: Session = Depends(get_db),
+    actor: User = Depends(get_current_staff),
+    background_tasks: BackgroundTasks = None,  # type: ignore[assignment]
 ) -> dict[str, Any]:
-    """Create a communication task. Only writes to communication_tasks table."""
-    _validate_enum("priority", payload.priority or "MEDIUM", TASK_PRIORITIES)
-    _validate_enum("status", payload.status or "TODO", task_board_service.valid_status_keys(db))
-    _validate_enum("signal", payload.signal or "YELLOW", TASK_SIGNALS)
+    """Create a task from the hub (e.g. "Assign task from this mail").
 
-    row = CommunicationTask(**payload.model_dump())
-    db.add(row)
-    db.commit()
-    db.refresh(row)
+    Delegates to the shared Task Manager create so the creator / assigner are
+    stamped (task visibility), the activity log is written, the source mail
+    (`source_message_id`) is linked, and the involved people are notified
+    after the response."""
+    from . import communication as comm
+
+    row = comm.create_task(payload=payload, db=db, actor=actor, background_tasks=background_tasks)
     return _task_dict(row)
 
 
@@ -1341,30 +1410,17 @@ def update_hub_task(
     task_id: int,
     payload: CommunicationTaskUpdate,
     db: Session = Depends(get_db),
+    viewer: User = Depends(get_current_staff),
+    background_tasks: BackgroundTasks = None,  # type: ignore[assignment]
 ) -> dict[str, Any]:
-    """Update a communication task. Only touches communication_tasks table."""
-    row = db.get(CommunicationTask, task_id)
-    if not row:
-        raise HTTPException(404, "Task not found")
+    """Update a task from the hub (e.g. close/reopen). Delegates to the shared
+    Task Manager update: visibility check, DONE/closed_at rules, activity log
+    and involved-people notifications stay identical on every surface."""
+    from . import communication as comm
 
-    data = payload.model_dump(exclude_unset=True)
-    if "priority" in data:
-        _validate_enum("priority", data["priority"], TASK_PRIORITIES)
-    if "status" in data:
-        _validate_enum("status", data["status"], task_board_service.valid_status_keys(db))
-    if "signal" in data:
-        _validate_enum("signal", data["signal"], TASK_SIGNALS)
-
-    for key, value in data.items():
-        setattr(row, key, value)
-
-    if data.get("status") == "DONE" and not row.closed_at:
-        row.closed_at = datetime.utcnow()
-    elif "status" in data and data["status"] != "DONE":
-        row.closed_at = None
-
-    db.commit()
-    db.refresh(row)
+    row = comm.update_task(
+        task_id=task_id, payload=payload, db=db, actor=viewer, background_tasks=background_tasks
+    )
     return _task_dict(row)
 
 

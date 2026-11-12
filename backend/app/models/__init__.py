@@ -14,6 +14,7 @@ from .mail_parse_rule import MailParseRule
 from .mail_template import MailTemplate
 from .message_attachment import MessageAttachment
 from .notification import Notification
+from .po_acknowledgement import PoAcknowledgement
 from .procurement import ProcurementRecord
 from .status_change_log import StatusChangeLog
 from .supplier import SupplierMaster
@@ -44,6 +45,7 @@ __all__ = [
     "MailTemplate",
     "MessageAttachment",
     "Notification",
+    "PoAcknowledgement",
     "ProcurementRecord",
     "StatusChangeLog",
     "SupplierAssignment",

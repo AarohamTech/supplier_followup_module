@@ -1,6 +1,7 @@
 // Centralized API client and typed helpers.
 // Calls go through Next.js rewrites (/api/* → backend /api/*).
 import type {
+  PoAckStatus,
   MailLogResponse,
   AttachmentMeta,
   SentFeedItem,
@@ -109,6 +110,7 @@ import type {
   MailSendWindow,
   TaskBoardColumn,
   TaskAttachment,
+  TaskSourceMessage,
 } from "./types";
 import { getToken, setToken, LOGIN_PATH } from "./auth-token";
 
@@ -142,7 +144,12 @@ async function http<T>(path: string, init?: RequestInit): Promise<T> {
   if (res.status === 401) {
     // Session expired or missing → drop token and bounce to login.
     setToken(null);
-    if (typeof window !== "undefined" && window.location.pathname !== LOGIN_PATH) {
+    if (
+      typeof window !== "undefined" &&
+      window.location.pathname !== LOGIN_PATH &&
+      // Open pages (PO acknowledgement link) must never bounce to sign-in.
+      !window.location.pathname.startsWith("/po-ack/")
+    ) {
       window.location.href = LOGIN_PATH;
       // Suppress the error toast while the redirect navigation is in flight.
       return new Promise<T>(() => {});
@@ -391,6 +398,9 @@ export const api = {
     const qs = q.toString();
     return http<CommunicationTask[]>(`/api/communication/tasks${qs ? `?${qs}` : ""}`);
   },
+
+  // One task by id (404 when the caller may not see it).
+  getTask: (id: number) => http<CommunicationTask>(`/api/communication/tasks/${id}`),
 
   createTask: (body: CommunicationTaskCreate) =>
     http<CommunicationTask>("/api/communication/tasks", {
@@ -876,6 +886,11 @@ export const api = {
   taskAnalytics: () => http<TaskAnalytics>("/api/communication/analytics"),
 
   taskAnalyticsExportUrl: () => `/api/communication/analytics/export`,
+  // "My tasks" .xlsx (tasks the caller created / is assigned / watches).
+  myTasksExportUrl: () => "/api/tasks/export/mine",
+  // Source mail block (subject/sender/date/excerpt + attachments) on a task.
+  taskSourceMessage: (taskId: number) =>
+    http<{ source: TaskSourceMessage | null }>(`/api/tasks/${taskId}/source-message`),
 
   // ─── Auth ─────────────────────────────────────────────────────────────
   login: (identifier: string, password: string, company?: string) => {
@@ -1096,6 +1111,11 @@ export const api = {
     }),
   portalPoTasks: (supplierPoNo: string) =>
     http<PortalTask[]>(`/api/portal/pos/${encodeURIComponent(supplierPoNo)}/tasks`),
+  // PO acknowledgement from the supplier portal PO page (same service as the mail link).
+  portalPoAckStatus: (supplierPoNo: string) =>
+    http<PoAckStatus>(`/api/portal/po-ack/${encodeURIComponent(supplierPoNo)}`),
+  portalPoAck: (supplierPoNo: string) =>
+    http<PoAckStatus>(`/api/portal/po-ack/${encodeURIComponent(supplierPoNo)}`, { method: "POST" }),
   portalEscalate: (supplierPoNo: string, reason?: string | null) =>
     http<{ ok: boolean; already_escalated: boolean; task_id: number }>(
       `/api/portal/pos/${encodeURIComponent(supplierPoNo)}/escalate`,
@@ -1327,6 +1347,9 @@ export const api = {
     body.append("file", file);
     return http<TaskAttachment>(`/api/eportal/tasks/${id}/attachments`, { method: "POST", body });
   },
+  eportalMyTasksExportUrl: () => "/api/eportal/tasks/export/mine",
+  eportalTaskSourceMessage: (id: number) =>
+    http<{ source: TaskSourceMessage | null }>(`/api/eportal/tasks/${id}/source-message`),
   eportalDeleteTaskAttachment: (id: number, attachmentId: number) =>
     http<void>(`/api/eportal/tasks/${id}/attachments/${attachmentId}`, { method: "DELETE" }),
   eportalAddTaskComment: (id: number, comment: string) =>
@@ -1562,11 +1585,45 @@ export const api = {
       "/api/employee-accounts",
       { method: "POST", body: JSON.stringify(body) },
     ),
-  updateEmployeeLogin: (userId: number, body: { email?: string; full_name?: string | null }) =>
+  updateEmployeeLogin: (
+    userId: number,
+    body: {
+      email?: string;
+      full_name?: string | null;
+      can_manage_supplier_assignments?: boolean;
+      can_manage_email_master?: boolean;
+    },
+  ) =>
     http<AuthUser>(`/api/employee-accounts/${userId}`, {
       method: "PATCH",
       body: JSON.stringify(body),
     }),
+
+  // ── Employee portal: Supplier Assignment + Email Master (per-employee flags) ──
+  eportalManageSupplierAssignments: (params: { search?: string; page?: number; size?: number } = {}) => {
+    const q = new URLSearchParams();
+    if (params.search) q.set("search", params.search);
+    if (params.page) q.set("page", String(params.page));
+    if (params.size) q.set("size", String(params.size));
+    const qs = q.toString();
+    return http<{ suppliers: SupplierAssignmentRow[]; total: number; page: number; size: number }>(
+      `/api/eportal/manage/supplier-assignments${qs ? `?${qs}` : ""}`,
+    );
+  },
+  eportalManageAssignableUsers: () =>
+    http<{ users: AssignableUser[] }>("/api/eportal/manage/supplier-assignments/assignable-users"),
+  eportalManageSetAssignees: (supplierId: number, user_ids: number[]) =>
+    http<SupplierAssignmentRow>(`/api/eportal/manage/supplier-assignments/${supplierId}`, {
+      method: "PUT",
+      body: JSON.stringify({ user_ids }),
+    }),
+  eportalManageSuppliers: () =>
+    http<{ id: number; supplier_name: string; is_active: boolean }[]>("/api/eportal/manage/suppliers"),
+  eportalManageSupplierEmails: () => http<SupplierEmail[]>("/api/eportal/manage/supplier-emails"),
+  eportalManageCreateSupplierEmail: (body: Partial<SupplierEmail>) =>
+    http<SupplierEmail>("/api/eportal/manage/supplier-emails", { method: "POST", body: JSON.stringify(body) }),
+  eportalManageUpdateSupplierEmail: (id: number, body: Partial<SupplierEmail>) =>
+    http<SupplierEmail>(`/api/eportal/manage/supplier-emails/${id}`, { method: "PUT", body: JSON.stringify(body) }),
   resetEmployeeLogin: (userId: number) =>
     http<{
       ok: boolean;
@@ -1609,5 +1666,21 @@ export const api = {
   markAllNotificationsRead: () =>
     http<{ ok: boolean; updated: number }>("/api/notifications/read-all", { method: "POST" }),
 };
+
+/** Public PO acknowledgement (signed mail link, no login). Sent WITHOUT the
+ *  session token so a logged-in browser can't change the tenant or trigger the
+ *  401 → login bounce; the company comes from the signed token. */
+export async function publicPoAck(token: string, method: "GET" | "POST" = "POST"): Promise<PoAckStatus> {
+  const res = await fetch(`${API}/api/po-ack/${encodeURIComponent(token)}`, {
+    method,
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    let detail = "";
+    try { detail = (await res.json()).detail || ""; } catch { /* ignore */ }
+    throw new Error(detail || `${res.status} ${res.statusText}`);
+  }
+  return (await res.json()) as PoAckStatus;
+}
 
 export default api;

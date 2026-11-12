@@ -14,6 +14,9 @@ import EmployeeShell from "@/components/eportal/EmployeeShell";
 import PortalChangePassword from "@/components/portal/PortalChangePassword";
 
 const PUBLIC_PATHS = ["/login"];
+// Pages anyone may open, signed in or not, without the app chrome or any
+// redirect (e.g. the PO acknowledgement link a supplier clicks in a mail).
+const OPEN_PREFIXES = ["/po-ack/"];
 
 function FullScreen({ children }: { children: React.ReactNode }) {
   return (
@@ -35,6 +38,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const isPublic = PUBLIC_PATHS.includes(pathname);
+  const isOpen = OPEN_PREFIXES.some((p) => pathname.startsWith(p));
   const isSupplier = !!user && user.supplier_id != null;
   const isEmployee = !!user && user.emp_code != null;
   const inPortal = pathname === "/portal" || pathname.startsWith("/portal/");
@@ -43,7 +47,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   // Redirect rules run after render to keep hooks order stable.
   useEffect(() => {
-    if (loading) return;
+    if (loading || isOpen) return;
     if (!user) {
       if (!isPublic) router.replace("/login");
       return;
@@ -56,11 +60,14 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     if (isSupplier && !inPortal) router.replace("/portal");
     else if (isEmployee && !inEportal) router.replace("/eportal");
     else if (!isSupplier && !isEmployee && (inPortal || inEportal)) router.replace("/");
-  }, [loading, user, isPublic, isSupplier, isEmployee, inPortal, inEportal, home, router]);
+  }, [loading, user, isPublic, isOpen, isSupplier, isEmployee, inPortal, inEportal, home, router]);
 
   useEffect(() => {
     setSidebarOpen(false);
   }, [pathname]);
+
+  // Open pages render bare and never wait on (or react to) the session.
+  if (isOpen) return <>{children}</>;
 
   if (loading) return <FullScreen>Loading...</FullScreen>;
 

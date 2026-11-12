@@ -22,6 +22,8 @@ from ..models.communication_task import CommunicationTask
 from ..models.message_attachment import MessageAttachment
 from ..models.procurement import ProcurementRecord
 from ..services.po_visibility import supplier_visible_clause
+from ..services.po_open_lines import open_line_clause
+from ..services.po_quantities import line_quantities
 from ..models.supplier import SupplierMaster
 from ..models.supplier_material_commitment import SupplierMaterialCommitment
 from ..models.user import User
@@ -72,7 +74,7 @@ def _po_records(db: Session, supplier_name: str | None) -> list[ProcurementRecor
     return list(
         db.scalars(
             select(ProcurementRecord).where(
-                ProcurementRecord.delisted_at.is_(None),
+                open_line_clause(),
                 supplier_visible_clause(),
                 func.upper(ProcurementRecord.supplier_name) == supplier_name.upper()
             )
@@ -227,15 +229,32 @@ def po_materials(
     name = _supplier_name(db, user)
     if not name:
         return []
-    rows = db.scalars(
-        select(ProcurementRecord).where(
-            supplier_visible_clause(),
-            func.upper(ProcurementRecord.supplier_name) == name.upper(),
-            ProcurementRecord.supplier_po_no == supplier_po_no,
-        )
-    ).all()
+    rows = _po_lines(db, name, supplier_po_no)
     commits = _commitments_by_material(db, supplier_po_no, name)
     return [_material_out(r, commits.get((r.material_name or "").strip().upper())) for r in rows]
+
+
+def _po_lines(db: Session, supplier_name: str | None, supplier_po_no: str) -> list[ProcurementRecord]:
+    """The material lines of one of this supplier's POs.
+
+    Same line set as the staff PO detail (po_view_service.po_detail) and this
+    portal's own PO list: delisted lines — closed or fully received on the CRM
+    side — drop out. Before, the supplier still saw received lines the buyer no
+    longer saw, so the two sides disagreed on a PO's lines and quantities."""
+    if not supplier_name:
+        return []
+    return list(
+        db.scalars(
+            select(ProcurementRecord)
+            .where(
+                supplier_visible_clause(),
+                func.upper(ProcurementRecord.supplier_name) == supplier_name.upper(),
+                ProcurementRecord.supplier_po_no == supplier_po_no,
+                open_line_clause(),
+            )
+            .order_by(ProcurementRecord.shipment_date, ProcurementRecord.id)
+        ).all()
+    )
 
 
 def _as_dt(d) -> datetime | None:
@@ -275,6 +294,8 @@ def _material_out(r: ProcurementRecord, c: SupplierMaterialCommitment | None) ->
         material_name=r.material_name,
         uom=r.uom,
         qty=float(r.qty) if r.qty is not None else None,
+        **line_quantities(r),
+        receipt_status=r.receipt_status,
         po_date=_as_dt(r.supplier_date or r.po_date),
         shipment_date=r.shipment_date,
         signal=r.signal,
@@ -345,13 +366,7 @@ def submit_commitments(
             supplier_po_no=supplier_po_no,
         )
     commits = _commitments_by_material(db, supplier_po_no, name)
-    rows = db.scalars(
-        select(ProcurementRecord).where(
-            supplier_visible_clause(),
-            func.upper(ProcurementRecord.supplier_name) == (name or "").upper(),
-            ProcurementRecord.supplier_po_no == supplier_po_no,
-        )
-    ).all()
+    rows = _po_lines(db, name, supplier_po_no)
     return [_material_out(r, commits.get((r.material_name or "").strip().upper())) for r in rows]
 
 
@@ -660,7 +675,10 @@ def post_po_message(
     if rec is None:
         raise HTTPException(404, "PO not found for your account")
 
-    subject = (payload.subject or "").strip() or f"Supplier message · PO {supplier_po_no}"
+    # The supplier reads this subject in their own thread: show the vendor PO
+    # number they know, not the internal counter (the routing key).
+    po_display = rec.po_short_ref or supplier_po_no
+    subject = (payload.subject or "").strip() or f"Supplier message · PO {po_display}"
     # Stored as an INCOMING message → shows in the staff Communication Hub thread
     # and increments their unread badge (read_at left NULL).
     cm = msg_service.create_message(
@@ -685,7 +703,7 @@ def post_po_message(
         notif.notify_po_owners, db,
         type="SUPPLIER_MESSAGE",
         title=f"New message from {name or 'a supplier'}",
-        body=f"PO {supplier_po_no}: {payload.body.strip()[:140]}",
+        body=f"PO {po_display}: {payload.body.strip()[:140]}",
         link="/mail-history",
         supplier_id=user.supplier_id,
         supplier_po_no=supplier_po_no,
@@ -770,6 +788,9 @@ def escalate_po(
     if rec is None:
         raise HTTPException(404, "PO not found for your account")
     reason = (payload.reason or "").strip()
+    # Texts the supplier reads (task title, thread subject) carry the vendor PO
+    # number they know; the counter stays the key.
+    po_display = rec.po_short_ref or supplier_po_no
 
     # Idempotence: one open supplier-raised escalation per PO.
     existing = db.scalar(
@@ -808,7 +829,7 @@ def escalate_po(
         supplier_name=name,
         supplier_po_no=supplier_po_no,
         procurement_record_id=rec.id,
-        title=f"Supplier escalation: PO #{supplier_po_no}",
+        title=f"Supplier escalation: PO {po_display}",
         description=reason or "The supplier escalated this PO from the portal.",
         task_source="ESCALATION",
         priority="HIGH",
@@ -829,7 +850,7 @@ def escalate_po(
         supplier_name=name,
         procurement_record_id=rec.id,
         supplier_po_no=supplier_po_no,
-        subject=f"Escalation raised · PO {supplier_po_no}",
+        subject=f"Escalation raised · PO {po_display}",
         body=reason or "The supplier escalated this purchase order from the portal.",
         sender_email=user.email,
         mail_type="PORTAL_ESCALATION",
@@ -842,7 +863,7 @@ def escalate_po(
     notif.safe(
         notif.notify_po_owners, db,
         type="SUPPLIER_ESCALATION",
-        title=f"Escalation: {name or 'a supplier'} raised PO {supplier_po_no}",
+        title=f"Escalation: {name or 'a supplier'} raised PO {po_display}",
         body=(reason[:140] if reason else "Escalation raised from the supplier portal."),
         link="/tasks",
         supplier_id=user.supplier_id,

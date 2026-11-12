@@ -15,7 +15,7 @@ from .core.deps import (
     require_writer_for_writes,
 )
 from .core.logging import setup_logging
-from .core.schema_evolve import drop_cross_company_fks, ensure_columns
+from .core.schema_evolve import drop_cross_company_fks, ensure_columns, relax_users_email_unique
 from .core.tenant_middleware import TenantMiddleware
 from .database import Base, engine, ensure_schema, SessionLocal
 from .routers import (
@@ -41,12 +41,14 @@ from .routers import (
     eportal_hub,
     eportal_asns,
     eportal_mails,
+    eportal_manage,
     notifications,
     reports,
     supplier_accounts,
     employee_accounts,
     supplier_assignments,
     po_view,
+    po_ack,
     bridge,
     settings as settings_router,
 )
@@ -73,6 +75,7 @@ async def lifespan(app: FastAPI):
             if changes:
                 log.info("Schema evolve added columns: %s", ", ".join(changes))
             drop_cross_company_fks(engine)
+            relax_users_email_unique(engine)
         except Exception:  # noqa: BLE001
             log.exception("Schema evolve failed (continuing)")
         # pgvector knowledge store (Postgres only; no-op + safe on SQLite).
@@ -149,6 +152,11 @@ app.add_middleware(TenantMiddleware)
 app.include_router(auth.router)
 app.include_router(webhooks.router)
 app.include_router(bridge.router)
+# PO acknowledgement link from follow-up mails: public, guarded by the HMAC-signed
+# token in the URL (company schema comes from the token, not a session).
+app.include_router(po_ack.public_router)
+# Supplier portal "Acknowledge PO" button (supplier session required per route).
+app.include_router(po_ack.portal_router, dependencies=[Depends(get_current_supplier)])
 
 # Admin-only user management (guards itself at the router level).
 app.include_router(users.router)
@@ -202,6 +210,9 @@ app.include_router(eportal_hub.router, dependencies=[Depends(get_current_employe
 # Employee-scoped shipments + customer mails (own-PO / allocated-to-me only).
 app.include_router(eportal_asns.router, dependencies=[Depends(get_current_employee)])
 app.include_router(eportal_mails.router, dependencies=[Depends(get_current_employee)])
+# Supplier Assignment + Email Master for employees; each route also checks the
+# employee's per-screen permission flag (granted by default).
+app.include_router(eportal_manage.router, dependencies=[Depends(get_current_employee)])
 
 # In-app notifications: available to ANY logged-in user (staff or supplier).
 app.include_router(notifications.router, dependencies=[Depends(get_current_user)])

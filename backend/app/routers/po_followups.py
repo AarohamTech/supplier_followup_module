@@ -25,6 +25,7 @@ def list_groups(
     search: Optional[str] = Query(None),
     page: int = Query(1, ge=1),
     size: int = Query(25, ge=1, le=200),
+    include_closed: bool = Query(False, description="Also show closed PO lines"),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     return po_followup_service.list_po_groups(
@@ -35,6 +36,7 @@ def list_groups(
         search=search,
         page=page,
         size=size,
+        include_closed=include_closed,
     )
 
 
@@ -42,9 +44,12 @@ def list_groups(
 def group_by_key(
     supplier_name: str = Query(...),
     supplier_po_no: str = Query(...),
+    include_closed: bool = Query(False),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    group = po_followup_service.get_po_group(db, supplier_name, supplier_po_no)
+    group = po_followup_service.get_po_group(
+        db, supplier_name, supplier_po_no, include_closed=include_closed
+    )
     if not group:
         raise HTTPException(404, "PO group not found")
     return group

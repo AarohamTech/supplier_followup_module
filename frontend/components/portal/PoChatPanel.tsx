@@ -6,7 +6,9 @@ import { ArrowLeft, MessageSquare, Send } from "lucide-react";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { fmtDate } from "@/lib/format";
-import { signalBadge } from "@/lib/asn";
+import { supplierSignalChip } from "@/lib/messageLabels";
+import { PlainTextWithTables } from "@/lib/plainTextTables";
+import { supplierPoNo } from "@/lib/portalPoRefs";
 import type { PortalMessage, PortalPo } from "@/lib/types";
 
 function timeLabel(at?: string | null): string {
@@ -91,6 +93,9 @@ export default function PoChatPanel({
     );
   }
 
+  // Supplier-friendly status (BLACK → "Overdue", …), not the raw signal.
+  const signalChip = supplierSignalChip(po.overall_signal);
+
   const send = async () => {
     const text = draft.trim();
     if (!text) return;
@@ -118,10 +123,10 @@ export default function PoChatPanel({
           </button>
         )}
         <div className="min-w-0">
-          <div className="font-semibold text-brand-dark">PO {po.supplier_po_no}</div>
+          <div className="font-semibold text-brand-dark">PO {supplierPoNo(po)}</div>
           <div className="flex items-center gap-2 text-xs text-brand-muted">
             <span>{po.material_count} material{po.material_count === 1 ? "" : "s"}</span>
-            {po.overall_signal && <span className={"badge " + signalBadge(po.overall_signal)}>{po.overall_signal}</span>}
+            {signalChip && <span className={"badge " + signalChip.cls}>{signalChip.label}</span>}
             {po.completed && <span className="badge badge-track">Completed</span>}
           </div>
         </div>
@@ -152,7 +157,7 @@ export default function PoChatPanel({
                   {m.subject}
                 </div>
               )}
-              <div className="whitespace-pre-wrap break-words">{m.body}</div>
+              <PlainTextWithTables text={m.body} />
               <div className={cn("mt-1 text-[10px]", m.mine ? "text-white/70" : "text-brand-muted")}>
                 {timeLabel(m.at)}
               </div>

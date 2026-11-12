@@ -143,6 +143,8 @@ def create_task_from_mail(
     assigned_to: str | None,
     priority: str | None,
     due_date: datetime | None,
+    created_by_user_id: int | None = None,
+    created_by_name: str | None = None,
 ) -> tuple[CustomerMail | None, CommunicationTask | None]:
     mail = get_mail(db, mail_id)
     if mail is None:
@@ -159,6 +161,11 @@ def create_task_from_mail(
         customer_mail_id=mail.id,
         due_date=due_date,
         watchers=[],
+        # Creator stamp → the task stays visible to whoever raised it
+        # (non-admins only see tasks they are involved in).
+        created_by_user_id=created_by_user_id,
+        assigned_by_user_id=created_by_user_id,
+        assigned_by=created_by_name,
     )
     db.add(task)
     db.flush()

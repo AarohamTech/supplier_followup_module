@@ -1,9 +1,9 @@
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Body, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
 from ..core.deps import get_current_staff, require_admin
@@ -15,6 +15,7 @@ from ..models.communication_task import (
     TASK_STATUSES,
     CommunicationTask,
 )
+from ..models.communication_message import CommunicationMessage
 from ..models.message_attachment import MessageAttachment
 from ..models.user import User
 from ..schemas.communication_task import (
@@ -29,6 +30,8 @@ from ..services import task_analytics_service as analytics
 from ..services import task_assignment_service as assign
 from ..services import task_board_service as board
 from ..services import task_collaboration_service as collab
+from ..services import task_events
+from ..services import task_visibility as vis
 
 router = APIRouter(prefix="/api/communication", tags=["communication"])
 tasks_router = APIRouter(prefix="/api/tasks", tags=["tasks"])
@@ -48,8 +51,9 @@ def list_tasks(
     task_source: Optional[str] = None,
     customer_mail_id: Optional[int] = None,
     limit: int = Query(200, ge=1, le=1000),
+    viewer: User = Depends(get_current_staff),
 ):
-    stmt = select(CommunicationTask)
+    stmt = vis.scope_stmt(select(CommunicationTask), viewer)
     if supplier_name:
         stmt = stmt.where(CommunicationTask.supplier_name.ilike(f"%{supplier_name}%"))
     if supplier_po_no:
@@ -64,15 +68,17 @@ def list_tasks(
         stmt = stmt.where(CommunicationTask.task_source == task_source)
     if customer_mail_id is not None:
         stmt = stmt.where(CommunicationTask.customer_mail_id == customer_mail_id)
-    return db.scalars(stmt.order_by(CommunicationTask.created_at.desc()).limit(limit)).all()
+    rows = db.scalars(stmt.order_by(CommunicationTask.created_at.desc()).limit(limit)).all()
+    return vis.filter_visible(rows, viewer)
 
 
 @router.get("/tasks/{task_id}", response_model=CommunicationTaskOut)
-def get_task(task_id: int, db: Session = Depends(get_db)):
-    row = db.get(CommunicationTask, task_id)
-    if not row:
-        raise HTTPException(404, "Task not found")
-    return row
+def get_task(
+    task_id: int,
+    db: Session = Depends(get_db),
+    viewer: User = Depends(get_current_staff),
+):
+    return _visible_task_or_404(db, task_id, viewer)
 
 
 @router.get("/assignees")
@@ -93,7 +99,11 @@ def create_task(
     payload: CommunicationTaskCreate,
     db: Session = Depends(get_db),
     actor: User = Depends(get_current_staff),
+    background_tasks: BackgroundTasks = None,  # type: ignore[assignment]
 ):
+    """Create a task. Kept lean on purpose (client: "tasks too slow"): one
+    insert + the CREATED activity row in a single commit. Notifications to the
+    involved people are written AFTER the response via BackgroundTasks."""
     _validate_enum("priority", payload.priority, TASK_PRIORITIES)
     _validate_enum("status", payload.status, board.valid_status_keys(db))
     _validate_enum("signal", payload.signal, TASK_SIGNALS)
@@ -110,6 +120,8 @@ def create_task(
         data["assigned_at"] = datetime.utcnow()
     data["assigned_by"] = assign.display_name(actor)
     data["assigned_by_user_id"] = actor.id
+    data["created_by_user_id"] = actor.id
+    _apply_source_message(db, data)
 
     row = CommunicationTask(**data)
     db.add(row)
@@ -124,6 +136,10 @@ def create_task(
     )
     db.commit()
     db.refresh(row)
+    task_events.dispatch(
+        background_tasks, db, row,
+        kind="CREATED", actor_id=actor.id, actor_name=assign.display_name(actor),
+    )
     return row
 
 
@@ -133,10 +149,9 @@ def update_task(
     payload: CommunicationTaskUpdate,
     db: Session = Depends(get_db),
     actor: User = Depends(get_current_staff),
+    background_tasks: BackgroundTasks = None,  # type: ignore[assignment]
 ):
-    row = db.get(CommunicationTask, task_id)
-    if not row:
-        raise HTTPException(404, "Task not found")
+    row = _visible_task_or_404(db, task_id, actor)
 
     data = payload.model_dump(exclude_unset=True)
     if "priority" in data:
@@ -179,6 +194,7 @@ def update_task(
         if key in data and getattr(row, key) != data[key]
     }
 
+    old_watchers = vis.watcher_ids(row)
     for key, value in data.items():
         setattr(row, key, value)
 
@@ -194,6 +210,26 @@ def update_task(
 
     db.commit()
     db.refresh(row)
+
+    # Involved-people notifications, off the request path.
+    if "assigned_to_user_id" in changes:
+        task_events.dispatch(
+            background_tasks, db, row,
+            kind="ASSIGNED", actor_id=actor.id, actor_name=actor_name,
+        )
+    elif "status" in changes:
+        task_events.dispatch(
+            background_tasks, db, row,
+            kind="STATUS", actor_id=actor.id, actor_name=actor_name,
+            ctx={"status": row.status},
+        )
+    new_watchers = vis.watcher_ids(row) - old_watchers
+    if new_watchers and "assigned_to_user_id" not in changes:
+        task_events.dispatch(
+            background_tasks, db, row,
+            kind="WATCHER_ADDED", actor_id=actor.id, actor_name=actor_name,
+            only_ids=sorted(new_watchers),
+        )
 
     # If this task is mirroring a ZanFlow material line, tell ZanFlow. One hook
     # covers the staff board, the employee portal and the supplier portal,
@@ -212,10 +248,12 @@ def update_task(
 
 
 @router.delete("/tasks/{task_id}", status_code=204)
-def delete_task(task_id: int, db: Session = Depends(get_db)):
-    row = db.get(CommunicationTask, task_id)
-    if not row:
-        raise HTTPException(404, "Task not found")
+def delete_task(
+    task_id: int,
+    db: Session = Depends(get_db),
+    viewer: User = Depends(get_current_staff),
+):
+    row = _visible_task_or_404(db, task_id, viewer)
     db.delete(row)
     db.commit()
 
@@ -223,52 +261,91 @@ def delete_task(task_id: int, db: Session = Depends(get_db)):
 # ──────────────────────────────────────────────────────────────────────────────
 # Dashboard counters for KPI strip (legacy + unified)
 # ──────────────────────────────────────────────────────────────────────────────
-def _task_counts(db: Session) -> dict[str, int]:
-    def count_where(*conds):
-        stmt = select(func.count(CommunicationTask.id))
-        for c in conds:
-            stmt = stmt.where(c)
-        return int(db.execute(stmt).scalar_one() or 0)
+def _task_counts(db: Session, viewer: Optional[User] = None) -> dict[str, int]:
+    """KPI strip counters in ONE aggregate query (was 12 round trips).
+
+    Scoped exactly like the task list: admins count everything; anyone else
+    counts only the open tasks they are involved in (so "done" is 0 for them —
+    completed tasks are admin-only)."""
+    T = CommunicationTask
+    if viewer is not None and not vis.is_task_admin(viewer):
+        # Watcher matching needs an exact Python pass, so count the scoped rows.
+        rows = vis.filter_visible(db.scalars(vis.scope_stmt(select(T), viewer)).all(), viewer)
+        return count_task_rows(rows)
 
     now = datetime.utcnow()
+    start_of_day = datetime.combine(now.date(), datetime.min.time())
+    end_of_day = datetime.combine(now.date(), datetime.max.time())
+    not_done = T.status != "DONE"
+    has_due = T.due_date.isnot(None)
+
+    def n(cond):
+        return func.sum(case((cond, 1), else_=0))
+
+    row = db.execute(
+        select(
+            func.count(T.id),
+            n(T.status == "TODO"),
+            n(T.status == "WAITING_SUPPLIER"),
+            n(T.status == "IN_PROGRESS"),
+            n(T.status == "DONE"),
+            n(not_done & has_due & (T.due_date < now)),
+            n(not_done & has_due & (T.due_date >= start_of_day) & (T.due_date <= end_of_day)),
+            n(T.signal == "BLACK"),
+            n(T.task_source == "SUPPLIER"),
+            n(T.task_source == "CUSTOMER"),
+            n(T.task_source == "INTERNAL"),
+            n(T.task_source == "ESCALATION"),
+        )
+    ).one()
+    return {k: int(v or 0) for k, v in zip(_COUNT_KEYS, row)}
+
+
+_COUNT_KEYS = (
+    "total_tasks", "todo", "waiting", "in_progress", "done", "overdue", "due_today",
+    "critical", "supplier_tasks", "customer_tasks", "internal_tasks", "escalation_tasks",
+)
+
+
+def count_task_rows(rows: list[CommunicationTask]) -> dict[str, int]:
+    """Same counters as `_task_counts`, over already-loaded (scoped) rows."""
+    now = datetime.utcnow()
     today = now.date()
+
+    def c(pred) -> int:
+        return sum(1 for t in rows if pred(t))
+
     return {
-        "total_tasks": count_where(),
-        "todo": count_where(CommunicationTask.status == "TODO"),
-        "waiting": count_where(CommunicationTask.status == "WAITING_SUPPLIER"),
-        "in_progress": count_where(CommunicationTask.status == "IN_PROGRESS"),
-        "done": count_where(CommunicationTask.status == "DONE"),
-        "overdue": count_where(
-            CommunicationTask.status != "DONE",
-            CommunicationTask.due_date.isnot(None),
-            CommunicationTask.due_date < now,
+        "total_tasks": len(rows),
+        "todo": c(lambda t: t.status == "TODO"),
+        "waiting": c(lambda t: t.status == "WAITING_SUPPLIER"),
+        "in_progress": c(lambda t: t.status == "IN_PROGRESS"),
+        "done": c(lambda t: t.status == "DONE"),
+        "overdue": c(lambda t: t.status != "DONE" and t.due_date is not None and t.due_date < now),
+        "due_today": c(
+            lambda t: t.status != "DONE" and t.due_date is not None and t.due_date.date() == today
         ),
-        "due_today": count_where(
-            CommunicationTask.status != "DONE",
-            CommunicationTask.due_date.isnot(None),
-            func.date(CommunicationTask.due_date) == today,
-        ),
-        "critical": count_where(CommunicationTask.signal == "BLACK"),
-        "supplier_tasks": count_where(CommunicationTask.task_source == "SUPPLIER"),
-        "customer_tasks": count_where(CommunicationTask.task_source == "CUSTOMER"),
-        "internal_tasks": count_where(CommunicationTask.task_source == "INTERNAL"),
-        "escalation_tasks": count_where(CommunicationTask.task_source == "ESCALATION"),
+        "critical": c(lambda t: t.signal == "BLACK"),
+        "supplier_tasks": c(lambda t: t.task_source == "SUPPLIER"),
+        "customer_tasks": c(lambda t: t.task_source == "CUSTOMER"),
+        "internal_tasks": c(lambda t: t.task_source == "INTERNAL"),
+        "escalation_tasks": c(lambda t: t.task_source == "ESCALATION"),
     }
 
 
 @router.get("/dashboard")
-def dashboard(db: Session = Depends(get_db)):
-    return _task_counts(db)
+def dashboard(db: Session = Depends(get_db), viewer: User = Depends(get_current_staff)):
+    return _task_counts(db, viewer)
 
 
 @router.get("/analytics")
-def task_analytics_summary(db: Session = Depends(get_db)):
-    return analytics.compute_analytics(db)
+def task_analytics_summary(db: Session = Depends(get_db), viewer: User = Depends(get_current_staff)):
+    return analytics.compute_analytics(db, viewer=viewer)
 
 
 @router.get("/analytics/export")
-def task_analytics_export(db: Session = Depends(get_db)):
-    data = analytics.export_workbook(db)
+def task_analytics_export(db: Session = Depends(get_db), viewer: User = Depends(get_current_staff)):
+    data = analytics.export_workbook(db, viewer=viewer)
     headers = {"Content-Disposition": 'attachment; filename="task-analytics.xlsx"'}
     return StreamingResponse(
         iter([data]),
@@ -279,8 +356,16 @@ def task_analytics_export(db: Session = Depends(get_db)):
 
 # Unified task management endpoints under /api/tasks/...
 @tasks_router.get("/dashboard")
-def tasks_dashboard(db: Session = Depends(get_db)):
-    return _task_counts(db)
+def tasks_dashboard(db: Session = Depends(get_db), viewer: User = Depends(get_current_staff)):
+    return _task_counts(db, viewer)
+
+
+@tasks_router.get("/export/mine")
+def export_my_tasks(db: Session = Depends(get_db), viewer: User = Depends(get_current_staff)):
+    """"My tasks" as .xlsx — the tasks the caller is involved in (created,
+    assigned to, assigned by, watching). Same visibility as the board: admins
+    also get their completed tasks, everyone else open tasks only."""
+    return my_tasks_xlsx_response(db, viewer)
 
 
 @tasks_router.get("", response_model=list[CommunicationTaskOut])
@@ -294,8 +379,9 @@ def tasks_index(
     customer_mail_id: Optional[int] = None,
     overdue: bool = Query(default=False),
     limit: int = Query(default=200, ge=1, le=1000),
+    viewer: User = Depends(get_current_staff),
 ):
-    stmt = select(CommunicationTask)
+    stmt = vis.scope_stmt(select(CommunicationTask), viewer)
     if task_source:
         stmt = stmt.where(CommunicationTask.task_source == task_source)
     if status:
@@ -315,7 +401,8 @@ def tasks_index(
             CommunicationTask.due_date.isnot(None),
             CommunicationTask.due_date < now,
         )
-    return db.scalars(stmt.order_by(CommunicationTask.created_at.desc()).limit(limit)).all()
+    rows = db.scalars(stmt.order_by(CommunicationTask.created_at.desc()).limit(limit)).all()
+    return vis.filter_visible(rows, viewer)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -416,9 +503,22 @@ def _task_or_404(db: Session, task_id: int) -> CommunicationTask:
     return row
 
 
+def _visible_task_or_404(db: Session, task_id: int, viewer: User) -> CommunicationTask:
+    """The task, if `viewer` may open it (admin, or involved). 404 otherwise —
+    same answer as "does not exist", so ids of other people's tasks don't leak."""
+    row = db.get(CommunicationTask, task_id)
+    if row is None or not vis.can_see(viewer, row):
+        raise HTTPException(404, "Task not found")
+    return row
+
+
 @tasks_router.get("/{task_id}/attachments")
-def task_attachments(task_id: int, db: Session = Depends(get_db)):
-    _task_or_404(db, task_id)
+def task_attachments(
+    task_id: int,
+    db: Session = Depends(get_db),
+    viewer: User = Depends(get_current_staff),
+):
+    _visible_task_or_404(db, task_id, viewer)
     return list_task_attachments(db, task_id)
 
 
@@ -429,7 +529,7 @@ async def upload_task_attachment(
     db: Session = Depends(get_db),
     actor: User = Depends(get_current_staff),
 ):
-    return await add_task_attachment(db, _task_or_404(db, task_id), file, actor)
+    return await add_task_attachment(db, _visible_task_or_404(db, task_id, actor), file, actor)
 
 
 @tasks_router.delete("/{task_id}/attachments/{attachment_id}", status_code=204)
@@ -439,7 +539,167 @@ def delete_task_attachment(
     db: Session = Depends(get_db),
     actor: User = Depends(get_current_staff),
 ):
-    remove_task_attachment(db, _task_or_404(db, task_id), attachment_id, actor)
+    remove_task_attachment(db, _visible_task_or_404(db, task_id, actor), attachment_id, actor)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Source mail context (task assigned from a Communication Hub message)
+# ──────────────────────────────────────────────────────────────────────────────
+_EXCERPT_CHARS = 1500
+
+
+def _apply_source_message(db: Session, data: dict) -> None:
+    """Validate `source_message_id` and fill linkage the message already knows
+    (supplier / PO / record) when the form left it blank. Unknown id → dropped,
+    so a stale client can't break task creation."""
+    mid = data.get("source_message_id")
+    if mid is None:
+        return
+    cm = db.get(CommunicationMessage, mid)
+    if cm is None:
+        data["source_message_id"] = None
+        return
+    for key in ("supplier_id", "supplier_name", "supplier_po_no", "procurement_record_id"):
+        if not data.get(key) and getattr(cm, key, None):
+            data[key] = getattr(cm, key)
+
+
+def source_message_context(db: Session, task: CommunicationTask) -> Optional[dict]:
+    """Subject / sender / date / body excerpt + attachments of the mail the
+    task was assigned from. Attachments are the message's own rows (referenced,
+    not copied), downloadable through the normal attachment endpoints.
+
+    Falls back to the legacy `linked_mail_id` (mail_history, outgoing system
+    mails — no attachments) when there is no hub message."""
+    if task.source_message_id:
+        cm = db.get(CommunicationMessage, task.source_message_id)
+        if cm is not None:
+            body = (cm.body or "").strip()
+            incoming = (cm.direction or "").upper() == "INCOMING"
+            return {
+                "kind": "message",
+                "message_id": cm.id,
+                "direction": cm.direction,
+                "subject": cm.subject,
+                "sender": cm.sender_email if incoming else (cm.sender_email or "H-Connect"),
+                "to": cm.receiver_email or ", ".join(cm.to_emails or []) or None,
+                "supplier_name": cm.supplier_name,
+                "supplier_po_no": cm.supplier_po_no,
+                "date": cm.received_at or cm.sent_at or cm.created_at,
+                "body_excerpt": body[:_EXCERPT_CHARS],
+                "truncated": len(body) > _EXCERPT_CHARS,
+                "attachments": attachment_service.for_messages(db, [cm.id]).get(cm.id, []),
+            }
+    if task.linked_mail_id:
+        from ..models.mail_history import MailHistory
+
+        mh = db.get(MailHistory, task.linked_mail_id)
+        if mh is not None:
+            body = (mh.body or "").strip()
+            return {
+                "kind": "mail_history",
+                "message_id": None,
+                "direction": "OUTGOING",
+                "subject": mh.subject,
+                "sender": "H-Connect",
+                "to": ", ".join(getattr(mh, "to_emails", None) or []) or None,
+                "supplier_name": mh.supplier_name,
+                "supplier_po_no": mh.supplier_po_no,
+                "date": mh.sent_at or mh.created_at,
+                "body_excerpt": body[:_EXCERPT_CHARS],
+                "truncated": len(body) > _EXCERPT_CHARS,
+                "attachments": [],
+            }
+    return None
+
+
+@tasks_router.get("/{task_id}/source-message")
+def task_source_message(
+    task_id: int,
+    db: Session = Depends(get_db),
+    viewer: User = Depends(get_current_staff),
+):
+    """The source mail block for the task detail view ({"source": null} if none)."""
+    task = _visible_task_or_404(db, task_id, viewer)
+    return {"source": source_message_context(db, task)}
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# "My tasks" export (.xlsx, same openpyxl pattern as the workload exports)
+# ──────────────────────────────────────────────────────────────────────────────
+MY_TASK_HEADERS = [
+    "Task ID", "Title", "Status", "Priority", "Signal", "Source", "Supplier", "PO No",
+    "Material", "Assigned To", "Assigned By", "My Role", "Due Date", "Overdue",
+    "Progress %", "Created", "Closed",
+]
+
+
+def my_tasks_rows(db: Session, user: User) -> list[CommunicationTask]:
+    """Tasks `user` is involved in. Admins also get their completed tasks;
+    everyone else open tasks only (completed tasks are admin-only)."""
+    include_done = vis.is_task_admin(user)
+    T = CommunicationTask
+    # Involvement-only for everyone (admins too: this is *my* tasks, not all).
+    stmt = select(T).where(vis.involved_clause(user.id))
+    if not include_done:
+        stmt = stmt.where(T.status != "DONE")
+    rows = [t for t in db.scalars(stmt.order_by(T.due_date.is_(None), T.due_date, T.id)).all()
+            if vis.is_involved(user, t)]
+    return rows
+
+
+def _my_role(user: User, t: CommunicationTask) -> str:
+    roles = []
+    if t.assigned_to_user_id == user.id:
+        roles.append("Assignee")
+    if t.created_by_user_id == user.id or t.assigned_by_user_id == user.id:
+        roles.append("Assigner")
+    if user.id in vis.watcher_ids(t):
+        roles.append("Watcher")
+    return ", ".join(roles)
+
+
+def my_tasks_workbook(db: Session, user: User) -> bytes:
+    import io
+
+    from openpyxl import Workbook
+    from openpyxl.styles import Font
+
+    now = datetime.utcnow()
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "My tasks"
+    ws.append(MY_TASK_HEADERS)
+    for c in ws[1]:
+        c.font = Font(bold=True)
+    for t in my_tasks_rows(db, user):
+        overdue = t.status != "DONE" and t.due_date is not None and t.due_date < now
+        ws.append([
+            t.id, t.title, t.status, t.priority, t.signal, t.task_source,
+            t.supplier_name, t.supplier_po_no, t.material_name,
+            t.assigned_to, t.assigned_by, _my_role(user, t),
+            t.due_date.strftime("%Y-%m-%d %H:%M") if t.due_date else None,
+            "Yes" if overdue else "",
+            t.progress_percent,
+            t.created_at.strftime("%Y-%m-%d %H:%M") if t.created_at else None,
+            t.closed_at.strftime("%Y-%m-%d %H:%M") if t.closed_at else None,
+        ])
+    ws.freeze_panes = "A2"
+    for idx, h in enumerate(MY_TASK_HEADERS, start=1):
+        ws.column_dimensions[ws.cell(row=1, column=idx).column_letter].width = max(len(h) + 2, 12 if idx != 2 else 40)
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def my_tasks_xlsx_response(db: Session, user: User) -> StreamingResponse:
+    data = my_tasks_workbook(db, user)
+    filename = f"my-tasks-{datetime.utcnow().date().isoformat()}.xlsx"
+    return StreamingResponse(
+        iter([data]),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -468,9 +728,12 @@ def _activity_out(a) -> dict:
 
 
 @tasks_router.get("/{task_id}/comments")
-def task_comments(task_id: int, db: Session = Depends(get_db)):
-    if db.get(CommunicationTask, task_id) is None:
-        raise HTTPException(404, "Task not found")
+def task_comments(
+    task_id: int,
+    db: Session = Depends(get_db),
+    viewer: User = Depends(get_current_staff),
+):
+    _visible_task_or_404(db, task_id, viewer)
     return [_comment_out(c) for c in collab.list_comments(db, task_id)]
 
 
@@ -480,7 +743,9 @@ def add_task_comment(
     body: dict = None,  # type: ignore[assignment]
     db: Session = Depends(get_db),
     actor: User = Depends(get_current_staff),
+    background_tasks: BackgroundTasks = None,  # type: ignore[assignment]
 ):
+    _visible_task_or_404(db, task_id, actor)
     payload = body or {}
     text = (payload.get("comment") or "").strip()
     if not text:
@@ -499,13 +764,20 @@ def add_task_comment(
     # The other chokepoint: the employee portal posts its comments through this
     # same function, so a bridged task's discussion reaches the material line
     # whichever surface it was typed into.
+    task = db.get(CommunicationTask, task_id)
     bridge.safe_notify(
-        db, db.get(CommunicationTask, task_id),
+        db, task,
         event="COMMENT_ADDED",
         comment=text,
         actor=assign.display_name(actor),
         actor_user_id=actor.id,
     )
+    if task is not None:
+        task_events.dispatch(
+            background_tasks, db, task,
+            kind="COMMENT", actor_id=actor.id, actor_name=assign.display_name(actor),
+            ctx={"comment": text},
+        )
     return _comment_out(row)
 
 
@@ -526,9 +798,7 @@ def generate_ai_summary(
     db: Session = Depends(get_db),
     actor: User = Depends(get_current_staff),
 ):
-    row = db.get(CommunicationTask, task_id)
-    if not row:
-        raise HTTPException(404, "Task not found")
+    row = _visible_task_or_404(db, task_id, actor)
     if not ai_service.is_enabled():
         raise HTTPException(503, "AI is not enabled")
     transcript = collab.build_transcript(db, row)

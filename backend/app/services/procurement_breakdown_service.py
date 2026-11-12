@@ -15,6 +15,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from ..models.procurement import ProcurementRecord
+from .po_open_lines import open_line_clause
 
 # A line is "delivered / closed" (no longer pending) when its source po_status is
 # one of these. Mirrors ai_insights_service._DELIVERED_STATUS.
@@ -34,13 +35,17 @@ def build_conditions(
     shipment_date_from: Optional[date] = None,
     shipment_date_to: Optional[date] = None,
     search: Optional[str] = None,
+    include_closed: bool = False,
 ) -> list:
     """Translate the shared dashboard/list query params into SQLAlchemy predicates.
 
     Kept in one place so the list endpoints and the breakdown endpoints filter
-    identically (a supplier pie must reflect the same rows the table shows)."""
+    identically (a supplier pie must reflect the same rows the table shows).
+    Closed lines (po_open_lines) are excluded unless ``include_closed``."""
     R = ProcurementRecord
     conds: list = []
+    if not include_closed:
+        conds.append(open_line_clause(R))
     if signal:
         conds.append(R.signal == signal.upper())
     if supplier_name:

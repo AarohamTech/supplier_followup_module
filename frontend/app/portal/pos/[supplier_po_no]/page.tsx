@@ -5,12 +5,13 @@ import { useParams, useRouter } from "next/navigation";
 import { AlertTriangle, ArrowLeft, CalendarCheck, ListChecks, MessageSquare, Save, Truck } from "lucide-react";
 
 import { api } from "@/lib/api";
-import { signalBadge } from "@/lib/asn";
 import { fmtDate, fmtNum } from "@/lib/format";
+import { SUPPLIER_ESCALATED_LABEL, supplierSignalChip } from "@/lib/messageLabels";
 import type { Asn, PortalPo, PortalPoMaterial, PortalTask } from "@/lib/types";
 import AsnTable from "@/components/portal/AsnTable";
 import AsnDrawer from "@/components/portal/AsnDrawer";
 import PoPdfButton from "@/components/po/PoPdfButton";
+import PoAckButton from "@/components/portal/PoAckButton";
 
 const STATUS_OPTIONS = ["CONFIRMED", "DELAYED", "PARTIAL", "DISPATCHED", "ON_HOLD", "CANCELLED"];
 
@@ -156,15 +157,21 @@ export default function PoDetailPage() {
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <h1 className="text-xl font-semibold tracking-tight text-brand-dark">PO {po?.po_ref || poNo}</h1>
-              {po?.escalated && <span className="badge badge-critical">Escalated</span>}
-              {po?.overall_signal && <span className={"badge " + signalBadge(po.overall_signal)}>{po.overall_signal}</span>}
-              {po?.completed ? <span className="badge badge-track">Completed</span> : <span className="badge badge-due">Pending</span>}
+              {/* Supplier-friendly status chips — not the internal signal enums. */}
+              {po?.escalated && <span className="badge badge-critical">{SUPPLIER_ESCALATED_LABEL}</span>}
+              {!po?.completed && supplierSignalChip(po?.overall_signal) && (
+                <span className={"badge " + supplierSignalChip(po?.overall_signal)!.cls}>
+                  {supplierSignalChip(po?.overall_signal)!.label}
+                </span>
+              )}
+              {po?.completed ? <span className="badge badge-track">Completed</span> : <span className="badge badge-due">In progress</span>}
             </div>
             <p className="mt-1 max-w-2xl text-sm text-brand-muted">
               Review material commitments, buyer tasks and shipment progress for this purchase order.
             </p>
           </div>
           <div className="flex shrink-0 flex-wrap items-center gap-2">
+            <PoAckButton supplierPoNo={poNo} />
             {po?.po_trn_no && (
               <PoPdfButton
                 trnNo={po.po_trn_no}
@@ -250,21 +257,24 @@ export default function PoDetailPage() {
           <table className="min-w-[1120px] w-full text-sm">
             <thead className="bg-subtle">
               <tr>
-                {["Material", "CRM", "Qty", "UOM", "PO date", "Required by", "Committed date", "Status", "Remark"].map((h) => (
+                {["Material", "CRM", "Ordered", "Inward", "Pending", "UOM", "PO date", "Required by", "Committed date", "Status", "Remark"].map((h) => (
                   <th key={h} className="whitespace-nowrap px-3 py-3 text-left table-header">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {loading && <tr><td colSpan={9} className="px-4 py-10 text-center text-brand-muted">Loading…</td></tr>}
-              {!loading && materials.length === 0 && <tr><td colSpan={9} className="px-4 py-10 text-center text-brand-muted">No materials found for this order.</td></tr>}
+              {loading && <tr><td colSpan={11} className="px-4 py-10 text-center text-brand-muted">Loading…</td></tr>}
+              {!loading && materials.length === 0 && <tr><td colSpan={11} className="px-4 py-10 text-center text-brand-muted">No materials found for this order.</td></tr>}
               {materials.map((m) => {
                 const d = drafts[m.procurement_record_id] || { date: "", status: "CONFIRMED", remark: "" };
                 return (
                   <tr key={m.procurement_record_id} className="border-t border-brand-border align-middle hover:bg-subtle/60">
                     <td className="min-w-[260px] px-3 py-3 font-medium text-brand-dark">{m.material_name}</td>
                     <td className="whitespace-nowrap px-3 py-3 text-xs text-brand-muted">{m.crm_no}</td>
-                    <td className="px-3 py-3">{fmtNum(m.qty)}</td>
+                    {/* Same ordered / inward / pending definitions as the buyer's views. */}
+                    <td className="px-3 py-3 tabular-nums">{fmtNum(m.ordered_qty ?? m.qty)}</td>
+                    <td className="px-3 py-3 tabular-nums">{fmtNum(m.inward_qty)}</td>
+                    <td className="px-3 py-3 tabular-nums">{fmtNum(m.pending_qty)}</td>
                     <td className="px-3 py-3 text-xs text-brand-muted">{m.uom || "—"}</td>
                     <td className="whitespace-nowrap px-3 py-3 text-xs">{fmtDate(m.po_date)}</td>
                     <td className="whitespace-nowrap px-3 py-3 text-xs">{fmtDate(m.shipment_date)}</td>
@@ -345,12 +355,13 @@ export default function PoDetailPage() {
           </div>
           <span className="text-xs font-medium text-brand-muted">{poAsns.length} ASN{poAsns.length === 1 ? "" : "s"}</span>
         </div>
-        <AsnTable items={poAsns} loading={loading} onOpen={setOpenAsn} emptyLabel="No ASNs for this PO yet." />
+        <AsnTable items={poAsns} loading={loading} onOpen={setOpenAsn} poLabel={() => po?.po_ref || poNo} emptyLabel="No ASNs for this PO yet." />
       </section>
 
       {openAsn && (
         <AsnDrawer
           asn={openAsn}
+          poLabel={() => po?.po_ref || poNo}
           onClose={() => setOpenAsn(null)}
           onUpdated={(a) => {
             setOpenAsn(a);

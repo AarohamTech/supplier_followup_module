@@ -207,4 +207,9 @@ export const MR_HUB: Record<string, string> = {
     "Outlook मध्ये उघडले — फाइल्स तिथेही जोडा (त्या पोर्टल प्रतीवर राहतात)",
   "Opened in Outlook — press Send there": "Outlook मध्ये उघडले — तिथे Send दाबा",
   "Could not open Outlook": "Outlook उघडता आले नाही",
+  // ── PO acknowledgement badge ──
+  "PO ACK {time}": "PO पोच {time}",
+  "Not acknowledged": "पोच दिलेली नाही",
+  "Acknowledged in the supplier portal": "पुरवठादार पोर्टलमध्ये पोच दिली",
+  "Acknowledged from the email link": "ईमेल लिंकवरून पोच दिली",
 };

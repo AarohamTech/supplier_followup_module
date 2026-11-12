@@ -21,6 +21,8 @@ from ..models.procurement import ProcurementRecord
 from ..models.supplier import SupplierMaster
 from ..models.supplier_email import SupplierEmail
 from ..models.supplier_material_commitment import SupplierMaterialCommitment
+from .po_open_lines import chaseable_line_clause, open_line_clause
+from .po_quantities import line_quantities
 
 
 SIGNAL_RANK: dict[str, int] = {"GREEN": 1, "YELLOW": 2, "RED": 3, "BLACK": 4}
@@ -278,14 +280,20 @@ def _material_line(
     commitment: Optional[SupplierMaterialCommitment],
 ) -> dict[str, Any]:
     signal = _norm_signal(rec.signal)
-    pending = float(rec.qty) if rec.qty is not None else None
+    # One definition shared with the Orders page and the supplier portal.
+    quantities = line_quantities(rec)
     return {
         "procurement_record_id": rec.id,
         "crm_no": rec.crm_no,
         "material_code": rec.crm_no,
         "material_name": rec.material_name,
-        "po_qty": float(rec.qty) if rec.qty is not None else None,
-        "pending_qty": pending,
+        # "po_qty" is the legacy key the mail templates and Hub read: the
+        # ordered quantity.
+        "po_qty": quantities["ordered_qty"],
+        **quantities,
+        # Delisted = closed / fully received on the CRM side; the Hub keeps the
+        # line in the thread but marks it.
+        "closed": rec.delisted_at is not None,
         "uom": rec.uom,
         "due_date": rec.shipment_date.isoformat() if rec.shipment_date else None,
         "current_status": rec.po_status,
@@ -473,14 +481,21 @@ def build_all_po_groups(
     supplier_name: Optional[str] = None,
     supplier_po_no: Optional[str] = None,
     search: Optional[str] = None,
+    include_closed: bool = False,
 ) -> list[dict[str, Any]]:
     """Every matching PO group, sorted, with no pagination applied.
 
     :func:`list_po_groups` builds the full set before slicing anyway, so a
     caller that wants everything should use this rather than paging — paging
     through list_po_groups rebuilds the whole set on every page.
+
+    Only OPEN lines (po_open_lines) take part unless ``include_closed``: a
+    closed line must neither appear in a group nor lift its overall signal, and
+    a PO whose lines are all closed yields no group at all.
     """
     stmt = select(ProcurementRecord)
+    if not include_closed:
+        stmt = stmt.where(open_line_clause())
     if signal:
         stmt = stmt.where(func.upper(ProcurementRecord.signal) == signal.strip().upper())
     if supplier_name:
@@ -538,6 +553,7 @@ def list_po_groups(
     search: Optional[str] = None,
     page: int = 1,
     size: int = 25,
+    include_closed: bool = False,
 ) -> dict[str, Any]:
     groups = build_all_po_groups(
         db,
@@ -545,6 +561,7 @@ def list_po_groups(
         supplier_name=supplier_name,
         supplier_po_no=supplier_po_no,
         search=search,
+        include_closed=include_closed,
     )
 
     total = len(groups)
@@ -562,16 +579,29 @@ def list_po_groups(
 
 
 def get_po_group(
-    db: Session, supplier_name: str, supplier_po_no: str
+    db: Session,
+    supplier_name: str,
+    supplier_po_no: str,
+    *,
+    include_closed: bool = False,
+    chaseable_only: bool = False,
 ) -> Optional[dict[str, Any]]:
+    """One (supplier, PO) group built from its OPEN lines (po_open_lines).
+
+    ``chaseable_only`` narrows further to lines a supplier may be chased for
+    (also drops pending cancellations) — what a follow-up mail lists.
+    ``include_closed`` returns every line. None when no line qualifies."""
     upper = supplier_name.strip().upper()
     po = supplier_po_no.strip()
-    records = db.scalars(
-        select(ProcurementRecord).where(
-            func.upper(ProcurementRecord.supplier_name) == upper,
-            ProcurementRecord.supplier_po_no == po,
-        )
-    ).all()
+    stmt = select(ProcurementRecord).where(
+        func.upper(ProcurementRecord.supplier_name) == upper,
+        ProcurementRecord.supplier_po_no == po,
+    )
+    if chaseable_only:
+        stmt = stmt.where(chaseable_line_clause())
+    elif not include_closed:
+        stmt = stmt.where(open_line_clause())
+    records = db.scalars(stmt).all()
     if not records:
         return None
     return build_po_group_payload(db, records, records[0].supplier_name, po)

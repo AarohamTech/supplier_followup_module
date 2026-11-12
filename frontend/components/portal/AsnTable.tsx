@@ -13,12 +13,15 @@ export default function AsnTable({
   onOpen,
   showSupplier = false,
   emptyLabel = "No shipments here yet.",
+  poLabel,
 }: {
   items: Asn[];
   loading?: boolean;
   onOpen: (asn: Asn) => void;
   showSupplier?: boolean;
   emptyLabel?: string;
+  /** Maps the PO counter to the number shown (supplier portal: the vendor ref). */
+  poLabel?: (supplierPoNo: string) => string;
 }) {
   const { t } = useT();
   const cols = showSupplier
@@ -56,7 +59,7 @@ export default function AsnTable({
                 </td>
                 {showSupplier && <td className="px-4 py-3 text-xs">{a.supplier_name || "—"}</td>}
                 <td className="px-4 py-3">
-                  <span className="badge bg-subtle text-brand-dark">{a.supplier_po_no}</span>
+                  <span className="badge bg-subtle text-brand-dark">{poLabel ? poLabel(a.supplier_po_no) : a.supplier_po_no}</span>
                 </td>
                 <td className="px-4 py-3">
                   <div className="text-sm">{a.carrier_name || "—"}</div>

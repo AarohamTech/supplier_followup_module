@@ -36,11 +36,20 @@ class UserOut(BaseModel):
     # Employee portal accounts carry an emp_code (their CRM EmpCode).
     emp_code: str | None = None
     must_change_password: bool = False
+    # Employee-portal permissions (granted by default; NULL in the DB = granted).
+    # Only meaningful for employee accounts.
+    can_manage_supplier_assignments: bool = True
+    can_manage_email_master: bool = True
     # Convenience field populated by the auth/portal routers (not an ORM column).
     supplier_name: str | None = None
     last_login_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
+
+    @field_validator("can_manage_supplier_assignments", "can_manage_email_master", mode="before")
+    @classmethod
+    def _null_means_granted(cls, value):
+        return True if value is None else value
 
 
 # ── Auth ─────────────────────────────────────────────────────────────────────

@@ -8,7 +8,9 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
+from ..core.deps import get_current_staff
 from ..database import get_db
+from ..models.user import User
 from ..models.communication_task import CommunicationTask
 from ..models.customer_mail import (
     CUSTOMER_MAIL_PRIORITIES,
@@ -248,6 +250,7 @@ def create_task_for_mail(
     mail_id: int,
     payload: CustomerMailTaskPayload,
     db: Session = Depends(get_db),
+    actor: User = Depends(get_current_staff),
 ):
     mail, task = customer_mail_service.create_task_from_mail(
         db,
@@ -257,6 +260,8 @@ def create_task_for_mail(
         assigned_to=payload.assigned_to,
         priority=payload.priority,
         due_date=payload.due_date,
+        created_by_user_id=actor.id,
+        created_by_name=actor.full_name or actor.username or actor.email,
     )
     if mail is None or task is None:
         raise HTTPException(404, "Customer mail not found")

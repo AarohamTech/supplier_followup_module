@@ -33,7 +33,7 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)) -> Token:
     if payload.username:
         user = user_service.authenticate_by_username(db, payload.username, payload.password)
     else:
-        user = user_service.authenticate(db, payload.email, payload.password)
+        user = user_service.authenticate(db, payload.email, payload.password, payload.company)
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

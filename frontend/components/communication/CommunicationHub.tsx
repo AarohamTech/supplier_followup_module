@@ -7,6 +7,8 @@ import { overdueDays } from "@/lib/format";
 import { useT } from "@/lib/i18n";
 import TaskCreateForm from "@/components/tasks/TaskCreateForm";
 import { EmailHtmlView } from "@/components/EmailHtmlView";
+import { messageKindChip, messageStatusChip } from "@/lib/messageLabels";
+import { PlainTextWithTables, cutQuotedReply, hasPipeTable } from "@/lib/plainTextTables";
 import CustomerWorkspace from "@/components/customer-mails/CustomerWorkspace";
 import {
   AttachButton,
@@ -226,6 +228,15 @@ function toDatetimeLocal(iso: string): string {
   if (isNaN(d.getTime())) return "";
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/** "cm-123" (a communication_messages row in the thread) → 123, else null.
+ *  Used as the task's `source_message_id` so the task carries the mail's
+ *  context and attachments. */
+function hubMessageId(value: number | string | null | undefined): number | null {
+  if (typeof value !== "string") return null;
+  const m = /^cm-(\d+)$/.exec(value);
+  return m ? Number(m[1]) : null;
 }
 
 function numericMailId(value: number | string | null | undefined): number | null {
@@ -1140,6 +1151,7 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
       supplier_po_no: activePo?.supplier_po_no ?? null,
       procurement_record_id: activePo?.procurement_record_id ?? null,
       linked_mail_id: lastMessageId,
+      source_message_id: hubMessageId(lastMessage?.id),
     });
 
   const seedReminder = () => {
@@ -1150,6 +1162,7 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
       supplier_po_no: activePo.supplier_po_no,
       procurement_record_id: activePo.procurement_record_id,
       linked_mail_id: lastMessageId,
+      source_message_id: hubMessageId(lastMessage?.id),
       task_source: "SUPPLIER",
       reminder_at: new Date(Date.now() + 86400000).toISOString(),
     });
@@ -1384,6 +1397,18 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
                   <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold uppercase ${SIGNAL_CHIP[threadSignal] ?? ""}`}>
                     {SIGNAL_LABEL[threadSignal] ? t(SIGNAL_LABEL[threadSignal]) : threadSignal}
                   </span>
+                  {activePo.acknowledged_at ? (
+                    <span
+                      className="whitespace-nowrap rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-bold uppercase text-emerald-700 ring-1 ring-emerald-200"
+                      title={t(activePo.acknowledged_via === "portal" ? "Acknowledged in the supplier portal" : "Acknowledged from the email link")}
+                    >
+                      {t("PO ACK {time}", { time: new Date(activePo.acknowledged_at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) })}
+                    </span>
+                  ) : (
+                    <span className="whitespace-nowrap rounded bg-subtle px-1.5 py-0.5 text-[10px] font-semibold uppercase text-brand-muted">
+                      {t("Not acknowledged")}
+                    </span>
+                  )}
                   <span className="ml-2 hidden text-xs text-brand-muted md:inline">
                     {t(threadMessages.length === 1 ? "{n} message" : "{n} messages", { n: threadMessages.length })}
                   </span>
@@ -1514,6 +1539,8 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
                                 supplier_po_no: activePo.supplier_po_no,
                                 procurement_record_id: activePo.procurement_record_id,
                                 linked_mail_id: numericMailId(m.id),
+                                source_message_id: hubMessageId(m.id),
+                                task_source: "SUPPLIER",
                               })
                           : () => {}
                       }
@@ -1869,7 +1896,7 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
                       <table className="min-w-full text-[11px]">
                         <thead className="bg-subtle">
                           <tr>
-                            {["CRM", "Material", "Qty", "Due", "Status", "Commit"].map((h, i) => (
+                            {["CRM", "Material", "Ordered", "Inward", "Pending", "Due", "Status", "Commit"].map((h, i) => (
                               <th key={i} className="whitespace-nowrap px-2 py-1.5 text-left font-semibold text-brand-muted">
                                 {t(h)}
                               </th>
@@ -1883,10 +1910,23 @@ export default function CommunicationHub({ hub, showCustomers = false }: Communi
                                 (c) => c.material_name?.toUpperCase() === m.material_name?.toUpperCase(),
                               ) ?? m.commitment ?? null;
                             return (
-                              <tr key={m.procurement_record_id} className="border-t border-brand-border">
+                              <tr key={m.procurement_record_id} className={`border-t border-brand-border ${m.closed ? "opacity-60" : ""}`}>
                                 <td className="whitespace-nowrap px-2 py-1.5 font-mono">{m.crm_no}</td>
-                                <td className="max-w-[120px] truncate px-2 py-1.5" title={m.material_name}>{m.material_name}</td>
-                                <td className="whitespace-nowrap px-2 py-1.5">{m.po_qty ?? "-"}</td>
+                                <td className="max-w-[120px] truncate px-2 py-1.5" title={m.material_name}>
+                                  {m.closed && (
+                                    <span
+                                      className="mr-1 rounded bg-subtle px-1 py-0.5 text-[9px] font-semibold text-brand-muted"
+                                      title={t("Closed / received in the CRM — hidden from the supplier's open lines")}
+                                    >
+                                      {t("Closed")}
+                                    </span>
+                                  )}
+                                  {m.material_name}
+                                </td>
+                                {/* Same ordered / inward / pending definitions as the supplier portal. */}
+                                <td className="whitespace-nowrap px-2 py-1.5">{m.ordered_qty ?? m.po_qty ?? "-"}</td>
+                                <td className="whitespace-nowrap px-2 py-1.5">{m.inward_qty ?? "-"}</td>
+                                <td className="whitespace-nowrap px-2 py-1.5">{m.pending_qty ?? "-"}</td>
                                 <td className="whitespace-nowrap px-2 py-1.5">{m.due_date ?? "-"}</td>
                                 <td className="whitespace-nowrap px-2 py-1.5">
                                   <span className={`rounded px-1.5 py-0.5 text-[10px] ${SIGNAL_CHIP[(commit?.supplier_status || m.current_status || m.signal) as string] ?? "bg-subtle text-brand-dark"}`}>
@@ -2241,6 +2281,11 @@ function MailBubble({
   const isIncoming = mail.direction === "INCOMING";
   const tableRows = mail.table_rows ?? [];
   const bodyText = stripTableText(mail.body);
+  // Older plain-text mails with a pipe table the backend did not structure:
+  // render that table instead of dropping/showing it raw.
+  const pipeTableBody = !mail.body_html && tableRows.length === 0 && hasPipeTable(mail.body);
+  const statusChip = messageStatusChip(mail.sent_status);
+  const kindChip = messageKindChip(mail.mail_type || mail.source || "MAIL");
 
   return (
     <div className={`flex flex-col ${isIncoming ? "items-start" : "items-end"}`}>
@@ -2253,9 +2298,11 @@ function MailBubble({
       >
         <div className="mb-1 flex items-center justify-between gap-3">
           <span className="truncate text-xs font-semibold text-brand-dark">{mail.subject || t("(no subject)")}</span>
-          <span className="rounded bg-subtle px-1.5 py-0.5 text-[10px] font-semibold uppercase text-brand-muted">
-            {mail.sent_status}
-          </span>
+          {mail.sent_status && (
+            <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold ${statusChip.cls}`}>
+              {t(statusChip.label)}
+            </span>
+          )}
         </div>
         {mail.table_format && (
           <div className="mb-2">
@@ -2267,6 +2314,11 @@ function MailBubble({
         {mail.body_html ? (
           // The real email (includes its own material table).
           <EmailHtmlView html={mail.body_html} />
+        ) : pipeTableBody ? (
+          <PlainTextWithTables
+            text={cutQuotedReply(mail.body)}
+            className="text-sm leading-relaxed text-brand-dark"
+          />
         ) : (
           <>
             {bodyText && (
@@ -2281,7 +2333,7 @@ function MailBubble({
         <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] text-brand-muted">
           <span>{fmtTime(mail.sent_at ?? mail.received_at ?? mail.created_at)}</span>
           <span>·</span>
-          <span>{mail.mail_type || mail.source || "MAIL"}</span>
+          <span className={`rounded px-1.5 py-0.5 font-semibold ${kindChip.cls}`}>{t(kindChip.label)}</span>
           <span>·</span>
           <span>{isIncoming ? (mail.sender_email || mail.supplier_name || t("Supplier")) : (mail.supplier_name ?? t("You"))}</span>
         </div>

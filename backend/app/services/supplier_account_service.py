@@ -13,11 +13,14 @@ import logging
 import secrets
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..core.config import settings
 from ..core.roles import Role
+from ..models.supplier import SupplierMaster
+from ..models.supplier_email import SupplierEmail
 from ..models.user import User
 from . import brand_email
 from . import communication_message_service as msg_service
@@ -48,13 +51,90 @@ def _normalize_emails(emails: list[str] | None) -> list[str]:
     return out
 
 
+def _company_scope(db: Session) -> tuple[int | None, int | None]:
+    """(active company id, default company id). `users` is shared by every
+    company while a supplier_id only means something inside one company, so
+    every supplier-login lookup is scoped to the company the admin is in.
+    Logins with company_id NULL are legacy default-company (102) logins."""
+    company_id = company_service.current_company_id(db)
+    default = company_service.get_default(db)
+    return company_id, (default.id if default is not None else None)
+
+
+def _effective_company_id(user: User, default_id: int | None) -> int | None:
+    return user.company_id if user.company_id is not None else default_id
+
+
+def _company_filter(company_id: int | None, default_id: int | None):
+    if company_id == default_id:
+        return or_(User.company_id == company_id, User.company_id.is_(None))
+    return User.company_id == company_id
+
+
 def list_supplier_logins(db: Session, supplier_id: int) -> list[User]:
+    """The supplier's portal logins in the active company only. Supplier ids
+    overlap across companies (each has its own supplier_master), so an
+    unscoped lookup would list -- and the sync would deactivate -- another
+    company's logins."""
+    company_id, default_id = _company_scope(db)
     return list(
         db.scalars(
             select(User)
-            .where(User.supplier_id == supplier_id)
+            .where(User.supplier_id == supplier_id, _company_filter(company_id, default_id))
             .order_by(User.email)
         ).all()
+    )
+
+
+def active_company_filter(db: Session):
+    """SQL filter: accounts that belong to the company the admin is in."""
+    return _company_filter(*_company_scope(db))
+
+
+def login_in_active_company(db: Session, user: User) -> bool:
+    """True when this supplier login belongs to the company the admin is in."""
+    company_id, default_id = _company_scope(db)
+    return _effective_company_id(user, default_id) == company_id
+
+
+def _norm_name(name: str | None) -> str:
+    return " ".join((name or "").upper().split())
+
+
+def _owner_claims_email(db: Session, owner_supplier_id: int, email: str) -> bool:
+    """True when the owning supplier still has an active mapping that lists
+    this email as a TO address (i.e. the login is genuinely in use)."""
+    rows = db.scalars(
+        select(SupplierEmail).where(
+            SupplierEmail.supplier_id == owner_supplier_id,
+            SupplierEmail.is_active.is_(True),
+        )
+    ).all()
+    return any(email in _normalize_emails(list(r.to_emails or [])) for r in rows)
+
+
+def _classify_other_supplier_login(
+    db: Session, login: User, *, email: str, supplier_name: str | None
+) -> tuple[bool, str]:
+    """A login in this company with this email points at another supplier_id.
+    Returns (relink, conflict_reason).
+
+    Re-link (move the login to the supplier being saved) when the old link is
+    stale: the owning supplier no longer exists, it is the same supplier under
+    another id (same name, e.g. a re-created master row), or no active mapping
+    of the owner lists this email any more. Otherwise it is a genuine conflict:
+    two different suppliers in one company cannot share one login.
+    """
+    owner = db.get(SupplierMaster, login.supplier_id) if login.supplier_id is not None else None
+    if owner is None:
+        return True, ""
+    if _norm_name(owner.supplier_name) and _norm_name(owner.supplier_name) == _norm_name(supplier_name):
+        return True, ""
+    if not _owner_claims_email(db, owner.id, email):
+        return True, ""
+    return False, (
+        f"already the portal login of supplier '{owner.supplier_name}' (id {owner.id}) "
+        "in this company; remove it from that supplier's TO emails first"
     )
 
 
@@ -165,13 +245,19 @@ def sync_supplier_logins(
     to_emails: list[str] | None,
     send_email: bool = True,
 ) -> dict[str, Any]:
-    """Reconcile the supplier's TO emails with their portal logins.
+    """Reconcile the supplier's TO emails with their portal logins in the
+    active company.
 
-    - missing login for a TO email → create (temp password, must_change=True) + email
-    - existing login for this supplier → ensure active (reactivate if disabled)
-    - login no longer in TO emails → deactivate (keep the row)
-    - a TO email already owned by a *staff* user or a *different* supplier → skip
-      it and record a conflict (never hijack an existing account)
+    - missing login for a TO email (in this company) -> create (temp password,
+      must_change=True) + email. A login with the same email in ANOTHER company
+      does not block: email is unique per company (each login is pinned to one).
+    - existing login for this supplier -> ensure active (reactivate if disabled)
+    - existing login in this company that points at a stale/same-named supplier
+      -> re-link it to this supplier (reported as `relinked`)
+    - login no longer in TO emails -> deactivate (keep the row)
+    - a TO email owned by a staff/employee account, or by a different live
+      supplier in this company -> skip it and record a conflict that names the
+      owner (never hijack an account that is in use)
 
     Returns a summary the admin UI surfaces (incl. temp passwords as an
     SMTP-off fallback).
@@ -179,46 +265,84 @@ def sync_supplier_logins(
     wanted = _normalize_emails(to_emails)
     created: list[dict[str, Any]] = []
     reactivated: list[str] = []
+    relinked: list[str] = []
     deactivated: list[str] = []
     conflicts: list[dict[str, str]] = []
 
     wanted_set = set(wanted)
+    company_id, default_id = _company_scope(db)
 
     for email in wanted:
-        existing = user_service.get_by_email(db, email)
+        accounts = user_service.get_all_by_email(db, email)
+
+        internal = next((u for u in accounts if u.supplier_id is None), None)
+        if internal is not None and (
+            internal.emp_code is None  # staff accounts span every company
+            or _effective_company_id(internal, default_id) == company_id
+        ):
+            kind = "an employee account" if internal.emp_code is not None else "a staff account"
+            label = internal.username or internal.full_name or internal.email
+            conflicts.append({"email": email, "reason": f"belongs to {kind} ({label})"})
+            continue
+
+        existing = next(
+            (u for u in accounts
+             if u.supplier_id is not None
+             and _effective_company_id(u, default_id) == company_id),
+            None,
+        )
         if existing is not None:
             if existing.supplier_id == supplier_id:
                 if not existing.is_active:
                     existing.is_active = True
                     reactivated.append(email)
-            else:
-                reason = (
-                    "belongs to a staff account"
-                    if existing.supplier_id is None
-                    else "belongs to another supplier"
-                )
+                continue
+            relink, reason = _classify_other_supplier_login(
+                db, existing, email=email, supplier_name=supplier_name
+            )
+            if not relink:
                 conflicts.append({"email": email, "reason": reason})
+                continue
+            log.info(
+                "[supplier-login] re-linking %s from supplier_id=%s to %s (company_id=%s)",
+                email, existing.supplier_id, supplier_id, company_id,
+            )
+            existing.supplier_id = supplier_id
+            existing.full_name = supplier_name or existing.full_name
+            if existing.company_id is None and company_id is not None:
+                existing.company_id = company_id
+            existing.is_active = True
+            relinked.append(email)
             continue
 
         temp_password = generate_temp_password()
         try:
-            user_service.create_user(
-                db,
-                email=email,
-                password=temp_password,
-                full_name=supplier_name,
-                role=Role.SUPPLIER,
-                is_active=True,
-                supplier_id=supplier_id,
-                must_change_password=True,
-                # Pin to the company the admin is switched into (a supplier_id
-                # only means something inside that company's schema).
-                company_id=company_service.current_company_id(db),
-                commit=False,
-            )
-        except EmailTakenError:
-            # Raced with another create — treat as a conflict rather than crash.
-            conflicts.append({"email": email, "reason": "account already exists"})
+            with db.begin_nested():
+                user_service.create_user(
+                    db,
+                    email=email,
+                    password=temp_password,
+                    full_name=supplier_name,
+                    role=Role.SUPPLIER,
+                    is_active=True,
+                    supplier_id=supplier_id,
+                    must_change_password=True,
+                    # Pin to the company the admin is switched into (a supplier_id
+                    # only means something inside that company's schema).
+                    company_id=company_id,
+                    commit=False,
+                    # The company-scoped rule above replaces the global email check.
+                    check_email=False,
+                )
+        except (EmailTakenError, IntegrityError):
+            # Raced with another create, or the DB still has the old global
+            # unique email index: report it rather than crash.
+            log.warning("[supplier-login] could not create login for %s", email, exc_info=True)
+            conflicts.append({
+                "email": email,
+                "reason": "a login with this email already exists in another company "
+                          "and the database still enforces one login per email",
+            })
             continue
         created.append({"email": email, "temp_password": temp_password})
 
@@ -246,6 +370,7 @@ def sync_supplier_logins(
     return {
         "created": created,
         "reactivated": reactivated,
+        "relinked": relinked,
         "deactivated": deactivated,
         "conflicts": conflicts,
         "emailed": emailed,

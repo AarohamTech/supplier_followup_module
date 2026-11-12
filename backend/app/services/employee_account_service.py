@@ -173,13 +173,27 @@ def create_employee(
 
 
 def update_employee(
-    db: Session, user: User, *, email: str | None = None, full_name: str | None = None
+    db: Session,
+    user: User,
+    *,
+    email: str | None = None,
+    full_name: str | None = None,
+    permissions: dict[str, bool] | None = None,
 ) -> User:
-    """Admin edit of an employee login's profile fields (email + name).
+    """Admin edit of an employee login's profile fields (email + name) and its
+    employee-portal permission flags.
 
     Employees are provisioned with a synthetic placeholder email; this lets an
     admin set a real address. Email must stay unique across all accounts.
+    `permissions` maps flag name (employee_permissions.ALL_PERMISSIONS) to
+    granted; unknown names are rejected.
     """
+    from . import employee_permissions
+
+    for flag, granted in (permissions or {}).items():
+        if flag not in employee_permissions.ALL_PERMISSIONS:
+            raise ValueError(f"Unknown permission '{flag}'")
+        setattr(user, flag, bool(granted))
     if email is not None:
         normalized = email.strip().lower()
         if not normalized:

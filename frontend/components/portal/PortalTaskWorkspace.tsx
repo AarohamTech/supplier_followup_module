@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   ListChecks,
   AlertTriangle,
@@ -16,6 +17,7 @@ import {
   MessageSquare,
   Link2,
   ArrowUpCircle,
+  Loader2,
   Lock,
   Paperclip,
   PanelRightClose,
@@ -24,6 +26,8 @@ import {
 
 import { AttachButton, AttachmentDropArea } from "@/components/attachments/Attachments";
 import { AssigneePicker } from "@/components/tasks/AssigneePicker";
+import SourceMailBlock from "@/components/tasks/SourceMailBlock";
+import { ExportButton } from "@/components/reports/WorkloadShared";
 import {
   AssignedByMePanel,
   CommentComposer,
@@ -47,6 +51,7 @@ import type {
   TaskBoardColumn,
   TaskComment,
   TaskSource,
+  TaskSourceMessage,
   TaskStatus,
 } from "@/lib/types";
 
@@ -138,6 +143,10 @@ export interface PortalTaskAdapter {
   listComments?: (id: number) => Promise<TaskComment[]>;
   addComment?: (id: number, comment: string) => Promise<TaskComment>;
   attachments?: TaskAttachmentAdapter;
+  /** "My tasks" .xlsx download URL (shows an Export button when set). */
+  exportMineUrl?: string;
+  /** Source mail block (mail the task was assigned from) on the detail view. */
+  sourceMessage?: (id: number) => Promise<{ source: TaskSourceMessage | null }>;
 }
 
 export interface PortalTaskPermissions {
@@ -175,12 +184,17 @@ export default function PortalTaskWorkspace({
   adapter,
   permissions,
   scopeLabel,
+  showCompleted = true,
 }: {
   adapter: PortalTaskAdapter;
   permissions: PortalTaskPermissions;
   scopeLabel: string;
+  /** Show the "Completed" KPI (false for non-admin audiences: completed tasks are admin-only). */
+  showCompleted?: boolean;
 }) {
   const { t } = useT();
+  const searchParams = useSearchParams();
+  const taskParam = searchParams.get("task");
   const { user } = useAuth();
   const board = useBoardColumns(adapter.boardColumns);
 
@@ -249,6 +263,17 @@ export default function PortalTaskWorkspace({
     void refresh();
   }, [refresh]);
 
+  // Deep link from a task notification (?task=123): open it once loaded.
+  const openedParam = useRef<string | null>(null);
+  useEffect(() => {
+    if (!taskParam || openedParam.current === taskParam) return;
+    const hit = tasks.find((x) => String(x.id) === taskParam);
+    if (hit) {
+      openedParam.current = taskParam;
+      setSelected(hit);
+    }
+  }, [taskParam, tasks]);
+
   const searched = useMemo(() => {
     return tasks.filter((task) => {
       if (priority && task.priority !== priority) return false;
@@ -311,6 +336,7 @@ export default function PortalTaskWorkspace({
         view={view}
         setView={setView}
         canCreate={permissions.canCreate && !!adapter.createTask}
+        exportMineUrl={adapter.exportMineUrl}
         onCreate={() => setShowCreate(true)}
         onRefresh={refresh}
         busy={busy}
@@ -334,7 +360,9 @@ export default function PortalTaskWorkspace({
         <Kpi label={t("Supplier")} value={kpiCounts.supplier_tasks} icon={<Factory size={16} className="text-violet-600" />} tone="bg-violet-100" />
         <Kpi label={t("Customer")} value={kpiCounts.customer_tasks} icon={<Users size={16} className="text-cyan-600" />} tone="bg-cyan-100" />
         <Kpi label={t("Escalations")} value={kpiCounts.escalation_tasks} icon={<Flame size={16} className="text-orange-600" />} tone="bg-orange-100" />
-        <Kpi label={t("Completed")} value={kpiCounts.done} icon={<CheckCircle2 size={16} className="text-green-600" />} tone="bg-green-100" />
+        {showCompleted && (
+          <Kpi label={t("Completed")} value={kpiCounts.done} icon={<CheckCircle2 size={16} className="text-green-600" />} tone="bg-green-100" />
+        )}
       </div>
 
       {/* Filter bar */}
@@ -509,18 +537,24 @@ export default function PortalTaskWorkspace({
           onCancel={() => setShowCreate(false)}
           onSave={async (payload, files) => {
             const created = await adapter.createTask!(payload);
-            const upload = adapter.attachments?.upload;
-            if (upload) {
-              for (const f of files) {
-                try {
-                  await upload(created.id, f);
-                } catch (err) {
-                  setMessage((err as Error).message);
-                }
-              }
-            }
+            // Optimistic: close at once and show the new card; files upload in
+            // parallel in the background, then only that card + counters refresh.
             setShowCreate(false);
-            await refresh();
+            setTasks((cur) => [created, ...cur.filter((x) => x.id !== created.id)]);
+            adapter.dashboard().then(setDashboard).catch(() => {});
+            const upload = adapter.attachments?.upload;
+            if (upload && files.length) {
+              void Promise.allSettled(files.map((f) => upload(created.id, f))).then((results) => {
+                const failed = results.find((r): r is PromiseRejectedResult => r.status === "rejected");
+                if (failed) {
+                  setMessage(t("Task created, but some files failed to upload: {err}", { err: (failed.reason as Error)?.message || "" }));
+                }
+                const ok = results.filter((r) => r.status === "fulfilled").length;
+                setTasks((cur) =>
+                  cur.map((x) => (x.id === created.id ? { ...x, attachment_count: (x.attachment_count ?? 0) + ok } : x)),
+                );
+              });
+            }
           }}
         />
       )}
@@ -608,6 +642,7 @@ function PortalTaskHeader({
   view,
   setView,
   canCreate,
+  exportMineUrl,
   onCreate,
   onRefresh,
   busy,
@@ -616,6 +651,7 @@ function PortalTaskHeader({
   view: "kanban" | "table";
   setView: (v: "kanban" | "table") => void;
   canCreate: boolean;
+  exportMineUrl?: string;
   onCreate: () => void;
   onRefresh: () => void;
   busy: boolean;
@@ -650,6 +686,13 @@ function PortalTaskHeader({
             {t("Table")}
           </button>
         </div>
+        {exportMineUrl && (
+          <ExportButton
+            url={exportMineUrl}
+            filename={`my-tasks-${new Date().toISOString().slice(0, 10)}.xlsx`}
+            label={t("Export my tasks")}
+          />
+        )}
         {canCreate && (
           <button type="button" onClick={onCreate} className="btn-dark text-xs">
             <Plus size={13} /> {t("Create Task")}
@@ -766,12 +809,12 @@ function PortalTaskDrawer({
   );
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center p-2 sm:p-4 bg-black/50" onClick={onClose}>
+    // Edit modal: closes via X / Escape only, never on a backdrop click.
+    <div className="fixed inset-0 z-50 grid place-items-center p-2 sm:p-4 bg-black/50">
       <div
         role="dialog"
         aria-modal="true"
         className="relative w-full max-w-6xl h-[94vh] bg-card rounded-xl shadow-2xl flex flex-col overflow-hidden"
-        onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
         <div className="px-6 py-4 border-b border-brand-border flex items-start justify-between gap-3">
@@ -811,6 +854,14 @@ function PortalTaskDrawer({
                 <div className="text-[11px] font-medium uppercase tracking-wide text-brand-muted mb-1">{t("Description")}</div>
                 <p className="text-sm whitespace-pre-wrap text-brand-dark">{task.description}</p>
               </div>
+            )}
+
+            {adapter.sourceMessage && adapter.attachments && (
+              <SourceMailBlock
+                task={task}
+                load={adapter.sourceMessage}
+                attachmentEndpoint={adapter.attachments.downloadUrl}
+              />
             )}
 
             {adapter.attachments && (
@@ -979,10 +1030,14 @@ function PortalTaskCreateForm({
   const [dueDate, setDueDate] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const inFlight = useRef(false); // sync double-submit guard
 
   const submit = async () => {
-    if (!title.trim()) return;
+    if (!title.trim() || inFlight.current) return;
+    inFlight.current = true;
     setSubmitting(true);
+    setSaveError(null);
     try {
       await onSave(
         {
@@ -997,7 +1052,11 @@ function PortalTaskCreateForm({
         },
         files,
       );
+    } catch (err) {
+      // Keep the form (and everything typed) open; say why it failed.
+      setSaveError((err as Error)?.message || t("Could not create the task. Please try again."));
     } finally {
+      inFlight.current = false;
       setSubmitting(false);
     }
   };
@@ -1006,8 +1065,9 @@ function PortalTaskCreateForm({
   const input = "w-full rounded-md border border-brand-border px-2.5 py-2 text-sm";
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" onClick={onCancel}>
-      <div className="w-full max-w-2xl rounded-xl bg-card shadow-2xl" onClick={(e) => e.stopPropagation()}>
+    // Form modal: X / Cancel only — a backdrop click must not drop typed data.
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4">
+      <div className="w-full max-w-2xl rounded-xl bg-card shadow-2xl" role="dialog" aria-modal="true">
         <div className="flex items-center justify-between border-b border-brand-border px-5 py-3">
           <div className="flex items-center gap-2">
             <Plus size={16} className="text-signal-red" />
@@ -1117,12 +1177,17 @@ function PortalTaskCreateForm({
           )}
         </div>
 
+        {saveError && (
+          <div className="mx-5 mb-1 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+            {saveError}
+          </div>
+        )}
         <div className="flex justify-end gap-2 border-t border-brand-border px-5 py-3">
           <button className="btn-ghost" onClick={onCancel} disabled={submitting}>
             {t("Cancel")}
           </button>
           <button className="btn-primary" onClick={() => void submit()} disabled={submitting || !title.trim()}>
-            <Plus size={14} />
+            {submitting ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
             <span className="ml-1.5">{t("Create Task")}</span>
           </button>
         </div>

@@ -13,6 +13,8 @@ const STATUS_TILES: { key: string; label: string; tone: string }[] = [
   { key: "SENT", label: "Sent", tone: "text-emerald-700 bg-emerald-50 ring-emerald-100" },
   { key: "READY", label: "Queued", tone: "text-amber-700 bg-amber-50 ring-amber-100" },
   { key: "FAILED", label: "Failed", tone: "text-signal-red bg-red-50 ring-red-100" },
+  // Auto follow-up dropped at send time because its PO closed while queued.
+  { key: "SKIPPED", label: "Skipped", tone: "text-slate-600 bg-slate-50 ring-slate-200" },
   { key: "DRAFT", label: "Draft", tone: "text-brand-muted bg-subtle ring-brand-border" },
 ];
 
@@ -119,7 +121,7 @@ export default function MailLogPage() {
       />
 
       {data && (
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
           {STATUS_TILES.map((t) => {
             const active = status === t.key;
             return (
@@ -214,8 +216,8 @@ export default function MailLogPage() {
                   <td className="whitespace-nowrap px-3 py-2 text-xs text-brand-muted">{fmtDateTime(m.sent_at)}</td>
                   <td className="px-3 py-2">
                     <StatusChip item={m} />
-                    {m.status === "FAILED" && m.error_message && (
-                      <div className={`mt-1 text-[11px] text-signal-red ${open ? "" : "max-w-[220px] truncate"}`} title={m.error_message}>
+                    {(m.status === "FAILED" || m.status === "SKIPPED") && m.error_message && (
+                      <div className={`mt-1 text-[11px] ${m.status === "FAILED" ? "text-signal-red" : "text-slate-600"} ${open ? "" : "max-w-[220px] truncate"}`} title={m.error_message}>
                         {m.error_message}
                       </div>
                     )}

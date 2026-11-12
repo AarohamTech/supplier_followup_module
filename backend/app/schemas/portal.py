@@ -79,6 +79,12 @@ class PortalPoMaterial(BaseModel):
     material_name: str
     uom: Optional[str] = None
     qty: Optional[float] = None
+    # Ordered / inward (received) / pending — the same definitions the staff
+    # views use (services.po_quantities), so both sides show the same numbers.
+    ordered_qty: Optional[float] = None
+    inward_qty: Optional[float] = None
+    pending_qty: Optional[float] = None
+    receipt_status: Optional[str] = None
     po_date: Optional[datetime] = None
     shipment_date: Optional[datetime] = None
     signal: Optional[str] = None

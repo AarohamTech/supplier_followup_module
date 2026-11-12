@@ -104,15 +104,19 @@ class GroupedRollupTests(unittest.TestCase):
         ))
         db.commit()
 
-    def _po1(self, db):
-        items, _ = pv.grouped_pos(db)
+    def _po1(self, db, **kw):
+        items, _ = pv.grouped_pos(db, **kw)
         return [g for g in items if g["supplier_po_no"] == "PO1"][0]
 
     def test_all_lines_completed_rolls_up_completed(self):
         with _temp_db() as db:
             self._line(db, crm="C1", receipt="COMPLETED")
             self._line(db, crm="C2", receipt="COMPLETED")
-            self.assertEqual(self._po1(db)["receipt_status"], "COMPLETED")
+            # A fully received PO is closed (po_open_lines): hidden by default,
+            # shown with include_closed ("Show closed").
+            items, _ = pv.grouped_pos(db)
+            self.assertEqual([g for g in items if g["supplier_po_no"] == "PO1"], [])
+            self.assertEqual(self._po1(db, include_closed=True)["receipt_status"], "COMPLETED")
 
     def test_mixed_lines_roll_up_partial(self):
         with _temp_db() as db:

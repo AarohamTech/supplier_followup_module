@@ -16,7 +16,7 @@ from email.utils import make_msgid, parseaddr
 from html import unescape
 from typing import Any
 
-from sqlalchemy import case, or_, select
+from sqlalchemy import case, func, or_, select
 from sqlalchemy.orm import Session
 
 from ..core.config import settings
@@ -30,10 +30,53 @@ from ..services import communication_message_service as msg_service
 from ..services import mail_config_service
 from ..services import settings_service
 from ..services.mail_config_service import SmtpConfig
+from ..services.po_open_lines import closed_reason, is_chaseable_line
 
 log = logging.getLogger(__name__)
 
 _TAG_RE = re.compile(r"<[^>]+>")
+_EMAIL_RE = re.compile(r"^[^\s@<>,;\"]+@[^\s@<>,;\"]+\.[^\s@<>,;\"]+$")
+_ANGLE_RE = re.compile(r"<([^<>]+)>")
+
+
+def split_recipients(values: list[str] | str | None) -> tuple[list[str], list[str]]:
+    """Split stored recipient entries into (valid, invalid) single addresses.
+
+    Each entry may hold several addresses separated by `,` / `;` / whitespace,
+    or a display-name form ("Name <a@x.com>"). Order kept, duplicates dropped
+    (case-insensitive)."""
+    if isinstance(values, str):
+        values = [values]
+    valid: list[str] = []
+    invalid: list[str] = []
+    seen: set[str] = set()
+    for raw in values or []:
+        text = (raw or "").strip()
+        if not text:
+            continue
+        tokens: list[str] = []
+        for part in re.split(r"[;,]+", text):
+            # "Name <a@x.com>" → the bracketed address; else whitespace-split.
+            angled = _ANGLE_RE.findall(part)
+            tokens.extend(angled if angled else part.split())
+        for tok in tokens:
+            tok = tok.strip().strip("'\"").rstrip(".").strip()
+            if tok.lower().startswith("mailto:"):
+                tok = tok[7:]
+            if not tok:
+                continue
+            if _EMAIL_RE.match(tok):
+                key = tok.lower()
+                if key not in seen:
+                    seen.add(key)
+                    valid.append(tok)
+            else:
+                invalid.append(tok)
+    return valid, invalid
+
+
+def clean_recipients(values: list[str] | str | None) -> list[str]:
+    return split_recipients(values)[0]
 
 # Auto follow-ups are the only outgoing mail the send window holds back.
 AUTO_FOLLOWUP_MAIL_TYPE_PREFIX = "PO_FOLLOWUP"
@@ -128,11 +171,18 @@ def _build_email(
     from_addr = from_addr or settings.SMTP_FROM
     em = EmailMessage()
     em["From"] = from_addr
-    em["To"] = ", ".join(msg.to_emails or ([msg.receiver_email] if msg.receiver_email else []))
-    if msg.cc_emails:
-        em["Cc"] = ", ".join(msg.cc_emails)
-    if msg.bcc_emails:
-        em["Bcc"] = ", ".join(msg.bcc_emails)
+    # Recipients are normalised: one stored entry like "a@x.com; b@y.com" would
+    # otherwise make Python's strict address parser drop EVERY recipient (it
+    # returns [('', '')] for the whole header) and SMTP rejects the send with
+    # "501 Bad recipient address syntax".
+    to_list = clean_recipients(msg.to_emails or ([msg.receiver_email] if msg.receiver_email else []))
+    cc_list = clean_recipients(msg.cc_emails)
+    bcc_list = clean_recipients(msg.bcc_emails)
+    em["To"] = ", ".join(to_list)
+    if cc_list:
+        em["Cc"] = ", ".join(cc_list)
+    if bcc_list:
+        em["Bcc"] = ", ".join(bcc_list)
     em["Subject"] = msg.subject or "(no subject)"
 
     # Always stamp a Message-ID so recipients (and our own future ingests) can
@@ -285,6 +335,58 @@ def _sync_delivery_state(
                 rec.followup_count = (rec.followup_count or 0) + 1
 
 
+def closed_po_skip_reason(db: Session, msg: CommunicationMessage) -> str | None:
+    """Re-check an auto follow-up just before it goes out.
+
+    A follow-up can sit READY for hours (the 19:00-08:00 hold) while the CRM
+    closes the PO. If every line of the PO (supplier, supplier_po_no) is now
+    closed or cancel-pending (po_open_lines), the mail must not be sent — this
+    returns the reason. None means "send": not an auto follow-up, no PO on the
+    message, no lines found (cannot tell), or at least one line still open.
+    """
+    mt = (msg.mail_type or "").strip().upper()
+    if not mt.startswith(AUTO_FOLLOWUP_MAIL_TYPE_PREFIX):
+        return None
+    po = (msg.supplier_po_no or "").strip()
+    if not po:
+        return None
+    stmt = select(ProcurementRecord).where(ProcurementRecord.supplier_po_no == po)
+    if (msg.supplier_name or "").strip():
+        stmt = stmt.where(
+            func.upper(ProcurementRecord.supplier_name) == msg.supplier_name.strip().upper()
+        )
+    rows = list(db.scalars(stmt).all())
+    if not rows or any(is_chaseable_line(r) for r in rows):
+        return None
+    why = sorted({closed_reason(r) or "cancellation pending" for r in rows})
+    return f"Not sent: PO closed before sending ({', '.join(why)})"
+
+
+def _skip_closed_po_message(db: Session, msg: CommunicationMessage, reason: str) -> None:
+    """Mark a READY follow-up SKIPPED (shown in the Mail Log with `reason`) and
+    release the PO lines it had flagged READY so a re-opened line is chased again."""
+    msg_service.mark_status(db, msg.id, "SKIPPED", error=reason, commit=False)
+    history_id = _linked_mail_history_id(msg)
+    history = db.get(MailHistory, history_id) if history_id is not None else None
+    if history is not None:
+        history.sent_status = "SKIPPED"
+        history.remarks = reason
+    for rec in _target_procurement_rows(db, msg, history):
+        if (rec.mail_status or "").upper() == "READY":
+            rec.mail_status = "SKIPPED"
+    try:
+        from ..services import followup_audit_service
+
+        followup_audit_service.record_safe(
+            db, supplier_po_no=msg.supplier_po_no, supplier_name=msg.supplier_name,
+            signal=None, mail_type=msg.mail_type, source="send_worker",
+            outcome="SKIPPED", detail=reason, message_id=msg.id,
+            history_id=history_id, commit=False,
+        )
+    except Exception:  # noqa: BLE001 — audit is best-effort
+        log.exception("Audit of skipped message id=%s failed (ignored)", msg.id)
+
+
 def test_smtp_connection(cfg: SmtpConfig | None = None) -> dict[str, Any]:
     """Probe SMTP connectivity. With no `cfg`, tests the env config (legacy). The
     settings API passes the effective per-company config (DB override or env)."""
@@ -325,6 +427,13 @@ def _send_bucket(message_ids: list[int], schema: str) -> list[dict[str, Any]]:
                 msg = db.get(CommunicationMessage, mid)
                 # Re-check status: a user-initiated immediate send may have claimed it.
                 if msg is None or msg.direction != "OUTGOING" or msg.status != "READY":
+                    continue
+                # The PO may have closed while this sat in the queue (night hold).
+                skip_reason = closed_po_skip_reason(db, msg)
+                if skip_reason:
+                    _skip_closed_po_message(db, msg, skip_reason)
+                    db.commit()
+                    results.append({"message_id": mid, "status": "SKIPPED", "reason": skip_reason})
                     continue
                 try:
                     if client is None:
@@ -424,7 +533,17 @@ def send_ready_messages(
                 stmt.order_by(
                     case(
                         (CommunicationMessage.mail_type.in_(sorted(PRIORITY_MAIL_TYPES)), 0),
-                        else_=1,
+                        # Mail a person wrote (compose, hub replies, customer
+                        # replies) — a retry must not queue behind a night-time
+                        # backlog of auto follow-ups drained at the per-minute cap.
+                        (CommunicationMessage.mail_type.is_(None), 1),
+                        (
+                            CommunicationMessage.mail_type.notlike(
+                                f"{AUTO_FOLLOWUP_MAIL_TYPE_PREFIX}%"
+                            ),
+                            1,
+                        ),
+                        else_=2,
                     ),
                     CommunicationMessage.created_at.asc(),
                 ).limit(limit)
@@ -484,6 +603,11 @@ def send_message_now(db: Session, message_id: int) -> dict[str, Any]:
     msg = db.get(CommunicationMessage, message_id)
     if msg is None or msg.direction != "OUTGOING" or msg.status != "READY":
         return {"enabled": True, "sent": False, "reason": "not a queued outgoing message"}
+    skip_reason = closed_po_skip_reason(db, msg)
+    if skip_reason:
+        _skip_closed_po_message(db, msg, skip_reason)
+        db.commit()
+        return {"enabled": True, "sent": False, "status": "SKIPPED", "reason": skip_reason}
     try:
         em = _build_email(msg, cfg.from_addr, db=db)
         _send_one(em, cfg)

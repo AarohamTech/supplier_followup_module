@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 from ..models.communication_message import CommunicationMessage
 from ..models.procurement import ProcurementRecord
 from . import ai_service, brand_email, settings_service
+from .po_open_lines import open_line_clause
 from ..core.config import settings
 from ..workers import mail_send_worker
 
@@ -84,7 +85,8 @@ def format_risk(rows) -> list[dict]:
 
 def _gather_counts(db: Session) -> dict:
     today = datetime.utcnow()
-    active = list(db.scalars(select(ProcurementRecord)).all())
+    # Open lines only (po_open_lines) — closed POs are not "active".
+    active = list(db.scalars(select(ProcurementRecord).where(open_line_clause())).all())
     # NOTE: "today" here is UTC; the digest is gated/stamped in the configured local tz, so near a tz/day boundary the overdue count may differ from the local calendar day by one. Acceptable for a daily ops digest.
     overdue = sum(1 for r in active if r.shipment_date and r.shipment_date.date() < today.date())
     critical = sum(1 for r in active
@@ -102,7 +104,8 @@ def _gather_counts(db: Session) -> dict:
 def _gather_critical(db: Session, limit: int) -> list[dict]:
     rows = db.scalars(
         select(ProcurementRecord)
-        .where(or_(ProcurementRecord.signal == "BLACK",
+        .where(open_line_clause(),
+               or_(ProcurementRecord.signal == "BLACK",
                    ProcurementRecord.escalation_level.in_(CRITICAL_ESCALATIONS)))
         .order_by(ProcurementRecord.risk_score.desc().nullslast())
         .limit(limit)
@@ -113,7 +116,7 @@ def _gather_critical(db: Session, limit: int) -> list[dict]:
 def _gather_risk(db: Session, limit: int) -> list[dict]:
     rows = db.scalars(
         select(ProcurementRecord)
-        .where(ProcurementRecord.risk_band == "HIGH")
+        .where(ProcurementRecord.risk_band == "HIGH", open_line_clause())
         .order_by(ProcurementRecord.risk_score.desc().nullslast())
         .limit(limit)
     ).all()
@@ -125,7 +128,8 @@ def _gather_overdue(db: Session, limit: int) -> list[dict]:
     rows = db.scalars(
         select(ProcurementRecord)
         .where(ProcurementRecord.shipment_date.isnot(None),
-               ProcurementRecord.shipment_date <= today)
+               ProcurementRecord.shipment_date <= today,
+               open_line_clause())
         .order_by(ProcurementRecord.shipment_date.asc())
         .limit(limit)
     ).all()

@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import HTTPException
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..models.procurement import ProcurementRecord
@@ -17,12 +18,37 @@ from . import communication_message_service as msg_service
 
 
 def clean_emails(values: list[str] | None) -> list[str]:
-    out: list[str] = []
-    for v in values or []:
-        e = (v or "").strip()
-        if e and e not in out:
-            out.append(e)
-    return out
+    """Single, valid addresses. Entries holding several addresses ("a@x; b@y",
+    pasted lists, "Name <a@x>") are split. Raises 422 naming any token that looks
+    like an address but is not valid, so a typo never silently drops a recipient."""
+    from ..workers.mail_send_worker import split_recipients
+
+    valid, invalid = split_recipients(values)
+    bad = [t for t in invalid if "@" in t]
+    if bad:
+        raise HTTPException(422, f"Invalid email address: {', '.join(bad[:5])}")
+    return valid
+
+
+def _resolve_po_record(
+    db: Session, supplier_name: str | None, po_no: str | None
+) -> ProcurementRecord | None:
+    """The typed "PO No." may be the internal counter (supplier_po_no) or the
+    supplier-facing vendor ref (po_short_ref) — accept both, paired with the
+    supplier when known (counters are recycled across suppliers)."""
+    po = (po_no or "").strip()
+    if not po:
+        return None
+    for col in (ProcurementRecord.supplier_po_no, ProcurementRecord.po_short_ref):
+        stmt = select(ProcurementRecord).where(col == po)
+        if supplier_name and supplier_name.strip():
+            stmt = stmt.where(
+                func.upper(ProcurementRecord.supplier_name) == supplier_name.strip().upper()
+            )
+        rec = db.scalar(stmt.order_by(ProcurementRecord.id.desc()).limit(1))
+        if rec is not None:
+            return rec
+    return None
 
 
 def compose_and_send(
@@ -55,7 +81,10 @@ def compose_and_send(
         msg_service.resolve_supplier_id_by_name(db, supplier_name) if supplier_name else None
     )
     rec = db.get(ProcurementRecord, procurement_record_id) if procurement_record_id else None
-    po_no = supplier_po_no or (rec.supplier_po_no if rec else None)
+    if rec is None and supplier_po_no:
+        # Link the mail to the PO so it shows in that PO's hub thread.
+        rec = _resolve_po_record(db, supplier_name, supplier_po_no)
+    po_no = (rec.supplier_po_no if rec else None) or (supplier_po_no or "").strip() or None
 
     common = dict(
         supplier_id=supplier_id,
@@ -77,18 +106,35 @@ def compose_and_send(
         )
         return {"ok": True, "message_id": msg.id, "sent": False, "status": "DRAFT"}
 
+    # Manual compose is never an auto follow-up: HUB_COMPOSE is outside the
+    # PO_FOLLOWUP% prefix, so the off-hours window never holds it, and it is
+    # sent right here, in the request, not by the cron.
     msg = msg_service.queue_outgoing_message(db, commit=True, **common)
     from ..workers import mail_send_worker
 
     result = mail_send_worker.send_message_now(db, msg.id)
     if result.get("enabled") is False:
-        raise HTTPException(503, f"SMTP disabled: {result.get('reason', 'check settings')}")
+        # Do not leave a READY row behind that no one can send.
+        msg_service.mark_status(
+            db, msg.id, "FAILED",
+            error=f"SMTP not configured: {result.get('reason', 'check settings')}",
+        )
+        raise HTTPException(
+            503,
+            f"Mail not sent — the company mailbox is not configured ({result.get('reason', 'check Settings → Mail')}).",
+        )
+    sent = bool(result.get("sent"))
     return {
         "ok": True,
         "message_id": msg.id,
-        "sent": bool(result.get("sent")),
-        "status": result.get("status", "QUEUED"),
+        "sent": sent,
+        "status": result.get("status", "READY"),
         "emailed_to": to,
+        # When the immediate send fails the row stays READY and the send worker
+        # retries it (up to 3 times). The sender sees why, and the Mail Log
+        # shows the final state.
+        "error": None if sent else (result.get("error") or result.get("reason")),
+        "will_retry": not sent,
     }
 
 

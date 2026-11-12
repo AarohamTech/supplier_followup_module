@@ -25,6 +25,7 @@ MESSAGE_STATUSES = (
     "COPIED",       # outgoing, copied to clipboard (manual flow)
     "MAILTO_OPENED",  # outgoing, opened in user's mail client (manual flow)
     "SENT_MANUALLY",  # outgoing, user marked as sent manually
+    "SKIPPED",      # outgoing, dropped by the send worker (e.g. PO closed before send)
 )
 
 

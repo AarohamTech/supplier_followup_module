@@ -170,7 +170,9 @@ class WorkloadReportTests(unittest.TestCase):
             data = reports_router.workload_report(db=db)
 
             urow = next(u for u in data["users"] if u["user_id"] == emp.id)
-            self.assertEqual(urow["pos"]["total"], 2)
+            # PO-2 has po_status CLOSED, so it is a closed line (po_open_lines)
+            # and no longer counts anywhere — only the open line r1 does.
+            self.assertEqual(urow["pos"]["total"], 1)
             self.assertEqual(urow["pos"]["pending"], 1)   # PO-2 is CLOSED
             self.assertEqual(urow["pos"]["overdue"], 1)   # r1 shipped yesterday
             self.assertEqual(urow["pos"]["red"], 1)
@@ -185,7 +187,7 @@ class WorkloadReportTests(unittest.TestCase):
             srow = next(
                 s for s in data["suppliers"] if s["supplier_name"] == "ACME TOOLS"
             )
-            self.assertEqual(srow["pos"]["total"], 2)
+            self.assertEqual(srow["pos"]["total"], 1)  # closed PO-2 excluded
             self.assertEqual(srow["pos"]["pending"], 1)
             self.assertEqual(srow["worst_signal"], "RED")
             self.assertEqual(srow["tasks"]["open"], 1)
@@ -193,7 +195,7 @@ class WorkloadReportTests(unittest.TestCase):
             self.assertEqual(srow["mails"]["unread"], 1)
             self.assertEqual(srow["asns"]["in_transit"], 1)
 
-            self.assertEqual(data["overall"]["pos"]["total"], 2)
+            self.assertEqual(data["overall"]["pos"]["total"], 1)  # closed PO-2 excluded
             self.assertEqual(data["overall"]["tasks"]["open"], 2)  # incl. orphan
             self.assertEqual(data["overall"]["unassigned_open_tasks"], 1)
             self.assertEqual(data["overall"]["unread_inbound"], 1)

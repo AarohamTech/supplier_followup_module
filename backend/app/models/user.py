@@ -5,7 +5,7 @@ Passwords are never stored in plaintext — only the bcrypt hash produced by
 """
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ..core.roles import DEFAULT_ROLE
@@ -14,10 +14,17 @@ from ..database import Base
 
 class User(Base):
     __tablename__ = "users"
+    # Email is unique per company, not globally: a supplier contact who deals
+    # with both companies (e.g. SHIVAM ENGINEERS in 101 and 102) needs a portal
+    # login in each, and each login is pinned to its own company. Staff accounts
+    # (company_id NULL) stay unique among themselves. The live DB's old global
+    # unique index is swapped for this one at startup
+    # (schema_evolve.relax_users_email_unique). The index is declared below the
+    # class because it is built from the mapped columns.
 
     id: Mapped[int] = mapped_column(primary_key=True)
 
-    email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
+    email: Mapped[str] = mapped_column(String(255), index=True, nullable=False)
     # Login identifier for accounts without an email (internal employees log in
     # with their CRM login id, e.g. "PRAMOD"). NULL for staff/supplier accounts,
     # who log in by email. Uniqueness is enforced in app code (schema-evolve only
@@ -49,6 +56,17 @@ class User(Base):
     # Forces a password change on next login (temp/admin-reset credentials).
     must_change_password: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
+    # Employee-portal permissions (only meaningful when emp_code is set). Granted
+    # by default; an admin can switch them off per employee on Employee Logins.
+    # Nullable on purpose: rows that predate the column read NULL, and NULL means
+    # granted (see services/employee_permissions.py).
+    can_manage_supplier_assignments: Mapped[bool | None] = mapped_column(
+        Boolean, default=True, nullable=True
+    )
+    can_manage_email_master: Mapped[bool | None] = mapped_column(
+        Boolean, default=True, nullable=True
+    )
+
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime)
 
     created_at: Mapped[datetime] = mapped_column(
@@ -57,3 +75,13 @@ class User(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), onupdate=func.now(), nullable=False
     )
+
+
+# Per-company email uniqueness (see the note on the class). NULL company_id
+# (staff, legacy default-company logins) folds to 0.
+Index(
+    "uq_users_email_company",
+    func.lower(User.email),
+    func.coalesce(User.company_id, 0),
+    unique=True,
+)

@@ -250,23 +250,32 @@ class OwnedPoSucceedsTests(unittest.TestCase):
         with _temp_db() as db:
             emp = _emp(db, "EMP1")
             _po(db, po="OWNED", name="ACME TOOLS", owner="EMP1")
+            # Client rule 2026-11: an employee sees only tasks they are involved
+            # in, and completed tasks are admin-only.
             db.add(CommunicationTask(
-                title="t1", supplier_po_no="OWNED", status="TODO", watchers=[]))
+                title="t1", supplier_po_no="OWNED", status="TODO",
+                assigned_to_user_id=emp.id, watchers=[]))
             db.add(CommunicationTask(
-                title="t2", supplier_po_no="OWNED", status="DONE", watchers=[]))
+                title="t2", supplier_po_no="OWNED", status="DONE",
+                assigned_to_user_id=emp.id, watchers=[]))
+            db.add(CommunicationTask(
+                title="watched", supplier_po_no="OWNED", status="TODO", watchers=[emp.id]))
+            # On the owned PO but not involved → hidden.
+            db.add(CommunicationTask(
+                title="not involved", supplier_po_no="OWNED", status="TODO", watchers=[]))
             # A foreign task must NOT leak into the grouped result.
             db.add(CommunicationTask(
                 title="foreign", supplier_po_no="FOREIGN", status="TODO", watchers=[]))
             db.commit()
 
             grouped = hub.get_tasks(supplier_po_no="OWNED", user=emp, db=db)
-            self.assertEqual({t["title"] for t in grouped["todo"]}, {"t1"})
-            self.assertEqual({t["title"] for t in grouped["done"]}, {"t2"})
+            self.assertEqual({t["title"] for t in grouped["todo"]}, {"t1", "watched"})
+            self.assertEqual(grouped["done"], [])
 
             # No PO filter → union of owned POs only (foreign excluded).
             all_grouped = hub.get_tasks(user=emp, db=db)
             titles = {t["title"] for grp in all_grouped.values() for t in grp}
-            self.assertEqual(titles, {"t1", "t2"})
+            self.assertEqual(titles, {"t1", "watched"})
 
     def test_thread_on_owned_po_returns_shape(self):
         with _temp_db() as db:

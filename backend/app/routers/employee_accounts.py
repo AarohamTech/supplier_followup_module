@@ -35,6 +35,9 @@ class EmployeeCreate(BaseModel):
 class EmployeeUpdate(BaseModel):
     email: EmailStr | None = None
     full_name: str | None = Field(default=None, max_length=255)
+    # Employee-portal permissions (granted by default). Omit to leave unchanged.
+    can_manage_supplier_assignments: bool | None = None
+    can_manage_email_master: bool | None = None
 
 
 class CredItem(BaseModel):
@@ -99,7 +102,12 @@ def update_one(user_id: int, payload: EmployeeUpdate, db: Session = Depends(get_
     user = _load_employee_user(db, user_id)
     try:
         return svc.update_employee(
-            db, user, email=payload.email, full_name=payload.full_name
+            db, user, email=payload.email, full_name=payload.full_name,
+            permissions={
+                k: v for k, v in payload.model_dump(
+                    include={"can_manage_supplier_assignments", "can_manage_email_master"}
+                ).items() if v is not None
+            },
         )
     except EmailTakenError as exc:
         raise HTTPException(status_code=409, detail=str(exc))

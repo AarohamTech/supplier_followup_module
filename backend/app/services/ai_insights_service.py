@@ -19,6 +19,7 @@ from ..models.customer_mail import CustomerMail
 from ..models.procurement import ProcurementRecord
 from . import ai_service
 from . import po_followup_service
+from .po_open_lines import is_chaseable_line, open_line_clause
 
 log = logging.getLogger(__name__)
 
@@ -108,7 +109,9 @@ def list_delay_risk(
     db: Session, *, band: str | None = None, limit: int = 50
 ) -> list[dict[str, Any]]:
     """Top at-risk POs (aggregated to one row per supplier+PO, highest score)."""
-    stmt = select(ProcurementRecord).where(ProcurementRecord.risk_score.isnot(None))
+    stmt = select(ProcurementRecord).where(
+        ProcurementRecord.risk_score.isnot(None), open_line_clause()
+    )
     if band:
         stmt = stmt.where(func.upper(ProcurementRecord.risk_band) == band.upper())
     records = db.scalars(stmt).all()
@@ -215,6 +218,7 @@ def supplier_scorecards(
             ProcurementRecord.supplier_name.isnot(None),
             ProcurementRecord.shipment_date.isnot(None),
             ProcurementRecord.shipment_date < now,
+            open_line_clause(),
         )
         .group_by(ProcurementRecord.supplier_name)
     ).all()
@@ -240,6 +244,7 @@ def supplier_scorecards(
         .where(
             ProcurementRecord.supplier_name.isnot(None),
             func.upper(ProcurementRecord.risk_band) == "HIGH",
+            open_line_clause(),
         )
         .group_by(ProcurementRecord.supplier_name)
     ).all()
@@ -308,11 +313,8 @@ def _chase_key(group: dict[str, Any]) -> tuple[str, str]:
 
 
 def _line_still_needs_chasing(rec: ProcurementRecord) -> bool:
-    return (
-        rec.delisted_at is None
-        and rec.cancellation_status is None
-        and (rec.receipt_status or "").upper() != "COMPLETED"
-    )
+    # Same definition as the auto follow-up cycle (po_open_lines).
+    return is_chaseable_line(rec)
 
 
 def _black_chaseworthy_map(

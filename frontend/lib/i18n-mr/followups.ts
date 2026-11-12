@@ -81,6 +81,13 @@ export const MR_FOLLOWUPS: Record<string, string> = {
   "Message body is required.": "संदेशाचा मजकूर आवश्यक आहे.",
   "Email sent.": "ईमेल पाठवला.",
   "Queued ({status}).": "रांगेत ({status}).",
+  "Email sent to {to}.": "{to} यांना ईमेल पाठवला.",
+  "Reason: {error}": "कारण: {error}",
+  "Not sent yet — queued ({status}).": "अजून पाठवला नाही — रांगेत ({status}).",
+  "The email was not delivered yet. It is queued and will be retried automatically.":
+    "ईमेल अजून पोहोचवला गेला नाही. तो रांगेत आहे आणि आपोआप पुन्हा पाठवला जाईल.",
+  "The email was not sent.": "ईमेल पाठवला गेला नाही.",
+  "Open Mail Log": "मेल लॉग उघडा",
   "Saved as draft.": "मसुदा म्हणून सेव्ह केले.",
   "To audience": "कोणाला",
   "Load recipients from supplier": "पुरवठादाराकडून प्राप्तकर्ते घ्या",

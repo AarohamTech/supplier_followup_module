@@ -83,7 +83,7 @@ export default function CriticalPos({ pos }: { pos: PortalPo[] }) {
           return (
             <li key={p.supplier_po_no} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
               <div className="min-w-0">
-                <div className="font-medium text-brand-dark">{p.supplier_po_no}</div>
+                <div className="font-medium text-brand-dark">{p.po_ref || p.supplier_po_no}</div>
                 <div className="text-xs text-brand-muted">
                   {p.material_count} material{p.material_count === 1 ? "" : "s"}
                   {p.crm_no ? ` · CRM ${p.crm_no}` : ""} · Due {fmtDate(p.earliest_shipment_date)}

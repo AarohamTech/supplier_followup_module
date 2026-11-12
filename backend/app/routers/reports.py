@@ -33,6 +33,7 @@ from ..models.communication_task import CommunicationTask
 from ..models.procurement import ProcurementRecord
 from ..models.supplier import SupplierMaster
 from ..models.user import User
+from ..services.po_open_lines import open_line_clause
 
 router = APIRouter(prefix="/api/reports", tags=["reports"])
 
@@ -49,13 +50,13 @@ def _one(x: Any) -> int:
 def _po_measures() -> list[Any]:
     """Shared per-group PO aggregate columns (order matters — unpacked below).
 
-    Every measure counts LIVE lines only (delisted_at IS NULL): a line the CRM
+    Every measure counts OPEN lines only (po_open_lines; e.g. delisted): a line the CRM
     dropped from its pending desk is received/closed history, and counting it
     made the signal tiles wildly overstate reality (client 2026-07-20: "we have
     around 10 black POs" while the report claimed hundreds)."""
     R = ProcurementRecord
     today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-    live = R.delisted_at.is_(None)
+    live = open_line_clause(R)
     pending = case(
         (live, case(
             (R.po_status.is_(None), 1),
@@ -274,7 +275,7 @@ def workload_report(db: Session = Depends(get_db)) -> dict[str, Any]:
                 R.customer_name,
                 func.count(func.distinct(R.supplier_name)),
                 func.count(R.id),
-            ).where(*_has_customer, R.delisted_at.is_(None)).group_by(R.customer_name)
+            ).where(*_has_customer, open_line_clause(R)).group_by(R.customer_name)
         ).all()
     }
     customer_rows = []
@@ -351,7 +352,7 @@ def _pending_po_rows(db: Session, clause: Any, cap: int = _ROW_CAP) -> list[dict
     pending = (R.po_status.is_(None)) | (func.upper(R.po_status).notin_(_DELIVERED_STATUS))
     rows = db.scalars(
         # delisted = the line left the CRM pending desk (received/closed) — not pending.
-        select(R).where(clause, pending, R.delisted_at.is_(None))
+        select(R).where(clause, pending, open_line_clause(R))
         .order_by(R.shipment_date.asc().nullslast())
         .limit(cap)
     ).all()

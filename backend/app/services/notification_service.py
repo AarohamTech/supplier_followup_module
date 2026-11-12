@@ -6,7 +6,12 @@ Fan-out helpers target an audience and write one row per recipient user:
   - notify_supplier  → every active login for a given supplier_id
   - notify_po_owners → only the staff who own a PO (owner_emp_code) plus the
                        assignees/watchers of its open tasks (falls back to
-                       notify_staff when a PO has no owner at all)
+                       notify_admins when a PO has no owner at all)
+  - notify_admins    → active staff with the admin role only
+
+Client rule (2026-11): nobody gets everyone's notifications. The orphan-PO
+fallback used to broadcast to EVERY staff user; it now goes to admins only.
+Task notifications live in services/task_events (involved people only).
 
 An employee-portal account (`emp_code` set) is therefore notified ONLY when it
 genuinely owns / is assigned to / watches the PO — never via the broadcast
@@ -76,6 +81,24 @@ def notify_staff(db: Session, *, exclude_user_id: int | None = None, **fields: A
     return notify_users(db, _active_staff_ids(db, exclude_user_id=exclude_user_id), **fields)
 
 
+def _active_admin_ids(db: Session, *, exclude_user_id: int | None = None) -> list[int]:
+    from ..core.roles import Role
+
+    stmt = select(User.id).where(
+        User.is_active.is_(True),
+        User.supplier_id.is_(None),
+        User.emp_code.is_(None),
+        User.role == Role.ADMIN,
+    )
+    if exclude_user_id is not None:
+        stmt = stmt.where(User.id != exclude_user_id)
+    return list(db.scalars(stmt).all())
+
+
+def notify_admins(db: Session, *, exclude_user_id: int | None = None, **fields: Any) -> int:
+    return notify_users(db, _active_admin_ids(db, exclude_user_id=exclude_user_id), **fields)
+
+
 def notify_supplier(db: Session, for_supplier_id: int | None, **fields: Any) -> int:
     """Notify every active login of a supplier. `for_supplier_id` is the audience;
     a `supplier_id=` in **fields is the notification's own context column.
@@ -135,9 +158,9 @@ def notify_po_owners(
     exclude_user_id: int | None = None,
     **fields: Any,
 ) -> int:
-    """Notify only the staff responsible for a PO. Falls back to every active
-    staff member when the PO has no resolvable owner, so a notification is never
-    silently dropped. `supplier_po_no` selects the audience; any `supplier_id=`
+    """Notify only the staff responsible for a PO. Falls back to the admins
+    when the PO has no resolvable owner, so a notification is never silently
+    dropped — but never broadcast to every staff user. `supplier_po_no` selects the audience; any `supplier_id=`
     in **fields is the notification's own context column.
     """
     if supplier_po_no:
@@ -150,7 +173,7 @@ def notify_po_owners(
         return notify_users(db, ids, **fields)
     if had_owners:
         return 0  # the only owner is the actor — no one else to notify
-    return notify_staff(db, exclude_user_id=exclude_user_id, **fields)  # orphan PO
+    return notify_admins(db, exclude_user_id=exclude_user_id, **fields)  # orphan PO
 
 
 def safe(fn, *args, **kwargs) -> int:

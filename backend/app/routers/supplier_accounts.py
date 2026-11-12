@@ -24,7 +24,9 @@ router = APIRouter(
 
 def _load_supplier_user(db: Session, user_id: int) -> User:
     user = db.get(User, user_id)
-    if user is None or user.supplier_id is None:
+    # `users` is shared by every company: only touch logins of the company the
+    # admin is switched into.
+    if user is None or user.supplier_id is None or not svc.login_in_active_company(db, user):
         raise HTTPException(status_code=404, detail="Supplier login not found")
     return user
 
@@ -40,7 +42,9 @@ def list_logins(
 
     return list(
         db.scalars(
-            select(User).where(User.supplier_id.is_not(None)).order_by(User.email)
+            select(User)
+            .where(User.supplier_id.is_not(None), svc.active_company_filter(db))
+            .order_by(User.email)
         ).all()
     )
 

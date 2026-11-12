@@ -44,6 +44,11 @@ class CommunicationTask(Base):
     material_name: Mapped[str | None] = mapped_column(String(500))
     task_source: Mapped[str] = mapped_column(String(16), default="SUPPLIER", index=True)
     created_from_mail_id: Mapped[int | None] = mapped_column(Integer, index=True)
+    # The Communication Hub message (communication_messages.id) this task was
+    # assigned from. Its subject/sender/body and attachments are shown on the
+    # task as read-only "source mail" context — the attachment rows are
+    # referenced, never copied. Soft reference (no FK) so schema-evolve can add it.
+    source_message_id: Mapped[int | None] = mapped_column(Integer, index=True)
 
     # Provenance for tasks mirrored in from another system over /api/bridge.
     # `(external_system, external_ref)` is the idempotency key — one task per
@@ -67,6 +72,10 @@ class CommunicationTask(Base):
     # Who last (re)assigned the task — drives the "Assigned by you" panel.
     # NULL on rows from before this column; those fall back to `assigned_by`.
     assigned_by_user_id: Mapped[int | None] = mapped_column(Integer, index=True)
+    # Who created the task (never changes). Drives task visibility for
+    # non-admins together with the assignee, assigner and watchers. NULL on
+    # system-created rows and on rows from before this column.
+    created_by_user_id: Mapped[int | None] = mapped_column(Integer, index=True)
     # Real-user assignment (FK is source of truth; `assigned_to` keeps the
     # denormalized display name so cards render without a join).
     assigned_to_user_id: Mapped[int | None] = mapped_column(

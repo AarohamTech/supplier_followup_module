@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Bell, FileText, Loader2, UserPlus, X } from "lucide-react";
 
 import { AttachButton, AttachmentDropArea } from "@/components/attachments/Attachments";
@@ -50,6 +50,7 @@ export default function TaskCreateForm({
   seed = {},
   statusOptions,
   uploadAttachment,
+  onAttachmentsDone,
   onCancel,
   onSave,
 }: {
@@ -60,6 +61,9 @@ export default function TaskCreateForm({
   statusOptions?: { key: TaskStatus; label: string }[];
   /** When given, files can be attached up front; they upload once the task exists. */
   uploadAttachment?: (taskId: number, file: File) => Promise<unknown>;
+  /** Called once the up-front files finished uploading (in the background,
+   *  in parallel) with the error messages of any that failed. */
+  onAttachmentsDone?: (taskId: number, errors: string[]) => void;
   onCancel: () => void;
   /** Return the created task so attachments can be bound to it. */
   onSave: (payload: CommunicationTaskCreate) => void | CommunicationTask | Promise<void | CommunicationTask>;
@@ -74,6 +78,7 @@ export default function TaskCreateForm({
   const [poNo, setPoNo] = useState(seed.supplier_po_no ?? "");
   const [linkedMailId] = useState(seed.linked_mail_id ?? null);
   const [procurementId] = useState(seed.procurement_record_id ?? null);
+  const [sourceMessageId] = useState(seed.source_message_id ?? null);
   const [priority, setPriority] = useState<TaskPriority>((seed.priority as TaskPriority) ?? "MEDIUM");
   const [status, setStatus] = useState<TaskStatus>((seed.status as TaskStatus) ?? "TODO");
   const [signal, setSignal] = useState<TaskSignal>((seed.signal as TaskSignal) ?? "YELLOW");
@@ -82,6 +87,10 @@ export default function TaskCreateForm({
   const [dueDate, setDueDate] = useState<string>(seed.due_date ? toDatetimeLocal(seed.due_date) : "");
   const [reminder, setReminder] = useState<string>(seed.reminder_at ? toDatetimeLocal(seed.reminder_at) : "");
   const [submitting, setSubmitting] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  // Synchronous guard: state updates are async, so a fast double-click could
+  // otherwise fire two creates before `submitting` re-renders the button.
+  const inFlight = useRef(false);
 
   const supplierOptions = useMemo(() => {
     const set = new Set(suppliers);
@@ -96,6 +105,8 @@ export default function TaskCreateForm({
     supplier_po_no: poNo || null,
     procurement_record_id: procurementId ?? null,
     linked_mail_id: linkedMailId ?? null,
+    source_message_id: sourceMessageId ?? null,
+    task_source: seed.task_source,
     assigned_to_user_id: assignedToUserId,
     watchers: watcherIds,
     priority,
@@ -106,39 +117,59 @@ export default function TaskCreateForm({
   });
 
   const submit = async () => {
-    if (!title.trim()) return;
+    if (!title.trim() || inFlight.current) return;
+    inFlight.current = true;
     setSubmitting(true);
     setFileError(null);
+    setSaveError(null);
+    const pending = files;
+    let created: void | CommunicationTask;
     try {
-      const created = await onSave(buildPayload());
-      if (created && uploadAttachment && files.length) {
-        for (const f of files) {
-          try {
-            await uploadAttachment(created.id, f);
-          } catch (err) {
-            setFileError((err as Error).message);
-          }
-        }
-      }
-    } finally {
+      created = await onSave(buildPayload());
+    } catch (err) {
+      // Keep the form open with everything typed; say why it failed.
+      setSaveError((err as Error)?.message || t("Could not create the task. Please try again."));
+      inFlight.current = false;
       setSubmitting(false);
+      return;
     }
+    // Files go up in parallel AFTER the task exists, without holding the form
+    // (the parent usually closes it as soon as onSave resolves).
+    if (created && uploadAttachment && pending.length) {
+      const taskId = created.id;
+      void Promise.allSettled(pending.map((f) => uploadAttachment(taskId, f))).then((results) => {
+        const errors = results
+          .filter((r): r is PromiseRejectedResult => r.status === "rejected")
+          .map((r) => (r.reason as Error)?.message || String(r.reason));
+        onAttachmentsDone?.(taskId, errors);
+      });
+    }
+    inFlight.current = false;
+    setSubmitting(false);
   };
 
+  // Form modal: closes only via X / Cancel — a stray click on the backdrop
+  // must never throw away what was typed (client feedback).
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" onClick={onCancel}>
-      <div className="w-full max-w-2xl rounded-xl bg-card shadow-2xl" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4">
+      <div className="w-full max-w-2xl rounded-xl bg-card shadow-2xl" role="dialog" aria-modal="true">
         <div className="flex items-center justify-between border-b border-brand-border px-5 py-3">
           <div className="flex items-center gap-2">
             <UserPlus size={16} className="text-signal-red" />
             <span className="font-semibold">{t("Create Task")}</span>
           </div>
-          <button className="rounded p-1 hover:bg-subtle" onClick={onCancel}>
+          <button className="rounded p-1 hover:bg-subtle" onClick={onCancel} aria-label={t("Close")}>
             <X size={18} />
           </button>
         </div>
 
         <div className="grid max-h-[70vh] grid-cols-2 gap-4 overflow-y-auto p-5">
+          {sourceMessageId != null && (
+            <div className="col-span-2 flex items-center gap-1.5 rounded-md border border-brand-border bg-subtle px-3 py-2 text-xs text-brand-muted">
+              <FileText size={12} className="shrink-0" />
+              {t("The mail (subject, sender, text and attachments) will be linked to this task.")}
+            </div>
+          )}
           <Field label={t("Task title")} full>
             <input
               autoFocus
@@ -255,6 +286,11 @@ export default function TaskCreateForm({
           )}
         </div>
 
+        {saveError && (
+          <div className="mx-5 mb-1 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+            {saveError}
+          </div>
+        )}
         <div className="flex justify-end gap-2 border-t border-brand-border px-5 py-3">
           <button className="btn-ghost" onClick={onCancel} disabled={submitting}>
             {t("Cancel")}

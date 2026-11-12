@@ -29,7 +29,9 @@ router = APIRouter(
     dependencies=[Depends(require_role(Role.VIEWER))],
 )
 
-STATUSES = ("SENT", "READY", "FAILED", "DRAFT")
+# SKIPPED = an auto follow-up the send worker dropped because its PO closed
+# while it waited in the queue; the reason is in error_message.
+STATUSES = ("SENT", "READY", "FAILED", "SKIPPED", "DRAFT")
 
 
 def _filters(

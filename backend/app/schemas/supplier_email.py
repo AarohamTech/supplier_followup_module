@@ -47,6 +47,8 @@ class LoginProvisioningSummary(BaseModel):
     """Result of reconciling supplier logins with the mapping's TO emails."""
     created: list[CreatedLogin] = Field(default_factory=list)
     reactivated: list[str] = Field(default_factory=list)
+    # Existing logins (same company) moved over from a stale / same-named supplier.
+    relinked: list[str] = Field(default_factory=list)
     deactivated: list[str] = Field(default_factory=list)
     conflicts: list[LoginConflict] = Field(default_factory=list)
     emailed: list[str] = Field(default_factory=list)

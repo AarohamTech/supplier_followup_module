@@ -21,10 +21,16 @@ import {
   PendingAttachments,
 } from "@/components/attachments/Attachments";
 import { EmailHtmlView } from "@/components/EmailHtmlView";
+import { humanizeEnum, messageKindChip } from "@/lib/messageLabels";
+import { PlainTextWithTables } from "@/lib/plainTextTables";
+import { supplierPoNo } from "@/lib/portalPoRefs";
 
 // ─── Normalized PO row shape (works for both EmployeePo and PortalPo) ────────
 export interface CommHubPoRow {
+  /** Routing / API key (the CRM counter). Never shown when po_ref exists. */
   supplier_po_no: string;
+  /** Vendor PO document number the supplier knows — the displayed PO number. */
+  po_ref?: string | null;
   /** Counterparty label — supplier name (employee) or buyer/"Your buyer" (supplier). */
   counterparty: string;
   crm_no?: string | null;
@@ -181,17 +187,51 @@ export default function PortalCommHub({
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return [...pos]
-      .filter((p) => !q || `${p.supplier_po_no} ${p.counterparty} ${p.crm_no ?? ""}`.toLowerCase().includes(q))
+      .filter(
+        (p) =>
+          !q ||
+          `${p.po_ref ?? ""} ${p.supplier_po_no} ${p.counterparty} ${p.crm_no ?? ""}`.toLowerCase().includes(q),
+      )
       .sort((a, b) => {
         // Unread float to the top.
         const au = (a.unread_inbound ?? 0) > 0 ? 1 : 0;
         const bu = (b.unread_inbound ?? 0) > 0 ? 1 : 0;
         if (au !== bu) return bu - au;
-        return a.supplier_po_no.localeCompare(b.supplier_po_no);
+        return supplierPoNo(a).localeCompare(supplierPoNo(b));
       });
   }, [pos, search]);
 
   const activePo = pos.find((p) => p.supplier_po_no === active) ?? null;
+
+  // Outlook addressing for the active PO, fetched up front so a failing
+  // endpoint disables the button (with a tooltip) instead of raising a
+  // page-level error banner when clicked.
+  const [outlook, setOutlook] = useState<{ to: string[]; subject: string } | null>(null);
+  const [outlookState, setOutlookState] = useState<"idle" | "loading" | "ready" | "unavailable">("idle");
+  useEffect(() => {
+    if (!active || !adapter.outlookCompose) {
+      setOutlook(null);
+      setOutlookState("idle");
+      return;
+    }
+    let cancelled = false;
+    setOutlookState("loading");
+    adapter
+      .outlookCompose(active)
+      .then((c) => {
+        if (cancelled) return;
+        setOutlook(c);
+        setOutlookState(c.to.length > 0 ? "ready" : "unavailable");
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setOutlook(null);
+        setOutlookState("unavailable");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [active, adapter]);
 
   const send = async () => {
     const body = composer.trim();
@@ -215,19 +255,15 @@ export default function PortalCommHub({
 
   // Open the supplier's own mail app (Outlook etc.) addressed to the company
   // inbox; the mail is read back into this PO thread by the inbox fetcher.
-  const openInOutlook = async () => {
-    if (!active || !adapter.outlookCompose) return;
-    try {
-      const { to, subject } = await adapter.outlookCompose(active);
-      const body = composer.trim();
-      window.location.href =
-        `mailto:${encodeURIComponent(to.join(","))}?subject=${encodeURIComponent(subject)}` +
-        (body ? `&body=${encodeURIComponent(body)}` : "");
-      if (pendingFiles.length > 0) {
-        setError("Attach your files again in Outlook — they can't be passed over to it.");
-      }
-    } catch (e) {
-      setError((e as Error).message);
+  const openInOutlook = () => {
+    if (!active || !outlook || outlookState !== "ready") return;
+    const { to, subject } = outlook;
+    const body = composer.trim();
+    window.location.href =
+      `mailto:${encodeURIComponent(to.join(","))}?subject=${encodeURIComponent(subject)}` +
+      (body ? `&body=${encodeURIComponent(body)}` : "");
+    if (pendingFiles.length > 0) {
+      setError("Attach your files again in Outlook — they can't be passed over to it.");
     }
   };
 
@@ -316,7 +352,7 @@ export default function PortalCommHub({
               <div className="flex items-center gap-2 border-b border-brand-border px-5 py-3">
                 <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${SIGNAL_DOT[(activePo.signal || "").toUpperCase()] ?? "bg-subtle"}`} />
                 <h2 className="truncate font-semibold text-brand-dark">
-                  PO #{activePo.supplier_po_no}
+                  PO {supplierPoNo(activePo)}
                   <span className="ml-2 font-normal text-brand-muted">{activePo.counterparty}</span>
                 </h2>
                 <span className="ml-2 hidden text-xs text-brand-muted md:inline">
@@ -361,9 +397,16 @@ export default function PortalCommHub({
                       <AttachButton onFiles={(files) => void addFiles(files)} disabled={sending} />
                       {adapter.outlookCompose && (
                         <button
-                          className="inline-flex items-center gap-1 rounded-md border border-brand-border bg-card px-2 py-1.5 text-xs font-medium text-brand-dark hover:bg-subtle"
-                          onClick={() => void openInOutlook()}
-                          title="Write this message in Outlook (or your mail app) instead"
+                          className="inline-flex items-center gap-1 rounded-md border border-brand-border bg-card px-2 py-1.5 text-xs font-medium text-brand-dark hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-card"
+                          onClick={openInOutlook}
+                          disabled={outlookState !== "ready"}
+                          title={
+                            outlookState === "ready"
+                              ? "Write this message in Outlook (or your mail app) instead"
+                              : outlookState === "loading"
+                              ? "Preparing Outlook…"
+                              : "Outlook is not available for this PO right now — send your message here instead"
+                          }
                         >
                           <Mail size={14} /> Outlook
                         </button>
@@ -401,7 +444,7 @@ export default function PortalCommHub({
           <div className="border-b border-brand-border px-4 py-3">
             <div className="text-sm font-semibold text-brand-dark">Context</div>
             <div className="truncate text-[11px] text-brand-muted">
-              {activePo ? `PO #${activePo.supplier_po_no}` : "No PO selected"}
+              {activePo ? `PO ${supplierPoNo(activePo)}` : "No PO selected"}
             </div>
           </div>
           <div className="flex-1 space-y-4 overflow-y-auto p-4">
@@ -459,7 +502,7 @@ export default function PortalCommHub({
                                 <span className={`rounded px-1.5 py-0.5 text-[9px] font-bold ${SIGNAL_CHIP[sig] ?? "bg-subtle text-brand-muted"}`}>
                                   {t.priority}
                                 </span>
-                                <span className="text-[10px] text-brand-muted">{t.status}</span>
+                                <span className="text-[10px] text-brand-muted">{humanizeEnum(t.status)}</span>
                               </div>
                             </div>
                           );
@@ -505,7 +548,7 @@ function PoRow({
         {unread && <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-500" title="Unread replies" />}
         <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${SIGNAL_DOT[sig] ?? "bg-subtle"}`} />
         <span className={`flex-1 truncate text-sm text-brand-dark ${unread ? "font-bold" : "font-medium"}`}>
-          #{p.supplier_po_no}
+          PO {supplierPoNo(p)}
         </span>
         {unread && (
           <span className="rounded-full bg-emerald-500 px-1.5 py-0.5 text-[10px] font-bold text-white">
@@ -513,7 +556,7 @@ function PoRow({
           </span>
         )}
         {p.escalated && (
-          <span className="rounded bg-red-50 px-1.5 py-0.5 text-[10px] font-bold text-signal-red">Escalated</span>
+          <span className="rounded bg-red-50 px-1.5 py-0.5 text-[10px] font-bold text-signal-red">Escalated to buyer</span>
         )}
       </div>
       <p className={`mt-1 truncate pl-4 text-xs ${unread ? "font-medium text-brand-dark/80" : "text-brand-muted"}`}>
@@ -532,6 +575,7 @@ function MessageBubble({
 }) {
   // OUTGOING (mine) → right; INCOMING → left.
   const isMine = m.mine;
+  const kind = messageKindChip(m.mail_type);
   return (
     <div className={`flex flex-col ${isMine ? "items-end" : "items-start"}`}>
       <div
@@ -547,13 +591,20 @@ function MessageBubble({
         {m.body_html ? (
           <EmailHtmlView html={m.body_html} />
         ) : (
-          <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-brand-dark">{m.body}</p>
+          // Older plain-text mails carry pipe tables — rendered as real tables.
+          <PlainTextWithTables
+            text={m.body}
+            className="text-sm leading-relaxed text-brand-dark"
+          />
         )}
         <AttachmentChips items={m.attachments} endpointFor={attachmentEndpoint} />
         <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] text-brand-muted">
           <span>{fmtTime(m.at)}</span>
           <span>·</span>
           <span>{m.author}</span>
+          {m.mail_type && (
+            <span className={`rounded px-1.5 py-0.5 font-semibold ${kind.cls}`}>{kind.label}</span>
+          )}
         </div>
       </div>
     </div>

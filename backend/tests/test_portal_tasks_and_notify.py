@@ -86,14 +86,18 @@ class NotifyPoOwnersTests(unittest.TestCase):
             self.assertEqual(created, 1)
             self.assertEqual(notification_service.unread_count(db, assignee.id), 1)
 
-    def test_orphan_po_falls_back_to_all_staff(self):
+    def test_orphan_po_falls_back_to_admins_only(self):
+        # Client rule 2026-11: never broadcast to every staff user.
         with _temp_db() as db:
             _po(db, po="PO-3", owner=None)  # no owner, no tasks
+            admin = user_service.create_user(
+                db, email="a@corp.com", password="x" * 8, role=Role.ADMIN)
             staff = user_service.create_user(
                 db, email="s@corp.com", password="x" * 8, role=Role.MANAGER)
             notification_service.notify_po_owners(
                 db, supplier_po_no="PO-3", type="X", title="hi")
-            self.assertEqual(notification_service.unread_count(db, staff.id), 1)
+            self.assertEqual(notification_service.unread_count(db, admin.id), 1)
+            self.assertEqual(notification_service.unread_count(db, staff.id), 0)
 
     def test_orphan_fallback_skips_employee_portal_accounts(self):
         # Regression: an employee bell must stay scoped to the employee's own
@@ -102,7 +106,7 @@ class NotifyPoOwnersTests(unittest.TestCase):
         with _temp_db() as db:
             _po(db, po="PO-ORPHAN", owner=None)  # no owner, no tasks
             staff = user_service.create_user(
-                db, email="mgr@corp.com", password="x" * 8, role=Role.MANAGER)
+                db, email="mgr@corp.com", password="x" * 8, role=Role.ADMIN)
             stranger_emp = user_service.create_user(
                 db, email="emp@corp.com", password="x" * 8, role=Role.EMPLOYEE,
                 emp_code="EMPX", username="EMPX")
@@ -130,13 +134,19 @@ class EmployeeTaskScopeTests(unittest.TestCase):
             db, email=f"{emp_code}@corp.com", password="x" * 8, role=Role.EMPLOYEE,
             emp_code=emp_code, username=emp_code)
 
-    def test_my_tasks_includes_assigned_and_owned_po(self):
+    def test_my_tasks_only_involved_and_open(self):
+        # Client rule 2026-11: involved-only (created / assigned / assigner /
+        # watcher); owning the PO alone no longer exposes its tasks; DONE hidden.
         with _temp_db() as db:
             emp = self._emp(db)
             _po(db, po="OWNED", owner="EMP1")
             _po(db, po="FOREIGN", owner="OTHER")
-            # On an owned PO (no assignee).
+            # On an owned PO but not involved → hidden now.
             db.add(CommunicationTask(title="on owned po", supplier_po_no="OWNED", status="TODO", watchers=[]))
+            db.add(CommunicationTask(title="watching", status="TODO", watchers=[emp.id]))
+            db.add(CommunicationTask(title="created by me", status="TODO", created_by_user_id=emp.id, watchers=[]))
+            db.add(CommunicationTask(
+                title="done one", status="DONE", assigned_to_user_id=emp.id, watchers=[]))
             # Assigned to the employee but on someone else's PO.
             db.add(CommunicationTask(
                 title="assigned to me", supplier_po_no="FOREIGN", status="TODO",
@@ -147,15 +157,16 @@ class EmployeeTaskScopeTests(unittest.TestCase):
 
             tasks = employee_portal.my_tasks(user=emp, db=db)
             titles = {t.title for t in tasks}
-            self.assertEqual(titles, {"on owned po", "assigned to me"})
+            self.assertEqual(titles, {"assigned to me", "watching", "created by me"})
 
-    def test_full_update_scoped_to_owned_po_or_assigned(self):
+    def test_full_update_scoped_to_involved_tasks(self):
         with _temp_db() as db:
             emp = self._emp(db)
             _po(db, po="OWNED", owner="EMP1")
             _po(db, po="FOREIGN", owner="OTHER")
             on_owned = CommunicationTask(
-                title="on owned", supplier_po_no="OWNED", status="TODO", watchers=[])
+                title="on owned", supplier_po_no="OWNED", status="TODO",
+                assigned_to_user_id=emp.id, watchers=[])
             foreign = CommunicationTask(
                 title="foreign", supplier_po_no="FOREIGN", status="TODO", watchers=[])
             db.add_all([on_owned, foreign])

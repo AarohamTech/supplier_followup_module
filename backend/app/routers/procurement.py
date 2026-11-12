@@ -22,6 +22,7 @@ from ..services.procurement_sync_service import (
 from ..services.followup_engine import apply_followup_logic
 from ..services import crm_ingest_service
 from ..services import procurement_breakdown_service as breakdown_service
+from ..services.po_open_lines import open_line_clause
 
 router = APIRouter(prefix="/api/procurement", tags=["procurement"])
 
@@ -35,10 +36,11 @@ def dashboard(db: Session = Depends(get_db), owner_emp_code: Optional[str] = Non
 
     # Optional employee scope: every KPI is counted only within the selected
     # employee's owned POs (mirrors the /breakdown + list owner_emp_code filter),
-    # so the whole dashboard re-scopes from one control. Every KPI counts LIVE
-    # lines only — delisted (received/closed on the CRM side) rows are history.
+    # so the whole dashboard re-scopes from one control. Every KPI counts OPEN
+    # lines only (po_open_lines) — the same definition as Orders, My Orders,
+    # PO Follow-ups and the auto follow-up cycle.
     owner = (R.owner_emp_code == owner_emp_code) if owner_emp_code else None
-    live = R.delisted_at.is_(None)
+    live = open_line_clause(R)
 
     def cnt(*conds):
         all_conds = list(conds) + [live] + ([owner] if owner is not None else [])
@@ -84,6 +86,7 @@ def breakdown(
     shipment_date_from: Optional[date] = None,
     shipment_date_to: Optional[date] = None,
     search: Optional[str] = None,
+    include_closed: bool = False,
 ):
     """Signal + supplier + pending aggregations for the dashboard pies, under the
     same filters as the list (so the pies match the visible table)."""
@@ -92,6 +95,7 @@ def breakdown(
         supplier_po_no=supplier_po_no, crm_no=crm_no, po_status=po_status,
         owner_emp_code=owner_emp_code, shipment_date_from=shipment_date_from,
         shipment_date_to=shipment_date_to, search=search,
+        include_closed=include_closed,
     )
     return ProcurementBreakdown(**breakdown_service.compute_breakdown(db, conds))
 
@@ -109,11 +113,14 @@ def list_records(
     shipment_date_from: Optional[date] = None,
     shipment_date_to: Optional[date] = None,
     search: Optional[str] = None,
+    include_closed: bool = False,
     page: int = Query(1, ge=1),
     size: int = Query(50, ge=1, le=500),
 ):
     R = ProcurementRecord
     stmt = select(R)
+    # Open lines only unless asked (po_open_lines) — matches Orders / My Orders.
+    if not include_closed: stmt = stmt.where(open_line_clause(R))
     if signal: stmt = stmt.where(R.signal == signal.upper())
     if supplier_name: stmt = stmt.where(R.supplier_name.ilike(f"%{supplier_name}%"))
     supplier_po_filter = supplier_po_no or po_no
@@ -184,6 +191,7 @@ def export_records(
     po_status: Optional[str] = None,
     owner_emp_code: Optional[str] = None,
     search: Optional[str] = None,
+    include_closed: bool = False,
 ):
     """Download the (filtered) PO lines as an Excel workbook — the PO Follow-ups
     'Download PO' action. Same filters as the list endpoint, capped at 5000 rows."""
@@ -193,6 +201,8 @@ def export_records(
 
     R = ProcurementRecord
     stmt = select(R)
+    if not include_closed:
+        stmt = stmt.where(open_line_clause(R))
     if signal: stmt = stmt.where(R.signal == signal.upper())
     if supplier_name: stmt = stmt.where(R.supplier_name.ilike(f"%{supplier_name}%"))
     if supplier_po_no: stmt = stmt.where(R.supplier_po_no.ilike(f"%{supplier_po_no}%"))

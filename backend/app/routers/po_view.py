@@ -75,8 +75,11 @@ def list_pos(
     search: str | None = Query(default=None),
     page: int = Query(default=1, ge=1),
     size: int = Query(default=50, ge=1, le=200),
+    include_closed: bool = Query(default=False),
 ) -> dict:
-    items, total = po_view_service.grouped_pos(db, search=search, page=page, size=size)
+    items, total = po_view_service.grouped_pos(
+        db, search=search, page=page, size=size, include_closed=include_closed
+    )
     return {"items": items, "total": total, "page": page, "size": size}
 
 

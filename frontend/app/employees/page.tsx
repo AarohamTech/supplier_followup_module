@@ -7,6 +7,12 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import type { AuthUser, EmployeeCredential } from "@/lib/types";
 
+// Employee-portal screens an admin can switch off per employee (on by default).
+const PERMISSIONS: { flag: "can_manage_supplier_assignments" | "can_manage_email_master"; label: string }[] = [
+  { flag: "can_manage_supplier_assignments", label: "Supplier Assignment" },
+  { flag: "can_manage_email_master", label: "Email Master" },
+];
+
 function fmtDate(d?: string | null) {
   if (!d) return "—";
   const dt = new Date(d);
@@ -32,6 +38,7 @@ export default function EmployeesAdminPage() {
   const [editUser, setEditUser] = useState<AuthUser | null>(null);
   const [editEmail, setEditEmail] = useState("");
   const [editName, setEditName] = useState("");
+  const [permBusy, setPermBusy] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -158,6 +165,27 @@ export default function EmployeesAdminPage() {
     }
   };
 
+  // Per-employee portal permissions (granted by default). Optimistic toggle,
+  // rolled back with a visible error if the save fails.
+  const onTogglePermission = async (
+    u: AuthUser,
+    flag: "can_manage_supplier_assignments" | "can_manage_email_master",
+  ) => {
+    const next = u[flag] === false;
+    setError(null);
+    setPermBusy(`${u.id}:${flag}`);
+    setList((prev) => prev.map((x) => (x.id === u.id ? { ...x, [flag]: next } : x)));
+    try {
+      const saved = await api.updateEmployeeLogin(u.id, { [flag]: next });
+      setList((prev) => prev.map((x) => (x.id === u.id ? { ...x, ...saved } : x)));
+    } catch (e) {
+      setList((prev) => prev.map((x) => (x.id === u.id ? { ...x, [flag]: !next } : x)));
+      setError(`Could not update access for ${u.username}: ${(e as Error).message}`);
+    } finally {
+      setPermBusy(null);
+    }
+  };
+
   const onDelete = async (u: AuthUser) => {
     if (!confirm(`Delete employee login "${u.username}"? This cannot be undone.`)) return;
     setBusy(true);
@@ -261,7 +289,7 @@ export default function EmployeesAdminPage() {
 
       {/* Existing logins */}
       <div className="card overflow-x-auto">
-        <table className="w-full min-w-[760px] text-sm">
+        <table className="w-full min-w-[900px] text-sm">
           <thead className="bg-subtle text-left text-[11px] uppercase tracking-wider text-brand-muted">
             <tr>
               <th className="px-3 py-2">Username</th>
@@ -269,6 +297,7 @@ export default function EmployeesAdminPage() {
               <th className="px-3 py-2">Email</th>
               <th className="px-3 py-2">Emp code</th>
               <th className="px-3 py-2">Status</th>
+              <th className="px-3 py-2" title="Extra employee-portal screens. On by default; click to switch off for this employee.">Portal access</th>
               <th className="px-3 py-2">Last login</th>
               <th className="px-3 py-2 text-right">Actions</th>
             </tr>
@@ -276,13 +305,13 @@ export default function EmployeesAdminPage() {
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={7} className="px-3 py-6 text-center text-brand-muted">
+                <td colSpan={8} className="px-3 py-6 text-center text-brand-muted">
                   <Loader2 size={16} className="mx-auto animate-spin" />
                 </td>
               </tr>
             ) : list.length === 0 ? (
               <tr>
-                <td colSpan={7} className="px-3 py-6 text-center text-brand-muted">
+                <td colSpan={8} className="px-3 py-6 text-center text-brand-muted">
                   No employee logins yet — import the sheet above.
                 </td>
               </tr>
@@ -312,6 +341,27 @@ export default function EmployeesAdminPage() {
                         Must change
                       </span>
                     )}
+                  </td>
+                  <td className="px-3 py-2">
+                    <div className="flex flex-col gap-1">
+                      {PERMISSIONS.map((p) => {
+                        const on = u[p.flag] !== false;
+                        const pending = permBusy === `${u.id}:${p.flag}`;
+                        return (
+                          <label key={p.flag} className="inline-flex cursor-pointer items-center gap-1.5 text-[11px] whitespace-nowrap">
+                            <input
+                              type="checkbox"
+                              checked={on}
+                              disabled={pending}
+                              onChange={() => void onTogglePermission(u, p.flag)}
+                              aria-label={`${p.label} for ${u.username}`}
+                            />
+                            <span className={on ? "text-brand-dark" : "text-brand-muted line-through"}>{p.label}</span>
+                            {pending && <Loader2 size={11} className="animate-spin text-brand-muted" />}
+                          </label>
+                        );
+                      })}
+                    </div>
                   </td>
                   <td className="px-3 py-2 text-xs text-brand-muted">{fmtDate(u.last_login_at)}</td>
                   <td className="px-3 py-2">

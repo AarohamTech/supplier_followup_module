@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy import func, or_, select, tuple_
 from sqlalchemy.orm import Session
 
@@ -40,7 +40,9 @@ from ..schemas.communication_task import (
 )
 from ..services import compose_service
 from ..services import po_followup_service
+from ..services.po_open_lines import open_line_clause, open_lines
 from ..services import task_assignment_service as assign
+from ..services import task_visibility as task_vis
 from . import communication as comm  # shared task logic (one source of truth)
 from . import communication_hub as hub  # reuse admin aggregation + actions
 
@@ -268,38 +270,19 @@ def dashboard(
         task_pair = _pair_clause(
             CommunicationTask.supplier_name, CommunicationTask.supplier_po_no, owned_pairs
         )
-        open_tasks = int(
-            db.execute(
-                select(func.count(CommunicationTask.id)).where(
-                    task_pair,
-                    CommunicationTask.status != "DONE",
-                )
-            ).scalar_one()
-            or 0
+        # Only tasks the employee may see (involved + open).
+        visible = task_vis.filter_visible(
+            db.scalars(task_vis.scope_stmt(select(CommunicationTask), user).where(task_pair)).all(),
+            user,
         )
-        critical_escalations = int(
-            db.execute(
-                select(func.count(CommunicationTask.id)).where(
-                    task_pair,
-                    CommunicationTask.signal == "BLACK",
-                )
-            ).scalar_one()
-            or 0
-        )
-        waiting_supplier = int(
-            db.execute(
-                select(func.count(CommunicationTask.id)).where(
-                    task_pair,
-                    CommunicationTask.status == "WAITING_SUPPLIER",
-                )
-            ).scalar_one()
-            or 0
-        )
+        open_tasks = sum(1 for t in visible if t.status != "DONE")
+        critical_escalations = sum(1 for t in visible if t.signal == "BLACK")
+        waiting_supplier = sum(1 for t in visible if t.status == "WAITING_SUPPLIER")
 
     delayed_pos = len(
         {
             r.supplier_po_no
-            for r in records
+            for r in open_lines(records)  # po_open_lines
             if r.supplier_po_no and (r.signal or "").upper() in ("RED", "BLACK")
         }
     )
@@ -323,7 +306,7 @@ def dashboard(
 
     return {
         "active_suppliers": len(supplier_names),
-        "active_pos": len(owned_pos),
+        "active_pos": len({r.supplier_po_no for r in open_lines(records) if r.supplier_po_no}),
         "draft_mails": draft_mails,
         "sent_mails": sent_mails,
         "open_tasks": open_tasks,
@@ -406,6 +389,7 @@ def _build_scoped_supplier_entry(
         select(ProcurementRecord).where(
             ProcurementRecord.owner_emp_code == emp_code,
             func.upper(ProcurementRecord.supplier_name) == upper,
+            open_line_clause(),  # closed lines do not count (po_open_lines)
         )
     ).all()
 
@@ -677,11 +661,13 @@ def get_tasks(
             procurement_record_id=procurement_record_id,
             supplier_po_no=po_no,
             db=db,
+            viewer=user,
         )
 
-    # No specific PO → all tasks across the employee's owned (supplier, PO) pairs.
+    # No specific PO → tasks across the employee's owned (supplier, PO) pairs,
+    # limited to the ones they may see (involved + open; services/task_visibility).
     all_tasks = db.scalars(
-        select(CommunicationTask)
+        task_vis.scope_stmt(select(CommunicationTask), user)
         .where(
             _pair_clause(
                 CommunicationTask.supplier_name,
@@ -691,24 +677,7 @@ def get_tasks(
         )
         .order_by(CommunicationTask.created_at.desc())
     ).all()
-    grouped: dict[str, list[dict[str, Any]]] = {
-        "todo": [],
-        "waiting_supplier": [],
-        "in_progress": [],
-        "done": [],
-    }
-    for t in all_tasks:
-        entry = hub._task_dict(t)
-        s = (t.status or "TODO").upper()
-        if s == "TODO":
-            grouped["todo"].append(entry)
-        elif s == "WAITING_SUPPLIER":
-            grouped["waiting_supplier"].append(entry)
-        elif s == "IN_PROGRESS":
-            grouped["in_progress"].append(entry)
-        else:
-            grouped["done"].append(entry)
-    return grouped
+    return hub.group_tasks(task_vis.filter_visible(all_tasks, user))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -719,6 +688,7 @@ def create_task(
     payload: CommunicationTaskCreate,
     user: User = Depends(get_current_employee),
     db: Session = Depends(get_db),
+    background_tasks: BackgroundTasks = None,  # type: ignore[assignment]
 ) -> dict[str, Any]:
     """Create a task on an in-scope PO. Validates scope BEFORE delegating to the
     shared staff create logic (so assignee resolution / activity log are identical
@@ -731,7 +701,7 @@ def create_task(
     elif payload.assigned_to_user_id is None:
         # Personal task with no PO → pin to the employee so it stays in scope.
         payload.assigned_to_user_id = user.id
-    row = comm.create_task(payload=payload, db=db, actor=user)
+    row = comm.create_task(payload=payload, db=db, actor=user, background_tasks=background_tasks)
     return hub._task_dict(row)
 
 
@@ -744,6 +714,7 @@ def update_task(
     payload: CommunicationTaskUpdate,
     user: User = Depends(get_current_employee),
     db: Session = Depends(get_db),
+    background_tasks: BackgroundTasks = None,  # type: ignore[assignment]
 ) -> dict[str, Any]:
     """Update a task on an in-scope PO. 404 if the task's PO is not owned (or the
     task does not exist). Delegates to the shared staff update logic."""
@@ -753,7 +724,9 @@ def update_task(
         and _po_in_scope(db, user.emp_code, row.supplier_po_no, row.supplier_name)
     ):
         raise HTTPException(404, "Task not found for your account")
-    updated = comm.update_task(task_id=task_id, payload=payload, db=db, actor=user)
+    updated = comm.update_task(
+        task_id=task_id, payload=payload, db=db, actor=user, background_tasks=background_tasks
+    )
     return hub._task_dict(updated)
 
 
@@ -994,13 +967,25 @@ def _assert_compose_scope(
     # Customer threads are not part of the employee surface.
     if customer_mail_id is not None:
         raise HTTPException(404, "Customer mail not found")
-    if procurement_record_id is not None or supplier_po_no:
+    if procurement_record_id is None and supplier_po_no:
+        # The employee portal shows the vendor PO ref (po_short_ref), so the
+        # typed "PO No." may be either that or the internal counter. Resolve it
+        # to a record of the chosen supplier, then check scope on the record.
+        rec = compose_service._resolve_po_record(db, supplier_name, supplier_po_no)
+        if rec is None or _record_in_scope(db, emp_code, rec.id) is None:
+            raise HTTPException(
+                404,
+                f"PO {supplier_po_no.strip()} was not found among your POs"
+                + (f" for {supplier_name}" if supplier_name else ""),
+            )
+    elif procurement_record_id is not None:
         _resolve_scoped_po(
             db, emp_code,
             supplier_po_no=supplier_po_no,
             procurement_record_id=procurement_record_id,
+            supplier_name=supplier_name,
         )
-    elif supplier_name:
+    if supplier_name and procurement_record_id is None and not supplier_po_no:
         if supplier_name.strip().upper() not in _owned_supplier_names(db, emp_code):
             raise HTTPException(404, "Supplier not found for your account")
 

@@ -26,6 +26,8 @@ class CommunicationTaskBase(BaseModel):
     material_name: Optional[str] = None
     task_source: TaskSource = "SUPPLIER"
     created_from_mail_id: Optional[int] = None
+    # Communication Hub message the task was assigned from (source mail context).
+    source_message_id: Optional[int] = None
     assigned_to: Optional[str] = None
     assigned_to_user_id: Optional[int] = None
     assigned_by: Optional[str] = None
@@ -118,6 +120,7 @@ class CommunicationTaskOut(CommunicationTaskBase):
     external_url: Optional[str] = None
 
     assigned_by_user_id: Optional[int] = None
+    created_by_user_id: Optional[int] = None
     comments_count: int = 0
     attachment_count: int = 0
     closed_at: Optional[datetime] = None

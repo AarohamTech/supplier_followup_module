@@ -66,6 +66,9 @@ class EmployeePoMaterial(BaseModel):
     # Receipt quantities from the CRM desk feed (GRN progress).
     po_qty: Optional[float] = None
     grn_qty: Optional[float] = None
+    # Shared definitions (services.po_quantities) — same as the supplier portal.
+    ordered_qty: Optional[float] = None
+    inward_qty: Optional[float] = None
     pending_qty: Optional[float] = None
     receipt_status: Optional[str] = None
     # PO document references (drive the PO PDF download).

@@ -19,6 +19,8 @@ const employeeAdapter: PortalTaskAdapter = {
     remove: (id, attId) => api.eportalDeleteTaskAttachment(id, attId),
     downloadUrl: (attId) => `/api/eportal/attachments/${attId}/download`,
   },
+  exportMineUrl: api.eportalMyTasksExportUrl(),
+  sourceMessage: (id) => api.eportalTaskSourceMessage(id),
 };
 
 export default function EmployeeTasksPage() {
@@ -27,6 +29,8 @@ export default function EmployeeTasksPage() {
       adapter={employeeAdapter}
       permissions={{ canCreate: true, canEdit: true, canAssign: true, canDelete: true, canComment: true, readOnly: false }}
       scopeLabel="My Tasks"
+      // Employees are never admins: completed tasks are admin-only.
+      showCompleted={false}
     />
   );
 }

@@ -15,6 +15,7 @@ from ..core.config import settings
 from ..models.mail_history import MailHistory
 from ..models.procurement import ProcurementRecord
 from .po_visibility import is_supplier_visible, supplier_visible_clause
+from .po_open_lines import chaseable_line_clause, is_chaseable_line
 from . import ai_service, brand_email, communication_message_service as msg_service
 from . import embeddings_service, followup_audit_service, po_followup_service, vector_store
 from .followup_engine import apply_followup_logic
@@ -176,6 +177,21 @@ def _po_body_html(
             "date for each material.</p>"
         )
 
+    # PO acknowledgement call-to-action (only while not yet acknowledged —
+    # the caller puts a signed `ack_url` on the group, else it is absent).
+    ack_url = group.get("ack_url")
+    ack_block = (
+        "<div style=\"margin:0 0 16px;padding:12px 14px;border:1px solid #bbf7d0;"
+        "background:#f0fdf4;border-radius:8px;text-align:center;\">"
+        "<p style=\"margin:0 0 8px;font-size:13px;color:#14532d;\">"
+        "Please confirm that you have received this purchase order.</p>"
+        f"<a href=\"{escape(ack_url)}\" style=\"display:inline-block;background:#15803d;"
+        "color:#ffffff;text-decoration:none;padding:10px 22px;border-radius:8px;"
+        "font-weight:700;font-size:14px;\">Acknowledge PO</a>"
+        "<p style=\"margin:8px 0 0;font-size:11px;color:#475569;\">"
+        "One click — no login needed.</p></div>"
+    ) if ack_url else ""
+
     inner = (
         brand_email.header_html("Procurement Follow-up")
         + "<div style=\"padding:20px;color:#1f2937;font-size:13px;line-height:1.5;\">"
@@ -188,6 +204,7 @@ def _po_body_html(
                 "dispatch date for each material using the button provided.</p>"
             )
         )
+        + ack_block
         +
         # PO summary card
         "<table role=\"presentation\" style=\"border-collapse:collapse;width:100%;margin:0 0 16px;\">"
@@ -404,11 +421,30 @@ def create_po_followup_mail(
     instruction: str | None = None,
     source: str = "manual",
 ) -> PoMailQueueResult:
-    group = po_followup_service.get_po_group(db, supplier_name, supplier_po_no)
+    # Only lines the supplier may still be chased for (po_open_lines): closed
+    # and cancel-pending lines never appear in the mail or set its signal.
+    group = po_followup_service.get_po_group(
+        db, supplier_name, supplier_po_no, chaseable_only=True
+    )
     if not group:
+        closed = po_followup_service.get_po_group(
+            db, supplier_name, supplier_po_no, include_closed=True
+        )
+        if closed:
+            followup_audit_service.record_safe(
+                db,
+                supplier_po_no=closed.get("supplier_po_no"),
+                supplier_name=closed.get("supplier_name"),
+                signal=closed.get("overall_signal"),
+                mail_type=mail_type,
+                source=source,
+                outcome="SKIPPED",
+                detail=PO_CLOSED_SKIP,
+                commit=commit,
+            )
         return PoMailQueueResult(
             created=False,
-            skipped_reason="PO group not found",
+            skipped_reason=PO_CLOSED_SKIP if closed else "PO group not found",
             supplier_name=supplier_name,
             supplier_po_no=supplier_po_no,
         )
@@ -497,6 +533,11 @@ def create_po_followup_mail(
             group["material_count"],
         )
     )
+    # "Acknowledge PO" link (signed, public) while the supplier has not
+    # acknowledged this PO yet. Read by _po_body_html via the group.
+    from . import po_ack_service
+
+    group["ack_url"] = po_ack_service.ack_url_for_group(db, group)
     body_html = _po_body_html(group, table_html, reply_table_html)
 
     anchor_id = group["anchor_record_id"]
@@ -525,6 +566,12 @@ def create_po_followup_mail(
             body_plain, intro_html = polished
             body_html = _po_body_html(group, table_html, reply_table_html, intro_html=intro_html)
             ai_used = True
+
+    if group.get("ack_url") and group["ack_url"] not in (body_plain or ""):
+        body_plain = (
+            f"{(body_plain or '').rstrip()}\n\n"
+            f"Please acknowledge receipt of this PO (one click):\n{group['ack_url']}"
+        )
 
     history = MailHistory(
         procurement_record_id=anchor_id,
@@ -673,6 +720,10 @@ def _attach_po_pdf_to_green_ack(db: Session, msg: Any, group: dict[str, Any]) ->
 
 
 NOT_APPROVED_SKIP = "PO not approved yet — suppliers are not mailed about unapproved POs"
+PO_CLOSED_SKIP = (
+    "PO closed — every line is received, cancelled (or cancel pending) or "
+    "removed from the CRM pending desk"
+)
 
 
 def _group_has_supplier_visible_line(db: Session, group: dict[str, Any]) -> bool:
@@ -690,13 +741,10 @@ def _group_has_supplier_visible_line(db: Session, group: dict[str, Any]) -> bool
 
 
 def _record_due_for_auto_mail(rec: ProcurementRecord, now: datetime) -> bool:
-    # Fully received (per CRM GRN quantities), delisted from the CRM pending desk,
-    # or cancel-requested lines are done — never chase the supplier for them.
-    if getattr(rec, "delisted_at", None) is not None:
-        return False
-    if (getattr(rec, "receipt_status", None) or "").upper() == "COMPLETED":
-        return False
-    if (getattr(rec, "cancellation_status", None) or "").upper() in {"PENDING", "CANCELLED"}:
+    # Closed (delisted / fully received / cancelled / closed status) or
+    # cancel-pending lines are done — never chase the supplier for them.
+    # One shared definition: po_open_lines.
+    if not is_chaseable_line(rec):
         return False
     if (rec.mail_status or "").upper() == "READY":
         return False
@@ -755,9 +803,15 @@ def queue_due_po_followups(
     now = datetime.utcnow()
     # Suppliers are only ever mailed about APPROVED lines: unapproved / not-yet-
     # generated POs are internal until the CRM flips them (po_visibility).
+    # Closed / cancel-pending lines are dropped here too (po_open_lines), so they
+    # never join a group, never lift its signal and never appear in the mail.
     records = db.scalars(
         select(ProcurementRecord)
-        .where(ProcurementRecord.supplier_po_no.isnot(None), supplier_visible_clause())
+        .where(
+            ProcurementRecord.supplier_po_no.isnot(None),
+            supplier_visible_clause(),
+            chaseable_line_clause(),
+        )
         .order_by(ProcurementRecord.supplier_name.asc(), ProcurementRecord.supplier_po_no.asc())
     ).all()
 
@@ -966,8 +1020,10 @@ def command_followup(
     if rec is None:
         return {"found": False, "error": "PO not found"}
     supplier_name = rec.supplier_name or ""
-    group = po_followup_service.get_po_group(db, supplier_name, po)
+    group = po_followup_service.get_po_group(db, supplier_name, po, chaseable_only=True)
     if not group:
+        if po_followup_service.get_po_group(db, supplier_name, po, include_closed=True):
+            return {"found": False, "error": PO_CLOSED_SKIP}
         return {"found": False, "error": "PO group not found"}
 
     mail_type = PO_MAIL_TYPE_BY_SIGNAL.get(group["overall_signal"], "PO_FOLLOWUP_GROUP")

@@ -13,8 +13,19 @@ from ..models.communication_task import CommunicationTask
 from ..models.task_collaboration import TaskActivityLog
 
 
-def compute_analytics(db: Session) -> dict:
-    tasks = list(db.scalars(select(CommunicationTask)).all())
+def _scoped_tasks(db: Session, viewer=None) -> list[CommunicationTask]:
+    """Every task for admins (or no viewer); only the viewer's visible tasks
+    otherwise — so analytics never show a non-admin other people's work."""
+    stmt = select(CommunicationTask).order_by(CommunicationTask.id)
+    if viewer is None:
+        return list(db.scalars(stmt).all())
+    from . import task_visibility as vis
+
+    return vis.filter_visible(db.scalars(vis.scope_stmt(stmt, viewer)).all(), viewer)
+
+
+def compute_analytics(db: Session, viewer=None) -> dict:
+    tasks = _scoped_tasks(db, viewer)
     now = datetime.utcnow()
     today = now.date()
 
@@ -90,20 +101,24 @@ _TASK_COLUMNS = (
 )
 
 
-def export_workbook(db: Session) -> bytes:
+def export_workbook(db: Session, viewer=None) -> bytes:
     from openpyxl import Workbook
 
     wb = Workbook()
     ws = wb.active
     ws.title = "Tasks"
     ws.append(list(_TASK_COLUMNS))
-    for t in db.scalars(select(CommunicationTask).order_by(CommunicationTask.id)).all():
+    tasks = _scoped_tasks(db, viewer)
+    for t in tasks:
         ws.append([_cell(getattr(t, c)) for c in _TASK_COLUMNS])
 
     ws2 = wb.create_sheet("Activity")
     ws2.append(["id", "task_id", "activity_type", "old_value", "new_value",
                 "created_by", "created_by_id", "created_at"])
-    for a in db.scalars(select(TaskActivityLog).order_by(TaskActivityLog.id)).all():
+    act_stmt = select(TaskActivityLog).order_by(TaskActivityLog.id)
+    if viewer is not None:
+        act_stmt = act_stmt.where(TaskActivityLog.task_id.in_([t.id for t in tasks] or [-1]))
+    for a in db.scalars(act_stmt).all():
         ws2.append([a.id, a.task_id, a.activity_type, a.old_value, a.new_value,
                     a.created_by, a.created_by_id, _cell(a.created_at)])
 

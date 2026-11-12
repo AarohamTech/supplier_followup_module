@@ -8,7 +8,7 @@ import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import type { PortalPo } from "@/lib/types";
 import { fmtDate } from "@/lib/format";
-import { signalBadge } from "@/lib/asn";
+import { SUPPLIER_ESCALATED_LABEL, supplierSignalChip } from "@/lib/messageLabels";
 import PoPdfButton from "@/components/po/PoPdfButton";
 
 export default function PortalPosPage() {
@@ -64,7 +64,7 @@ export default function PortalPosPage() {
         <table className="min-w-full text-sm">
           <thead className="bg-subtle">
             <tr>
-              {["PO Reference", "CRM No", "Materials", "Signal", "Earliest Due", "ASNs", "Messages", "Status", ""].map((h) => (
+              {["PO Reference", "CRM No", "Materials", "Follow-up", "Earliest Due", "ASNs", "Messages", "Status", ""].map((h) => (
                 <th key={h} className="px-4 py-3 text-left table-header whitespace-nowrap">{h}</th>
               ))}
             </tr>
@@ -95,16 +95,15 @@ export default function PortalPosPage() {
                       fileLabel={p.po_ref || p.supplier_po_no}
                       endpoint="/api/portal/po-pdf"
                     />
-                    {p.escalated && <span className="badge badge-critical">Escalated</span>}
+                    {p.escalated && <span className="badge badge-critical">{SUPPLIER_ESCALATED_LABEL}</span>}
                   </div>
-                  {p.po_ref && p.po_ref !== p.supplier_po_no && (
-                    <div className="text-[11px] text-brand-muted">#{p.supplier_po_no}</div>
-                  )}
                 </td>
                 <td className="px-4 py-3 text-xs text-brand-muted">{p.crm_no || "—"}</td>
                 <td className="px-4 py-3">{p.material_count}</td>
                 <td className="px-4 py-3">
-                  {p.overall_signal ? <span className={"badge " + signalBadge(p.overall_signal)}>{p.overall_signal}</span> : "—"}
+                  {supplierSignalChip(p.overall_signal) ? (
+                    <span className={"badge " + supplierSignalChip(p.overall_signal)!.cls}>{supplierSignalChip(p.overall_signal)!.label}</span>
+                  ) : "—"}
                 </td>
                 <td className="px-4 py-3 text-xs">{fmtDate(p.earliest_shipment_date)}</td>
                 <td className="px-4 py-3">{p.asn_count}</td>
@@ -117,7 +116,7 @@ export default function PortalPosPage() {
                   {p.completed ? (
                     <span className="badge badge-track">Completed</span>
                   ) : (
-                    <span className="badge badge-due">Pending</span>
+                    <span className="badge badge-due">In progress</span>
                   )}
                 </td>
                 <td className="px-4 py-3 text-right text-brand-muted">

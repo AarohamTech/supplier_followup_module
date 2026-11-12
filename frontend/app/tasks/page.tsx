@@ -35,6 +35,8 @@ import { LanguageToggle, useT } from "@/lib/i18n";
 import PageHeader from "@/components/layout/PageHeader";
 import { AssigneePicker, WatcherPicker } from "@/components/tasks/AssigneePicker";
 import TaskCreateForm from "@/components/tasks/TaskCreateForm";
+import SourceMailBlock from "@/components/tasks/SourceMailBlock";
+import { ExportButton } from "@/components/reports/WorkloadShared";
 import {
   AssignedByMePanel,
   BoardSettingsModal,
@@ -166,6 +168,8 @@ export default function TasksPage() {
   const searchParams = useSearchParams();
   const customerMailIdParam = searchParams.get("customer_mail_id");
   const customerMailId = customerMailIdParam ? Number(customerMailIdParam) : null;
+  // Deep link from a task notification: /tasks?task=123 opens that task.
+  const taskParam = searchParams.get("task");
 
   const board = useBoardColumns(api.taskBoardColumns);
 
@@ -241,6 +245,25 @@ export default function TasksPage() {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    const id = taskParam ? Number(taskParam) : NaN;
+    if (!Number.isFinite(id)) return;
+    let alive = true;
+    api
+      .getTask(id)
+      .then((task) => alive && setSelected(task))
+      .catch(() => alive && setMessage(t("That task is not available to you.")));
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [taskParam]);
+
+  // Counters only (cheap) — used after a create instead of re-pulling the board.
+  const refreshDashboard = useCallback(() => {
+    api.getTasksDashboard().then(setDashboard).catch(() => {});
+  }, []);
 
   // Search + priority, before the quick-filter chips (so chip counts reflect them).
   const searched = useMemo(() => {
@@ -353,9 +376,14 @@ export default function TasksPage() {
                 <Settings2 size={13} /> {t("Board")}
               </button>
             )}
-            <button type="button" onClick={exportCsv} className="btn-outline text-xs">
+            <button type="button" onClick={exportCsv} className="btn-outline text-xs" title={t("Export the tasks shown (CSV)")}>
               {t("Export")}
             </button>
+            <ExportButton
+              url={api.myTasksExportUrl()}
+              filename={`my-tasks-${new Date().toISOString().slice(0, 10)}.xlsx`}
+              label={t("Export my tasks")}
+            />
             <button type="button" onClick={() => setShowCreate(true)} className="btn-dark text-xs">
               <Plus size={13} /> {t("Create Task")}
             </button>
@@ -384,7 +412,10 @@ export default function TasksPage() {
         <Kpi label={t("Supplier")} value={dashboard?.supplier_tasks} icon={<Factory size={16} className="text-violet-600" />} tone="bg-violet-100" />
         <Kpi label={t("Customer")} value={dashboard?.customer_tasks} icon={<Users size={16} className="text-cyan-600" />} tone="bg-cyan-100" />
         <Kpi label={t("Escalations")} value={dashboard?.escalation_tasks} icon={<Flame size={16} className="text-orange-600" />} tone="bg-orange-100" />
-        <Kpi label={t("Completed")} value={dashboard?.done} icon={<CheckCircle2 size={16} className="text-green-600" />} tone="bg-green-100" />
+        {/* Completed tasks are admin-only (client rule). */}
+        {isAdmin && (
+          <Kpi label={t("Completed")} value={dashboard?.done} icon={<CheckCircle2 size={16} className="text-green-600" />} tone="bg-green-100" />
+        )}
       </div>
 
       {/* Filter bar */}
@@ -557,11 +588,19 @@ export default function TasksPage() {
           suppliers={suppliers}
           statusOptions={board.visible.map((c) => ({ key: c.key, label: t(c.label) }))}
           uploadAttachment={(id, file) => api.uploadTaskAttachment(id, file)}
+          onAttachmentsDone={(taskId, errors) => {
+            if (errors.length) setMessage(t("Task created, but some files failed to upload: {err}", { err: errors[0] }));
+            // Bump the paperclip count on the card without re-pulling the board.
+            api.getTask(taskId).then((fresh) => setTasks((cur) => cur.map((x) => (x.id === taskId ? fresh : x)))).catch(() => {});
+          }}
           onCancel={() => setShowCreate(false)}
           onSave={async (payload) => {
             const created = await api.createTask(payload);
+            // Optimistic: close at once and show the new card; only the cheap
+            // counters are refetched (no full 500-task board reload).
             setShowCreate(false);
-            void refresh();
+            setTasks((cur) => [created, ...cur.filter((x) => x.id !== created.id)]);
+            refreshDashboard();
             return created;
           }}
         />
@@ -754,12 +793,12 @@ function TaskDrawer({
   );
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center p-2 sm:p-4 bg-black/50" onClick={onClose}>
+    // Edit modal: closes via X / Escape only, never on a backdrop click.
+    <div className="fixed inset-0 z-50 grid place-items-center p-2 sm:p-4 bg-black/50">
       <div
         role="dialog"
         aria-modal="true"
         className="relative w-full max-w-6xl h-[94vh] bg-card rounded-xl shadow-2xl flex flex-col overflow-hidden"
-        onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
         <div className="px-6 py-4 border-b border-brand-border flex items-start justify-between gap-3">
@@ -795,6 +834,9 @@ function TaskDrawer({
                 <p className="text-sm whitespace-pre-wrap text-brand-dark">{task.description}</p>
               </div>
             )}
+
+            {/* Mail the task was assigned from (subject, sender, excerpt, files) */}
+            <SourceMailBlock task={task} load={api.taskSourceMessage} attachmentEndpoint={staffAttachments.downloadUrl} />
 
             {/* AI Summary */}
             <div className="rounded-lg border border-indigo-100 bg-indigo-50/50 p-3">

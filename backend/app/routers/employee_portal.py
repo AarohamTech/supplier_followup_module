@@ -12,7 +12,7 @@ import re
 from datetime import date, datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
@@ -45,7 +45,10 @@ from ..services import notification_service as notif
 from ..services import po_cancel_service
 from ..services import po_followup_mail_service
 from ..services import po_view_service
+from ..services.po_open_lines import open_line_clause
+from ..services.po_quantities import line_quantities
 from ..services import task_assignment_service as assign
+from ..services import task_visibility as vis
 from . import ai_insights  # reuse the admin Black-Follow-ups aggregation + command schema
 from . import communication as comm  # reuse the staff task logic (one source of truth)
 
@@ -58,11 +61,14 @@ _TAG_RE = re.compile(r"<[^>]+>")
 
 
 def _emp_records(db: Session, emp_code: str | None) -> list[ProcurementRecord]:
+    """The employee's OPEN lines (po_open_lines) — closed lines are history."""
     if not emp_code:
         return []
     return list(
         db.scalars(
-            select(ProcurementRecord).where(ProcurementRecord.owner_emp_code == emp_code)
+            select(ProcurementRecord).where(
+                ProcurementRecord.owner_emp_code == emp_code, open_line_clause()
+            )
         ).all()
     )
 
@@ -149,6 +155,9 @@ def po_materials(
     stmt = select(ProcurementRecord).where(
         ProcurementRecord.owner_emp_code == user.emp_code,
         ProcurementRecord.supplier_po_no == supplier_po_no,
+        # Same line set as the admin PO detail and the supplier portal:
+        # closed lines (po_open_lines) drop out.
+        open_line_clause(),
     )
     # PO numbers are recycled across suppliers — scope to the supplier so a
     # shared PO number does not mix another vendor's materials into this PO.
@@ -173,7 +182,7 @@ def po_materials(
             commitment_date=_as_dt(r.commitment_date),
             po_qty=float(r.po_qty) if r.po_qty is not None else None,
             grn_qty=float(r.grn_qty) if r.grn_qty is not None else None,
-            pending_qty=float(r.pending_qty) if r.pending_qty is not None else None,
+            **line_quantities(r),
             receipt_status=r.receipt_status,
         )
         for r in rows
@@ -356,6 +365,17 @@ def download_attachment(
         allowed = bool(
             cm and cm.supplier_po_no and _owned_po(db, user, cm.supplier_po_no)
         )
+    if not allowed and att.message_id:
+        # A file on the mail a task was assigned from — visible to whoever can
+        # see that task (the "source mail" block on the task detail).
+        allowed = any(
+            vis.can_see(user, t)
+            for t in db.scalars(
+                select(CommunicationTask).where(
+                    CommunicationTask.source_message_id == att.message_id
+                )
+            ).all()
+        )
     if not allowed:
         raise HTTPException(404, "Attachment not found")
     return attachment_response(att)
@@ -375,9 +395,9 @@ def procurement_dashboard(
     today = date.today()
     start = datetime.combine(today, datetime.min.time())
     end = datetime.combine(today, datetime.max.time())
-    # Live lines only — delisted (received/closed on the CRM side) is history.
+    # Open lines only (po_open_lines) — closed lines are history.
     owned = R.owner_emp_code == user.emp_code
-    live = R.delisted_at.is_(None)
+    live = open_line_clause(R)
 
     row = db.execute(
         select(
@@ -417,6 +437,7 @@ def procurement_breakdown(
     shipment_date_from: Optional[date] = None,
     shipment_date_to: Optional[date] = None,
     search: Optional[str] = None,
+    include_closed: bool = False,
 ) -> ProcurementBreakdown:
     """Same aggregations as the staff /breakdown, hard-scoped to the employee's own
     POs (owner_emp_code) — powers the buyer dashboard's supplier pie + pending count."""
@@ -425,7 +446,7 @@ def procurement_breakdown(
         signal=signal, supplier_name=supplier_name, po_no=po_no,
         supplier_po_no=supplier_po_no, crm_no=crm_no, po_status=po_status,
         shipment_date_from=shipment_date_from, shipment_date_to=shipment_date_to,
-        search=search,
+        search=search, include_closed=include_closed,
     )
     return ProcurementBreakdown(**breakdown_service.compute_breakdown(db, conds))
 
@@ -443,6 +464,7 @@ def list_procurement(
     shipment_date_from: Optional[date] = None,
     shipment_date_to: Optional[date] = None,
     search: Optional[str] = None,
+    include_closed: bool = False,
     page: int = 1,
     size: int = 50,
 ) -> ProcurementListOut:
@@ -451,6 +473,8 @@ def list_procurement(
     size = min(500, max(1, size))
     R = ProcurementRecord
     stmt = select(R).where(R.owner_emp_code == user.emp_code)
+    if not include_closed:
+        stmt = stmt.where(open_line_clause(R))
     if signal:
         stmt = stmt.where(R.signal == signal.upper())
     if supplier_name:
@@ -721,11 +745,12 @@ def _owned_po_numbers(db: Session, emp_code: str | None) -> list[str]:
 
 
 def _task_in_scope(user: User, owned: list[str], task: CommunicationTask) -> bool:
-    """A task belongs to an employee if it's assigned to them, was assigned BY
-    them (their "Assigned by you" list), or is on a PO they own."""
-    if task.assigned_to_user_id == user.id or task.assigned_by_user_id == user.id:
-        return True
-    return bool(task.supplier_po_no and task.supplier_po_no in owned)
+    """A task is visible to an employee only if they are involved in it: they
+    created it, are assigned to it, assigned it (their "Assigned by you" list)
+    or watch it. Client rule 2026-11 — owning the PO alone no longer exposes
+    every task on it (see services/task_visibility). `owned` is kept for the
+    call signature only."""
+    return vis.can_see(user, task)
 
 
 def _scoped_task_or_404(db: Session, user: User, task_id: int) -> CommunicationTask:
@@ -770,15 +795,9 @@ def my_tasks(
     supplier_po_no: str | None = None,
     overdue: bool = False,
 ) -> list[CommunicationTask]:
-    """The employee's tasks: assigned to them, or on a PO they own."""
-    owned = _owned_po_numbers(db, user.emp_code)
-    conds = [
-        CommunicationTask.assigned_to_user_id == user.id,
-        CommunicationTask.assigned_by_user_id == user.id,
-    ]
-    if owned:
-        conds.append(CommunicationTask.supplier_po_no.in_(owned))
-    stmt = select(CommunicationTask).where(or_(*conds))
+    """The employee's tasks: the open tasks they are involved in (created,
+    assigned to, assigned by, watching). Completed tasks are admin-only."""
+    stmt = vis.scope_stmt(select(CommunicationTask), user)
     if status:
         stmt = stmt.where(CommunicationTask.status == status)
     if task_source:
@@ -792,11 +811,19 @@ def my_tasks(
             CommunicationTask.due_date.isnot(None),
             CommunicationTask.due_date < now,
         )
-    rows = db.scalars(stmt).all()
+    rows = vis.filter_visible(db.scalars(stmt).all(), user)
     return sorted(
         rows,
         key=lambda t: (1 if (t.status or "").upper() == "DONE" else 0, t.due_date or datetime.max),
     )
+
+
+@router.get("/tasks/export/mine")
+def export_my_tasks(
+    user: User = Depends(get_current_employee), db: Session = Depends(get_db)
+):
+    """"My tasks" .xlsx — the open tasks the employee is involved in."""
+    return comm.my_tasks_xlsx_response(db, user)
 
 
 @router.get("/tasks/dashboard")
@@ -814,21 +841,51 @@ def list_assignees(
     return assign.list_assignees(db)
 
 
+def _resolve_owned_po(db: Session, emp_code: str | None, typed: str) -> str | None:
+    """Map what the employee typed to one of their own PO numbers.
+
+    The portal shows the supplier PO number (po_short_ref) while tasks key on
+    supplier_po_no, and people often type a leading '#'. Accept either form,
+    case/space-insensitive; return the canonical supplier_po_no or None."""
+    if not emp_code:
+        return None
+    key = (typed or "").strip().lstrip("#").strip()
+    if not key:
+        return None
+    R = ProcurementRecord
+    rec = db.scalars(
+        select(R).where(
+            R.owner_emp_code == emp_code,
+            or_(
+                func.upper(R.supplier_po_no) == key.upper(),
+                func.upper(R.po_short_ref) == key.upper(),
+            ),
+        ).limit(1)
+    ).first()
+    return rec.supplier_po_no if rec is not None else None
+
+
 @router.post("/tasks", response_model=CommunicationTaskOut, status_code=201)
 def create_task(
     payload: CommunicationTaskCreate,
     user: User = Depends(get_current_employee),
     db: Session = Depends(get_db),
+    background_tasks: BackgroundTasks = None,  # type: ignore[assignment]
 ) -> CommunicationTask:
     """Create a task on one of the employee's own POs (or a personal task)."""
-    owned = _owned_po_numbers(db, user.emp_code)
     if payload.supplier_po_no:
-        if payload.supplier_po_no not in owned:
-            raise HTTPException(403, "You can only create tasks on your own POs")
+        canonical = _resolve_owned_po(db, user.emp_code, payload.supplier_po_no)
+        if canonical is None:
+            raise HTTPException(
+                403,
+                f"PO {payload.supplier_po_no} is not one of your POs — "
+                "leave the PO number empty for a personal task.",
+            )
+        payload.supplier_po_no = canonical
     elif payload.assigned_to_user_id is None:
         # Personal task with no PO → pin to the employee so it stays in scope.
         payload.assigned_to_user_id = user.id
-    return comm.create_task(payload=payload, db=db, actor=user)
+    return comm.create_task(payload=payload, db=db, actor=user, background_tasks=background_tasks)
 
 
 @router.patch("/tasks/{task_id}", response_model=CommunicationTaskOut)
@@ -837,22 +894,15 @@ def update_my_task(
     payload: CommunicationTaskUpdate,
     user: User = Depends(get_current_employee),
     db: Session = Depends(get_db),
+    background_tasks: BackgroundTasks = None,  # type: ignore[assignment]
 ) -> CommunicationTask:
-    """Full update of a task in the employee's scope (delegates to staff logic)."""
+    """Full update of a task in the employee's scope (delegates to staff logic).
+    The shared update notifies the task's involved people (never the whole PO
+    audience) after the response."""
     _scoped_task_or_404(db, user, task_id)
-    row = comm.update_task(task_id=task_id, payload=payload, db=db, actor=user)
-    if row.supplier_po_no:
-        notif.safe(
-            notif.notify_po_owners, db,
-            supplier_po_no=row.supplier_po_no,
-            exclude_user_id=user.id,
-            type="TASK_UPDATED",
-            title=f"Task updated by {user.full_name or user.username}",
-            body=f"{row.title} → {row.status}",
-            link="/tasks",
-            supplier_id=row.supplier_id,
-        )
-    return row
+    return comm.update_task(
+        task_id=task_id, payload=payload, db=db, actor=user, background_tasks=background_tasks
+    )
 
 
 @router.delete("/tasks/{task_id}", status_code=204)
@@ -862,7 +912,7 @@ def delete_my_task(
     db: Session = Depends(get_db),
 ):
     _scoped_task_or_404(db, user, task_id)
-    comm.delete_task(task_id=task_id, db=db)
+    comm.delete_task(task_id=task_id, db=db, viewer=user)
 
 
 @router.get("/tasks/board-columns")
@@ -918,6 +968,21 @@ def add_task_comment(
     body: dict = None,  # type: ignore[assignment]
     user: User = Depends(get_current_employee),
     db: Session = Depends(get_db),
+    background_tasks: BackgroundTasks = None,  # type: ignore[assignment]
 ) -> dict:
     _scoped_task_or_404(db, user, task_id)
-    return comm.add_task_comment(task_id=task_id, body=body, db=db, actor=user)
+    return comm.add_task_comment(
+        task_id=task_id, body=body, db=db, actor=user, background_tasks=background_tasks
+    )
+
+
+@router.get("/tasks/{task_id}/source-message")
+def task_source_message(
+    task_id: int,
+    user: User = Depends(get_current_employee),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Source mail context (subject/sender/date/excerpt + attachments) of a task
+    in the employee's scope. Attachments download via /attachments/{id}/download."""
+    task = _scoped_task_or_404(db, user, task_id)
+    return {"source": comm.source_message_context(db, task)}

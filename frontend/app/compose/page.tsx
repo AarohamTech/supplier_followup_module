@@ -8,6 +8,7 @@ import ComposeWorkspace, { type ComposeAdapter } from "@/components/compose/Comp
 // Staff compose — suppliers or customers, full recipient auto-fill.
 const staffAdapter: ComposeAdapter = {
   allowCustomer: true,
+  mailLogHref: "/mail-log",
   compose: (body) => api.hubCompose(body),
   composeDraft: (body) => api.hubComposeDraft(body),
   loadSupplierContacts: () =>

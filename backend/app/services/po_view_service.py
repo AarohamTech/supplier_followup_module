@@ -14,6 +14,8 @@ from sqlalchemy.orm import Session
 
 from ..models.communication_message import CommunicationMessage
 from ..models.procurement import ProcurementRecord
+from .po_open_lines import is_open_line, open_line_clause
+from .po_quantities import line_quantities
 
 _SIGNAL_LABEL = {4: "BLACK", 3: "RED", 2: "YELLOW", 1: "GREEN", 0: None}
 _CANCEL_LABEL = {2: "CANCELLED", 1: "PENDING", 0: None}
@@ -44,13 +46,24 @@ def grouped_pos(
     search: str | None = None,
     page: int | None = None,
     size: int | None = None,
+    include_closed: bool = False,
 ) -> tuple[list[dict[str, Any]], int]:
     """POs grouped by (supplier, PO), aggregated in SQL so we never load every row.
 
     Returns (items, total_groups). Pass page+size to get one page; omit both for all.
     A supplier's PO matches `search` if any of its lines match po/vendor/CRM.
+
+    Only POs with at least one OPEN line (po_open_lines) are listed unless
+    ``include_closed``; their material count, signal, escalation, earliest
+    date and status come from the open lines alone. The receipt rollup still
+    spans every line still on the CRM desk, so a PO with one line fully
+    received and one pending reads PARTIAL rather than PENDING.
     """
     R = ProcurementRecord
+    is_open = open_line_clause(R)
+
+    def only_open(expr: Any, else_: Any = None) -> Any:
+        return expr if include_closed else case((is_open, expr), else_=else_)
     sig_rank = case(
         (func.upper(R.signal) == "BLACK", 4),
         (func.upper(R.signal) == "RED", 3),
@@ -63,10 +76,11 @@ def grouped_pos(
         (func.upper(R.cancellation_status) == "PENDING", 1),
         else_=0,
     )
-    escalated = func.max(
-        case((func.upper(func.coalesce(R.escalation_level, "NONE")) != "NONE", 1), else_=0)
-    ).label("escalated")
-    signal_c = func.max(sig_rank).label("signal_rank")
+    escalated = func.max(only_open(
+        case((func.upper(func.coalesce(R.escalation_level, "NONE")) != "NONE", 1), else_=0), 0
+    )).label("escalated")
+    signal_c = func.max(only_open(sig_rank, 0)).label("signal_rank")
+    open_count = func.sum(only_open(1, 0))
     cancel_c = func.max(cancel_rank).label("cancel_rank")
     # Receipt progress rollup: a PO is COMPLETED only when every line is COMPLETED;
     # any received progress on any line makes it PARTIAL.
@@ -85,22 +99,25 @@ def grouped_pos(
         R.supplier_po_no.label("po"),
         func.max(R.supplier_name).label("supplier_name"),
         func.max(R.crm_no).label("crm_no"),
-        func.count(R.id).label("material_count"),
+        open_count.label("material_count"),
+        func.count(R.id).label("desk_lines"),
         signal_c,
         escalated,
         cancel_c,
         completed_c,
         progressed_c,
         tracked_c,
-        func.min(R.shipment_date).label("earliest"),
-        func.max(R.po_status).label("po_status"),
+        func.min(only_open(R.shipment_date)).label("earliest"),
+        func.max(only_open(R.po_status)).label("po_status"),
         func.max(R.customer_name).label("customer_name"),
         # Vendor PO document number (CRM PoShortRefTrnNo) — what the supplier and
         # the printed PO say. The counter (supplier_po_no) is recycled and can
         # carry more than one vendor ref, hence the distinct count.
         func.max(R.po_short_ref).label("po_short_ref"),
         func.count(func.distinct(R.po_short_ref)).label("po_ref_count"),
-    ).where(R.supplier_po_no.isnot(None), R.delisted_at.is_(None))
+    ).where(R.supplier_po_no.isnot(None))
+    if not include_closed:
+        base = base.where(R.delisted_at.is_(None))
     if owner_emp_code:
         base = base.where(R.owner_emp_code == owner_emp_code)
     if search and search.strip():
@@ -112,6 +129,8 @@ def grouped_pos(
             R.crm_no.ilike(like),
         ))
     grouped = base.group_by(name_key, R.supplier_po_no)
+    if not include_closed:
+        grouped = grouped.having(open_count > 0)
 
     total = db.scalar(select(func.count()).select_from(grouped.subquery())) or 0
 
@@ -127,7 +146,7 @@ def grouped_pos(
         completed = int(r.completed_lines or 0)
         progressed = int(r.progressed_lines or 0)
         tracked = int(r.tracked_lines or 0)
-        if tracked > 0 and completed == material_count:
+        if tracked > 0 and completed == int(r.desk_lines or 0):
             receipt = "COMPLETED"
         elif progressed > 0:
             receipt = "PARTIAL"
@@ -202,12 +221,12 @@ def material_lines(
     size: int | None = None,
 ) -> tuple[list[dict[str, Any]], int]:
     """Material-wise PO lines (one row per material, not grouped by PO) for the
-    Orders page. Delisted (closed) lines are hidden unless include_closed;
+    Orders page. Closed lines (po_open_lines) are hidden unless include_closed;
     earliest ship date first."""
     R = ProcurementRecord
     stmt = select(R).where(R.supplier_po_no.isnot(None))
     if not include_closed:
-        stmt = stmt.where(R.delisted_at.is_(None))
+        stmt = stmt.where(open_line_clause(R))
     if owner_emp_code:
         stmt = stmt.where(R.owner_emp_code == owner_emp_code)
     if signal:
@@ -252,7 +271,7 @@ def material_lines(
             # Remark"); last_supplier_reply = what the supplier last said.
             "po_remark": r.po_remark,
             "last_supplier_reply": r.last_supplier_reply,
-            "closed": r.delisted_at is not None,
+            "closed": not is_open_line(r),
         }
         for r in rows
     ], int(total)
@@ -266,7 +285,7 @@ def line_owners(db: Session) -> list[dict[str, Any]]:
     codes = [
         c for c in db.scalars(
             select(ProcurementRecord.owner_emp_code)
-            .where(ProcurementRecord.owner_emp_code.isnot(None), ProcurementRecord.delisted_at.is_(None))
+            .where(ProcurementRecord.owner_emp_code.isnot(None), open_line_clause())
             .distinct()
         ).all() if c
     ]
@@ -293,10 +312,12 @@ def _material(r: ProcurementRecord) -> dict[str, Any]:
         "rate": float(r.rate) if r.rate is not None else None,
         "lead_time": r.lead_time,
         "commitment_date": _as_dt(r.commitment_date),
-        # Receipt progress from the CRM desk feed (GRN quantities).
+        # Receipt progress from the CRM desk feed (GRN quantities). The raw feed
+        # values stay for exports; ordered/inward/pending follow the one shared
+        # definition (po_quantities) the supplier portal uses too.
         "po_qty": float(r.po_qty) if r.po_qty is not None else None,
         "grn_qty": float(r.grn_qty) if r.grn_qty is not None else None,
-        "pending_qty": float(r.pending_qty) if r.pending_qty is not None else None,
+        **line_quantities(r),
         "receipt_status": r.receipt_status,
         # PO document references (drive the PO PDF download in every PO table).
         "po_trn_no": r.po_trn_no,
@@ -327,7 +348,7 @@ def cancel_requests(db: Session) -> list[dict[str, Any]]:
             "cancel_requested_by": r.cancel_requested_by,
             "cancel_requested_at": _as_dt(r.cancel_requested_at),
             "cancel_remark": r.cancel_remark,
-            "closed": r.delisted_at is not None,
+            "closed": not is_open_line(r),
         }
         for r in rows
     ]
@@ -354,18 +375,25 @@ def po_detail(
     owner_emp_code: str | None = None,
 ) -> dict[str, Any] | None:
     """Materials + full communication history for one PO. Returns None if no
-    matching (scoped) records exist — the caller turns that into a 404."""
+    matching (scoped) records exist — the caller turns that into a 404.
+
+    Lists the PO's OPEN lines (po_open_lines). A PO whose lines are all closed
+    (opened from a "Show closed" list) falls back to its closed lines, flagged
+    ``closed``, instead of a 404."""
     mstmt = select(ProcurementRecord).where(
         ProcurementRecord.supplier_po_no == supplier_po_no,
-        ProcurementRecord.delisted_at.is_(None),
     )
     if supplier_name:
         mstmt = mstmt.where(func.upper(ProcurementRecord.supplier_name) == supplier_name.strip().upper())
     if owner_emp_code:
         mstmt = mstmt.where(ProcurementRecord.owner_emp_code == owner_emp_code)
-    rows = list(db.scalars(mstmt).all())
-    if not rows:
+    all_rows = list(db.scalars(mstmt).all())
+    if not all_rows:
         return None
+    rows = [r for r in all_rows if is_open_line(r)]
+    po_closed = not rows
+    if po_closed:
+        rows = all_rows
 
     cstmt = select(CommunicationMessage).where(CommunicationMessage.supplier_po_no == supplier_po_no)
     if supplier_name:
@@ -376,6 +404,7 @@ def po_detail(
         "supplier_po_no": supplier_po_no,
         "supplier_name": rows[0].supplier_name,
         "cancellation_status": _po_cancel(rows),
+        "closed": po_closed,
         # PO-level document reference (all lines of a PO share one transaction).
         "po_trn_no": next((r.po_trn_no for r in rows if r.po_trn_no), None),
         "po_short_ref": next((r.po_short_ref for r in rows if r.po_short_ref), None),

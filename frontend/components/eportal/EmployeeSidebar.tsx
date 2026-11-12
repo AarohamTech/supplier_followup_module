@@ -2,10 +2,34 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ClipboardList, LayoutDashboard, FileSpreadsheet, Inbox, MessagesSquare, ListChecks, ListFilter, PieChart, Send, Truck, X } from "lucide-react";
+import { ClipboardList, LayoutDashboard, FileSpreadsheet, Inbox, Mail, MessagesSquare, ListChecks, ListFilter, PieChart, Send, Truck, UserCheck, X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/lib/auth";
 import { useT } from "@/lib/i18n";
+import type { AuthUser } from "@/lib/types";
+
+// Admin-style screens an employee sees only while holding the matching
+// permission flag (granted by default; an admin can switch it off per employee).
+const permissionItems: {
+  href: string;
+  label: string;
+  icon: typeof Mail;
+  allowed: (u: AuthUser | null) => boolean;
+}[] = [
+  {
+    href: "/eportal/supplier-assignments",
+    label: "Supplier Assignment",
+    icon: UserCheck,
+    allowed: (u) => !!u && u.can_manage_supplier_assignments !== false,
+  },
+  {
+    href: "/eportal/email-master",
+    label: "Email Master",
+    icon: Mail,
+    allowed: (u) => !!u && u.can_manage_email_master !== false,
+  },
+];
 
 const items = [
   { href: "/eportal", label: "Dashboard", icon: LayoutDashboard },
@@ -27,10 +51,12 @@ function isActive(path: string, href: string) {
 
 function NavList({ onNavigate }: { onNavigate?: () => void }) {
   const { t } = useT();
+  const { user } = useAuth();
   const path = usePathname();
+  const visible = [...items, ...permissionItems.filter((it) => it.allowed(user))];
   return (
     <nav aria-label="Employee navigation" className="space-y-1">
-      {items.map((it) => {
+      {visible.map((it) => {
         const active = isActive(path, it.href);
         const Icon = it.icon;
         return (

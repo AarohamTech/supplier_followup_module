@@ -137,7 +137,7 @@ export default function AsnCreateModal({
               <option value="">Select a purchase order</option>
               {pos.map((p) => (
                 <option key={p.supplier_po_no} value={p.supplier_po_no}>
-                  {p.supplier_po_no}{p.crm_no ? ` · CRM ${p.crm_no}` : ""} ({p.material_count} material{p.material_count === 1 ? "" : "s"})
+                  {p.po_ref || p.supplier_po_no}{p.crm_no ? ` · CRM ${p.crm_no}` : ""} ({p.material_count} material{p.material_count === 1 ? "" : "s"})
                 </option>
               ))}
             </select>

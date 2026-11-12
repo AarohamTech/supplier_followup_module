@@ -67,7 +67,7 @@ def _provision_logins(db: Session, row: SupplierEmail) -> LoginProvisioningSumma
         )
     else:
         disabled = supplier_account_service.deactivate_supplier_logins(db, row.supplier_id)
-        summary = {"created": [], "reactivated": [], "deactivated": disabled,
+        summary = {"created": [], "reactivated": [], "relinked": [], "deactivated": disabled,
                    "conflicts": [], "emailed": []}
     return LoginProvisioningSummary(**summary)
 
@@ -88,12 +88,12 @@ def _active_mapping_exists(db: Session, supplier_id: int, except_id: int | None 
     return db.scalar(stmt) is not None
 
 
-def _load_supplier(db: Session, supplier_id: int) -> SupplierMaster:
+def _load_supplier(db: Session, supplier_id: int, *, require_active: bool = True) -> SupplierMaster:
     supplier = db.get(SupplierMaster, supplier_id)
     if not supplier:
         raise HTTPException(404, "Supplier not found")
-    if not supplier.is_active:
-        raise HTTPException(400, "Supplier is inactive")
+    if require_active and not supplier.is_active:
+        raise HTTPException(400, f"Supplier '{supplier.supplier_name}' is inactive in Supplier Master")
     return supplier
 
 
@@ -153,8 +153,11 @@ def update(
 
     before = _snapshot(row)
     data = payload.model_dump(exclude_unset=True, mode="json")
-    supplier_id = data.get("supplier_id", row.supplier_id)
-    supplier = _load_supplier(db, supplier_id)
+    supplier_id = data.get("supplier_id") or row.supplier_id
+    # Editing the existing mapping of a supplier that has since been marked
+    # inactive must still work (fix a typo, deactivate the mapping); only
+    # re-pointing a mapping at a different supplier requires an active one.
+    supplier = _load_supplier(db, supplier_id, require_active=supplier_id != row.supplier_id)
     target_active = data.get("is_active", row.is_active)
     if target_active and _active_mapping_exists(db, supplier.id, except_id=row.id):
         raise HTTPException(409, "Active email mapping already exists for this supplier")

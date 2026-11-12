@@ -161,3 +161,65 @@ def drop_cross_company_fks(engine: Engine) -> list[str]:
         except Exception:  # noqa: BLE001
             log.exception("Schema evolve failed dropping FK %s.%s", table, constraint)
     return dropped
+
+
+def relax_users_email_unique(engine: Engine) -> list[str]:
+    """Swap the global unique index on ``public.users.email`` for a per-company
+    one (``lower(email), coalesce(company_id, 0)``). Postgres only; idempotent.
+
+    ``users`` is shared by every company, so a global unique email meant a
+    supplier contact who deals with both companies could only ever get a portal
+    login in one of them; the other company's Email Master save reported
+    "belongs to another supplier". The replacement index is created first; the
+    old global one is dropped only when that succeeds, so a failure (e.g. two
+    rows differing only in case) leaves the stricter rule in place.
+    """
+    if not engine.url.get_backend_name().startswith("postgresql"):
+        return []
+    changes: list[str] = []
+    try:
+        with engine.begin() as conn:
+            if conn.execute(text("SELECT to_regclass('public.users')")).scalar() is None:
+                return []
+            conn.execute(text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_users_email_company "
+                "ON public.users (lower(email), coalesce(company_id, 0))"
+            ))
+    except Exception:  # noqa: BLE001
+        log.exception("Schema evolve: could not create uq_users_email_company; "
+                      "keeping the global unique email index")
+        return changes
+
+    try:
+        with engine.begin() as conn:
+            rows = conn.execute(text(
+                """
+                SELECT i.relname AS index_name, c.conname AS constraint_name
+                FROM pg_index x
+                JOIN pg_class i ON i.oid = x.indexrelid
+                LEFT JOIN pg_constraint c ON c.conindid = x.indexrelid
+                    AND c.conrelid = x.indrelid
+                WHERE x.indrelid = 'public.users'::regclass
+                  AND x.indisunique AND NOT x.indisprimary
+                  AND x.indnatts = 1
+                  AND x.indexprs IS NULL
+                  AND x.indkey[0] = (
+                      SELECT attnum FROM pg_attribute
+                      WHERE attrelid = 'public.users'::regclass AND attname = 'email'
+                  )
+                """
+            )).all()
+            for index_name, constraint_name in rows:
+                if constraint_name:
+                    conn.execute(text(
+                        f'ALTER TABLE public.users DROP CONSTRAINT "{constraint_name}"'
+                    ))
+                else:
+                    conn.execute(text(f'DROP INDEX IF EXISTS public."{index_name}"'))
+                changes.append(f"public.users.{constraint_name or index_name}")
+                log.info("Schema evolve: dropped global unique email index %s",
+                         constraint_name or index_name)
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_users_email ON public.users (email)"))
+    except Exception:  # noqa: BLE001
+        log.exception("Schema evolve: could not drop the global unique email index")
+    return changes

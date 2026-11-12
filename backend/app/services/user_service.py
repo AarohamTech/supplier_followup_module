@@ -37,6 +37,20 @@ def get_by_email(db: Session, email: str) -> User | None:
     return db.scalar(select(User).where(func.lower(User.email) == email.strip().lower()))
 
 
+def get_all_by_email(db: Session, email: str) -> list[User]:
+    """Every account with this email. Email is unique per company, so a
+    supplier contact can hold one portal login in each company."""
+    if not email:
+        return []
+    return list(
+        db.scalars(
+            select(User)
+            .where(func.lower(User.email) == email.strip().lower())
+            .order_by(User.id)
+        ).all()
+    )
+
+
 def get_by_username(db: Session, username: str) -> User | None:
     if not username:
         return None
@@ -88,8 +102,11 @@ def create_user(
     must_change_password: bool = False,
     company_id: int | None = None,
     commit: bool = True,
+    check_email: bool = True,
 ) -> User:
-    if get_by_email(db, email) is not None:
+    # check_email=False: the caller has already applied its own (company-scoped)
+    # email rule — supplier login provisioning does this.
+    if check_email and get_by_email(db, email) is not None:
         raise EmailTakenError(f"A user with email '{email}' already exists")
     if username and get_by_username(db, username) is not None:
         raise UsernameTakenError(f"A user with username '{username}' already exists")
@@ -184,8 +201,29 @@ def _complete_login(
     return user
 
 
-def authenticate(db: Session, email: str, password: str) -> User | None:
-    return _complete_login(db, get_by_email(db, email), password, email)
+def authenticate(
+    db: Session, email: str, password: str, company_code: str | None = None
+) -> User | None:
+    candidates = get_all_by_email(db, email)
+    if len(candidates) <= 1:
+        return _complete_login(db, candidates[0] if candidates else None, password, email)
+    # Several accounts share this email (a supplier contact with a login in
+    # each company). Try the company picked on the login screen first, then any
+    # other active account whose password matches.
+    preferred: set[int | None] = set()
+    if company_code:
+        from ..models.company import Company
+
+        company = db.scalar(select(Company).where(Company.code == company_code))
+        if company is not None:
+            preferred.add(company.id)
+            if company.is_default:
+                preferred.add(None)  # legacy logins with no company = default company
+    ordered = sorted(candidates, key=lambda u: 0 if u.company_id in preferred else 1)
+    for user in ordered:
+        if user.is_active and verify_password(password, user.hashed_password):
+            return _complete_login(db, user, password, email)
+    return _complete_login(db, ordered[0], password, email)
 
 
 def authenticate_by_username(db: Session, username: str, password: str) -> User | None:

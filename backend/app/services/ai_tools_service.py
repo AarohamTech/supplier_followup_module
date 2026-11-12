@@ -24,6 +24,7 @@ from ..models.communication_message import CommunicationMessage
 from ..models.customer_mail import CustomerMail
 from ..models.procurement import ProcurementRecord
 from .po_visibility import supplier_visible_clause
+from .po_open_lines import open_line_clause
 from ..models.supplier import SupplierMaster
 from . import embeddings_service, po_followup_service, vector_store
 
@@ -100,10 +101,13 @@ def _group_brief(g: dict[str, Any]) -> dict[str, Any]:
 
 # ── executors ────────────────────────────────────────────────────────────────
 def _get_overview(db: Session, args: dict[str, Any], scope: ToolScope) -> dict[str, Any]:
-    sig_stmt = select(func.upper(ProcurementRecord.signal), func.count(ProcurementRecord.id))
-    total_stmt = select(func.count(ProcurementRecord.id))
+    # Open lines only (po_open_lines) — the same counts the dashboard shows.
+    sig_stmt = select(
+        func.upper(ProcurementRecord.signal), func.count(ProcurementRecord.id)
+    ).where(open_line_clause())
+    total_stmt = select(func.count(ProcurementRecord.id)).where(open_line_clause())
     high_stmt = select(func.count(ProcurementRecord.id)).where(
-        func.upper(ProcurementRecord.risk_band) == "HIGH"
+        func.upper(ProcurementRecord.risk_band) == "HIGH", open_line_clause()
     )
     if scope.is_supplier and scope.supplier_name:
         cond = func.upper(ProcurementRecord.supplier_name) == scope.supplier_name.upper()
@@ -151,6 +155,15 @@ def _get_po_status(db: Session, args: dict[str, Any], scope: ToolScope) -> dict[
     if anchor is None:
         return {"found": False, "supplier_po_no": po, "message": "No PO found with that number"}
     group = po_followup_service.get_po_group(db, anchor.supplier_name or "", po) or {}
+    if not group:
+        # Every line is closed (received / cancelled / off the pending desk).
+        return {
+            "found": True,
+            "supplier_name": anchor.supplier_name,
+            "supplier_po_no": po,
+            "closed": True,
+            "message": "This PO is closed — nothing is pending on it.",
+        }
     materials = [
         {
             "material_name": m.get("material_name"),

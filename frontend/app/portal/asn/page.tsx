@@ -10,6 +10,7 @@ import { AsnCards } from "@/components/portal/PortalCards";
 import AsnTable from "@/components/portal/AsnTable";
 import AsnCreateModal from "@/components/portal/AsnCreateModal";
 import AsnDrawer from "@/components/portal/AsnDrawer";
+import { usePortalPoLabel } from "@/lib/portalPoRefs";
 
 const TABS = [
   { key: "active", label: "Active Shipments" },
@@ -18,6 +19,8 @@ const TABS = [
 ] as const;
 
 export default function AsnPortalPage() {
+  // ASNs carry the PO counter; suppliers see their vendor PO number.
+  const poLabel = usePortalPoLabel();
   const [tab, setTab] = useState<(typeof TABS)[number]["key"]>("active");
   const [summary, setSummary] = useState<AsnSummary | null>(null);
   const [items, setItems] = useState<Asn[]>([]);
@@ -112,6 +115,7 @@ export default function AsnPortalPage() {
             items={items}
             loading={loading}
             onOpen={setSelected}
+            poLabel={poLabel}
             emptyLabel={
               tab === "drafts" ? "No draft ASNs." : tab === "history" ? "No delivered/closed shipments yet." : "No active shipments."
             }
@@ -120,7 +124,7 @@ export default function AsnPortalPage() {
       </div>
 
       {creating && <AsnCreateModal onClose={() => setCreating(false)} onCreated={onCreated} />}
-      {selected && <AsnDrawer asn={selected} onClose={() => setSelected(null)} onUpdated={onUpdated} />}
+      {selected && <AsnDrawer asn={selected} poLabel={poLabel} onClose={() => setSelected(null)} onUpdated={onUpdated} />}
     </div>
   );
 }

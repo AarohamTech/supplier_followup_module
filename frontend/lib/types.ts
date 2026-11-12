@@ -103,6 +103,8 @@ export interface LoginConflict {
 export interface LoginProvisioningSummary {
   created: CreatedLogin[];
   reactivated: string[];
+  // Existing logins (same company) moved over from a stale / same-named supplier.
+  relinked?: string[];
   deactivated: string[];
   conflicts: LoginConflict[];
   emailed: string[];
@@ -207,8 +209,11 @@ export interface PoFollowupMaterial {
   crm_no: string;
   material_code?: string | null;
   material_name: string;
-  po_qty?: number | null;
+  po_qty?: number | null; // legacy key = ordered_qty
+  ordered_qty?: number | null;
+  inward_qty?: number | null;
   pending_qty?: number | null;
+  closed?: boolean; // delisted: closed / fully received on the CRM side
   uom?: string | null;
   due_date?: string | null;
   current_status?: string | null;
@@ -584,6 +589,9 @@ export interface CommunicationTask {
   material_name?: string | null;
   task_source?: TaskSource;
   created_from_mail_id?: number | null;
+  /** Communication Hub message the task was assigned from (source mail block). */
+  source_message_id?: number | null;
+  created_by_user_id?: number | null;
   assigned_to?: string | null;
   assigned_by?: string | null;
   assigned_by_user_id?: number | null;
@@ -616,6 +624,8 @@ export interface CommunicationTaskCreate {
   procurement_record_id?: number | null;
   linked_mail_id?: number | null;
   customer_mail_id?: number | null;
+  /** Communication Hub message id ("cm-123" → 123) the task is assigned from. */
+  source_message_id?: number | null;
   material_name?: string | null;
   task_source?: TaskSource;
   assigned_to?: string | null;
@@ -628,6 +638,22 @@ export interface CommunicationTaskCreate {
   signal?: TaskSignal;
   due_date?: string | null;
   reminder_at?: string | null;
+}
+
+/** Source mail context shown on a task assigned from a mail / portal message. */
+export interface TaskSourceMessage {
+  kind: "message" | "mail_history";
+  message_id: number | null;
+  direction?: string | null;
+  subject?: string | null;
+  sender?: string | null;
+  to?: string | null;
+  supplier_name?: string | null;
+  supplier_po_no?: string | null;
+  date?: string | null;
+  body_excerpt: string;
+  truncated: boolean;
+  attachments: AttachmentMeta[];
 }
 
 export interface CommunicationTaskUpdate {
@@ -748,6 +774,22 @@ export interface CommHubPO {
   material_count?: number;
   materials?: PoFollowupMaterial[];
   procurement_record_ids?: number[];
+  // Supplier acknowledged the PO (mail link or portal button). ISO UTC.
+  acknowledged_at?: string | null;
+  acknowledged_via?: "link" | "portal" | null;
+}
+
+/** PO acknowledgement state (public mail link + supplier portal button). */
+export interface PoAckStatus {
+  acknowledged: boolean;
+  acknowledged_at: string | null;
+  /** Server-formatted local time, e.g. "12 Nov 2026, 10:05 AM IST". */
+  acknowledged_at_label?: string;
+  via: "link" | "portal" | null;
+  created?: boolean;
+  found?: boolean;
+  supplier_name?: string;
+  po_ref?: string | null;
 }
 
 export interface ThreadTableRow {
@@ -1104,6 +1146,9 @@ export interface AuthUser {
   // Employee portal accounts carry an emp_code (their CRM EmpCode).
   emp_code?: string | null;
   must_change_password?: boolean;
+  // Employee-portal permissions (granted by default; only for employee accounts).
+  can_manage_supplier_assignments?: boolean;
+  can_manage_email_master?: boolean;
   supplier_name?: string | null;
   last_login_at: string | null;
   created_at: string;
@@ -1615,6 +1660,10 @@ export interface EmployeePoMaterial {
   // Receipt quantities from the CRM desk feed (GRN progress).
   po_qty?: number | null;
   grn_qty?: number | null;
+  // Shared definitions (backend services/po_quantities): ordered = po_qty ??
+  // qty, inward = GRN, pending = feed pending ?? ordered − inward.
+  ordered_qty?: number | null;
+  inward_qty?: number | null;
   pending_qty?: number | null;
   receipt_status?: string | null;
   // PO document references (drive the PO PDF download).
@@ -1691,6 +1740,11 @@ export interface PortalPoMaterial {
   material_name: string;
   uom?: string | null;
   qty?: number | null;
+  // Shared definitions (backend services/po_quantities) — same as staff views.
+  ordered_qty?: number | null;
+  inward_qty?: number | null;
+  pending_qty?: number | null;
+  receipt_status?: string | null;
   po_date?: string | null;
   shipment_date?: string | null;
   signal?: string | null;
