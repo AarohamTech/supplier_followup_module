@@ -7,6 +7,7 @@ revokes it. Pure service layer: no FastAPI imports.
 """
 from __future__ import annotations
 
+from ..core.account_kind import is_employee_account
 from ..models.user import User
 
 SUPPLIER_ASSIGNMENTS = "can_manage_supplier_assignments"
@@ -17,7 +18,7 @@ ALL_PERMISSIONS: tuple[str, ...] = (SUPPLIER_ASSIGNMENTS, EMAIL_MASTER)
 
 def has_permission(user: User | None, flag: str) -> bool:
     """True when `user` is an employee account holding `flag` (NULL = granted)."""
-    if user is None or user.emp_code is None or user.supplier_id is not None:
+    if not is_employee_account(user):
         return False
     if flag not in ALL_PERMISSIONS:
         return False

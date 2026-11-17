@@ -82,7 +82,7 @@ const groups: { label: string; items: NavItem[] }[] = [
       { href: "/reports/workload", label: "Workload Report", icon: PieChart, minRole: "admin" },
       { href: "/ai-prompts", label: "HI Prompts", icon: Wand2, minRole: "manager" },
       { href: "/settings", label: "Settings", icon: Settings, minRole: "manager" },
-      { href: "/supplier-assignments", label: "Supplier Assignments", icon: UserCheck, minRole: "manager" },
+      { href: "/supplier-assignments", label: "Supplier Assignments", icon: UserCheck, minRole: "user" },
       { href: "/admin/users", label: "Users", icon: ShieldCheck, minRole: "admin" },
       { href: "/employees", label: "Employee Logins", icon: UserCog, minRole: "admin" },
       { href: "/crm-ingestion", label: "CRM Ingestion", icon: Database, minRole: "admin" },

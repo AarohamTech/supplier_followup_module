@@ -21,6 +21,7 @@ from ..database import get_db
 from ..models.user import User
 from . import roles as roles_mod
 from .roles import Role
+from .account_kind import is_employee_account, is_staff_account
 from .security import TokenError, decode_token
 
 # auto_error=False → we raise our own 401 with a clean message.
@@ -68,7 +69,7 @@ def get_current_staff(user: User = Depends(get_current_user)) -> User:
     Use as the base dependency for internal `/api/*` business + AI routers so a
     supplier or employee portal account can never reach them — not even on GET.
     """
-    if user.supplier_id is not None or user.emp_code is not None:
+    if not is_staff_account(user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Internal endpoint — not available to portal accounts",
@@ -95,7 +96,7 @@ def get_current_employee(user: User = Depends(get_current_user)) -> User:
     Employee portal handlers derive their data scope from `user.emp_code`
     (matched against ProcurementRecord.owner_emp_code).
     """
-    if user.emp_code is None or user.supplier_id is not None:
+    if not is_employee_account(user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Employee portal endpoint — requires an employee account",
@@ -140,7 +141,7 @@ def require_writer_for_writes(
     routers are staff-only; suppliers use `/api/portal/*` and employees use
     `/api/eportal/*` instead.
     """
-    if user.supplier_id is not None or user.emp_code is not None:
+    if not is_staff_account(user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Internal endpoint — not available to portal accounts",

@@ -174,6 +174,15 @@ class Settings(BaseSettings):
     AUTO_REPLY_INTERVAL_MINUTES: int = Field(...)
     MAIL_SEND_INTERVAL_MINUTES: int = Field(...)
 
+    # Auto-acknowledgement drafts for supplier replies ("Thanks for the update on
+    # PO ..."). OFF: they quoted the customer-side PO counter instead of the vendor
+    # PO number and echoed a keyword-guessed status back to the supplier.
+    AUTO_ACK_ENABLED: bool = Field(default=False)
+    # Let a keyword scan of a supplier mail ("ready", "hold", "partial", qty: N)
+    # overwrite the PO's status / quantity. OFF: the CRM feed is the source of
+    # truth; the detected status stays on the message as a hint (parsed_status).
+    MAIL_STATUS_OVERWRITE_ENABLED: bool = Field(default=False)
+
     # Outbound send throughput: how many parallel SMTP connections the send
     # worker uses, and the max messages drained per run. Safe defaults; override
     # in .env for heavier traffic.

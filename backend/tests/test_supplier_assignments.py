@@ -162,12 +162,20 @@ class ApiTests(unittest.TestCase):
         au = self.client.get("/api/supplier-assignments/assignable-users", headers=self._auth(writer))
         self.assertEqual(au.status_code, 200, au.text)
 
-        # non-manager cannot change assignees
+        # a viewer cannot change assignees
+        viewer = self._token("view@x.com", "viewer")
         blocked = self.client.put(
-            f"/api/supplier-assignments/{s.id}", headers=self._auth(writer),
+            f"/api/supplier-assignments/{s.id}", headers=self._auth(viewer),
             json={"user_ids": [target.id]},
         )
         self.assertEqual(blocked.status_code, 403, blocked.text)
+
+        # any writer (user role) can — supplier mapping is open to all users
+        by_user = self.client.put(
+            f"/api/supplier-assignments/{s.id}", headers=self._auth(writer),
+            json={"user_ids": [target.id]},
+        )
+        self.assertEqual(by_user.status_code, 200, by_user.text)
 
         # manager can
         ok = self.client.put(

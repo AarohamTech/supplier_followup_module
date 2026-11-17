@@ -157,10 +157,17 @@ class VisibilityTests(unittest.TestCase):
             self.assertEqual(titles, {"mine"})
             self.assertEqual(hub.comm_dashboard(db=db, viewer=alice)["open_tasks"], 1)
 
-    def test_employee_is_never_admin(self):
+    def test_employee_login_is_not_admin(self):
+        with _temp_db() as db:
+            emp = _user(db, "emp", Role.EMPLOYEE, emp_code="E1")
+            self.assertFalse(task_visibility.is_task_admin(emp))
+
+    def test_employee_promoted_to_admin_is_admin(self):
+        # An admin set this employee login to "admin" on the Users page: it is
+        # now a staff admin and sees everything an admin sees.
         with _temp_db() as db:
             emp = _user(db, "emp", Role.ADMIN, emp_code="E1")
-            self.assertFalse(task_visibility.is_task_admin(emp))
+            self.assertTrue(task_visibility.is_task_admin(emp))
 
 
 class TaskNotificationTests(unittest.TestCase):

@@ -29,6 +29,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from ..core.account_kind import staff_clause
 from ..models.communication_task import CommunicationTask
 from ..models.notification import Notification
 from ..models.procurement import ProcurementRecord
@@ -59,8 +60,7 @@ def _active_staff_ids(db: Session, *, exclude_user_id: int | None = None) -> lis
     # so an employee-portal account is never swept into a staff broadcast.
     stmt = select(User.id).where(
         User.is_active.is_(True),
-        User.supplier_id.is_(None),
-        User.emp_code.is_(None),
+        staff_clause(User),
     )
     if exclude_user_id is not None:
         stmt = stmt.where(User.id != exclude_user_id)
@@ -86,8 +86,7 @@ def _active_admin_ids(db: Session, *, exclude_user_id: int | None = None) -> lis
 
     stmt = select(User.id).where(
         User.is_active.is_(True),
-        User.supplier_id.is_(None),
-        User.emp_code.is_(None),
+        staff_clause(User),
         User.role == Role.ADMIN,
     )
     if exclude_user_id is not None:

@@ -1,7 +1,7 @@
 """Supplier -> people assignment mapping.
 
-Reads are open to any staff user; changing a supplier's assignees requires
-manager+. Portal accounts are rejected at the app level (router mounted behind the
+Any staff user may read; any staff user with write access (user+, i.e. not a
+viewer) may change a supplier's assignees — supplier mapping is open to all users. Portal accounts are rejected at the app level (router mounted behind the
 staff write-guard in main.py).
 """
 from __future__ import annotations
@@ -10,16 +10,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from ..core.deps import require_manager
 from ..database import get_db
 from ..models.supplier import SupplierMaster
 from ..services import supplier_assignment_service as svc
 
 router = APIRouter(prefix="/api/supplier-assignments", tags=["supplier-assignments"])
-
-# Changing assignees requires manager+; reads stay open to any staff user.
-_MGR = [Depends(require_manager)]
-
 
 class AssigneesPayload(BaseModel):
     user_ids: list[int] = Field(default_factory=list)
@@ -41,7 +36,8 @@ def assignable_users(db: Session = Depends(get_db)) -> dict:
     return {"users": [svc.user_brief(u) for u in svc.assignable_users(db)]}
 
 
-@router.put("/{supplier_id}", dependencies=_MGR)
+# Writes are gated by require_writer_for_writes (user+) at mount time in main.py.
+@router.put("/{supplier_id}")
 def set_assignees(supplier_id: int, payload: AssigneesPayload, db: Session = Depends(get_db)) -> dict:
     supplier = db.get(SupplierMaster, supplier_id)
     if supplier is None:

@@ -23,6 +23,7 @@ from sqlalchemy import String, cast, or_
 from sqlalchemy.sql import Select
 
 from ..core import roles as roles_mod
+from ..core.account_kind import is_staff_account
 from ..core.roles import Role
 from ..models.communication_task import CommunicationTask
 from ..models.user import User
@@ -38,7 +39,7 @@ def is_task_admin(user: Optional[User]) -> bool:
     """
     if user is None:
         return False
-    if user.supplier_id is not None or user.emp_code is not None:
+    if not is_staff_account(user):
         return False
     return roles_mod.role_at_least(user.role, Role.ADMIN)
 

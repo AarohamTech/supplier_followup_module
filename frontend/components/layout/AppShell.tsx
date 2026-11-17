@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 
-import { useAuth } from "@/lib/auth";
+import { isEmployeeAccount, useAuth } from "@/lib/auth";
 import Sidebar from "@/components/layout/Sidebar";
 import Topbar from "@/components/layout/Topbar";
 import StoreBootstrap from "@/components/StoreBootstrap";
@@ -40,7 +40,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const isPublic = PUBLIC_PATHS.includes(pathname);
   const isOpen = OPEN_PREFIXES.some((p) => pathname.startsWith(p));
   const isSupplier = !!user && user.supplier_id != null;
-  const isEmployee = !!user && user.emp_code != null;
+  const isEmployee = isEmployeeAccount(user);
   const inPortal = pathname === "/portal" || pathname.startsWith("/portal/");
   const inEportal = pathname === "/eportal" || pathname.startsWith("/eportal/");
   const home = isSupplier ? "/portal" : isEmployee ? "/eportal" : "/";

@@ -19,6 +19,14 @@ export function roleAtLeast(role: Role | "supplier" | "employee" | undefined | n
   return (ROLE_RANK[role as Role] ?? 0) >= (ROLE_RANK[minimum] ?? 0);
 }
 
+/** Employee-portal login: has an emp_code and is NOT on the staff role ladder.
+ *  An employee login promoted to viewer/user/manager/admin is a staff account. */
+export function isEmployeeAccount(
+  u: { emp_code?: string | null; supplier_id?: number | null; role?: string | null } | null | undefined,
+): boolean {
+  return !!u && u.supplier_id == null && u.emp_code != null && !(u.role != null && u.role in ROLE_RANK);
+}
+
 const COMPANY_KEY = "active_company";
 
 function loadCompany(): CompanyBrief | null {

@@ -16,6 +16,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from ..core.config import settings
 from ..models.communication_message import CommunicationMessage
 from ..models.procurement import ProcurementRecord
 from ..models.status_change_log import StatusChangeLog
@@ -135,7 +136,9 @@ def _mirror_commitment_to_record(
         rec.quantity = float(quantity)
     if commitment_date_value is not None:
         rec.commitment_date = commitment_date_value
-    if supplier_status:
+    # The supplier's stated status lives on the commitment row; it only replaces
+    # the CRM po_status when MAIL_STATUS_OVERWRITE_ENABLED is on.
+    if supplier_status and getattr(settings, "MAIL_STATUS_OVERWRITE_ENABLED", False):
         rec.po_status = supplier_status
     if supplier_remark:
         rec.last_supplier_reply = supplier_remark[:1000]
@@ -158,8 +161,12 @@ def apply_parsed_reply(
     old_shipment = _to_date(rec.shipment_date)
     old_qty = float(rec.qty) if rec.qty is not None else None
 
+    # Status and qty from a free-text keyword scan are unreliable (a word like
+    # "ready" or "hold" anywhere in the mail flipped the CRM status). Off unless
+    # MAIL_STATUS_OVERWRITE_ENABLED; the guess stays on the message (parsed_status).
+    overwrite = bool(getattr(settings, "MAIL_STATUS_OVERWRITE_ENABLED", False))
     new_status_raw = parsed.get("status")
-    new_status = _norm_status(new_status_raw)
+    new_status = _norm_status(new_status_raw) if overwrite else None
     if new_status and new_status != (rec.po_status or "").upper():
         rec.po_status = new_status
         changes.append(f"po_status:{old_status or '-'}→{new_status}")
@@ -173,7 +180,7 @@ def apply_parsed_reply(
                 f"shipment_date:{old_shipment.isoformat() if old_shipment else '-'}→{new_ship.isoformat()}"
             )
 
-    new_qty = parsed.get("quantity")
+    new_qty = parsed.get("quantity") if overwrite else None
     if isinstance(new_qty, (int, float)) and new_qty > 0 and (
         old_qty is None or abs((new_qty or 0) - (old_qty or 0)) > 1e-9
     ):

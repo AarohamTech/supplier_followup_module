@@ -229,10 +229,15 @@ export default function UsersAdminPage() {
                         onChange={(e) => onChangeRole(u, e.target.value as Role)}
                         className={`rounded-full px-2 py-1 text-xs font-medium capitalize outline-none ${ROLE_BADGE[u.role as Role] ?? ""}`}
                       >
+                        {/* Employee logins can go back to employee-portal only. */}
+                        {u.emp_code != null && <option value="employee">employee (portal)</option>}
                         {ALL_ROLES.map((r) => (
                           <option key={r} value={r}>{r}</option>
                         ))}
                       </select>
+                      {u.emp_code != null && u.role !== "employee" && (
+                        <div className="mt-1 text-[11px] text-brand-muted">Employee {u.emp_code} · full staff access</div>
+                      )}
                     </td>
                     <td className="px-4 py-2.5">
                       <button

@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from ..core.deps import get_current_user, require_admin
-from ..core.roles import ALL_ROLES
+from ..core.roles import ALL_ROLES, Role
 from ..database import get_db
 from ..models.user import User
 from ..schemas.user import AdminResetPassword, UserCreate, UserOut, UserUpdate
@@ -59,6 +59,13 @@ def get_user(user_id: int, db: Session = Depends(get_db)) -> User:
 
 @router.patch("/{user_id}", response_model=UserOut)
 def update_user(user_id: int, payload: UserUpdate, db: Session = Depends(get_db)) -> User:
+    if payload.role == Role.EMPLOYEE:
+        target = user_service.get(db, user_id)
+        if target is not None and target.emp_code is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Only employee logins (with an employee code) can have the employee role",
+            )
     try:
         user = user_service.update_user(
             db,

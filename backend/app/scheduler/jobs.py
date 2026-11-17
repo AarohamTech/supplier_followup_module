@@ -90,6 +90,8 @@ def status_change_runner() -> dict[str, Any]:
 
 def auto_reply_runner() -> dict[str, Any]:
     out: dict[str, Any] = {}
+    if not getattr(settings, "AUTO_ACK_ENABLED", False):
+        return {"skipped": True, "reason": "AUTO_ACK_ENABLED is off"}
     for code, schema, _ in _active_companies():
         with use_company(schema):
             db: Session = SessionLocal()

@@ -4,7 +4,7 @@ import { LogOut, Menu } from "lucide-react";
 import Link from "next/link";
 
 import { Logo, ZanvarMark } from "@/components/brand/Logo";
-import { useAuth } from "@/lib/auth";
+import { isEmployeeAccount, useAuth } from "@/lib/auth";
 import CompanySwitcher from "@/components/layout/CompanySwitcher";
 import NotificationBell from "@/components/NotificationBell";
 import ThemeToggle from "@/components/layout/ThemeToggle";
@@ -20,7 +20,7 @@ export default function Topbar({ onMenuClick }: { onMenuClick?: () => void }) {
   const { user, company, logout } = useAuth();
   const name = user?.full_name || user?.email || "User";
   const initial = name.charAt(0).toUpperCase();
-  const isStaff = !!user && user.supplier_id == null && user.emp_code == null;
+  const isStaff = !!user && user.supplier_id == null && !isEmployeeAccount(user);
   const brandName = company?.brand_name || "H-Connect";
 
   return (

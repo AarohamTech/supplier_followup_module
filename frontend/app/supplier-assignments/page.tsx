@@ -20,6 +20,6 @@ export default function SupplierAssignmentsPage() {
     [],
   );
 
-  // Staff: reads are open to any staff user; changing assignees needs manager+.
-  return <SupplierAssignmentsView adapter={adapter} canEdit={hasRole("manager")} />;
+  // Staff: any user with write access (not a viewer) can change assignees.
+  return <SupplierAssignmentsView adapter={adapter} canEdit={hasRole("user")} />;
 }

@@ -5,7 +5,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
-from ..core.roles import ALL_ROLES, DEFAULT_ROLE, normalize_role
+from ..core.roles import ALL_ROLES, DEFAULT_ROLE, Role, normalize_role
 from .company import CompanyBrief
 
 
@@ -103,6 +103,10 @@ class UserUpdate(BaseModel):
     @field_validator("role")
     @classmethod
     def _role(cls, v: str | None) -> str | None:
+        # "employee" is allowed here only to send a promoted employee login back
+        # to the employee portal; the router checks the account has an emp_code.
+        if v is not None and v.strip().lower() == Role.EMPLOYEE:
+            return Role.EMPLOYEE
         return _validate_role(v)
 
 
