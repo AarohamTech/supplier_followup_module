@@ -34,4 +34,17 @@ class SeedRoleTests(unittest.TestCase):
             self.assertEqual(m1, m2)  # same ids on re-run
             users = db.scalars(select(User).where(User.full_name == "Purchase Head")).all()
             self.assertEqual(len(users), 1)
-            self.assertEqual(users[0].role, "manager")
+            self.assertEqual(users[0].role, "admin")  # heads see all POs (2026-11-25)
+
+    def test_legacy_head_account_promoted_and_password_locked(self) -> None:
+        from app.core.security import hash_password, verify_password
+
+        with _temp_db() as db:
+            db.add(User(email="purchasehead@internal.local-disabled", username="purchasehead",
+                        full_name="Purchase Head", role="manager", is_active=True,
+                        hashed_password=hash_password("disabled-login")))
+            db.commit()
+            seed.ensure_role_accounts(db)
+            u = db.scalar(select(User).where(User.full_name == "Purchase Head"))
+            self.assertEqual(u.role, "admin")
+            self.assertFalse(verify_password("disabled-login", u.hashed_password))

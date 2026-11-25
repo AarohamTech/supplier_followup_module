@@ -339,10 +339,20 @@ def run() -> dict:
 _ESCALATION_ROLE_TITLES = ("Purchase Head", "Sourcing Head")
 
 
+_LEGACY_ROLE_ACCOUNT_PASSWORD = "disabled-login"
+
+
 def ensure_role_accounts(db: Session) -> dict[str, int]:
-    """Create real manager-role users for the escalation role-titles so
-    escalation assigns a real user id. Idempotent (matched by full_name)."""
-    from .core.security import hash_password
+    """Create real users for the escalation role-titles so escalation assigns a
+    real user id. Idempotent (matched by full_name).
+
+    Client decision 2026-11-25: the heads see every PO, so these are ``admin``
+    accounts (non-admin staff only see their own POs). Nobody signs in with them:
+    the password is a random secret, and the old well-known seed password is
+    replaced on the next startup."""
+    import secrets
+
+    from .core.security import hash_password, verify_password
 
     mapping: dict[str, int] = {}
     for title in _ESCALATION_ROLE_TITLES:
@@ -353,12 +363,17 @@ def ensure_role_accounts(db: Session) -> dict[str, int]:
                 email=f"{slug}@internal.local-disabled",
                 username=slug,
                 full_name=title,
-                hashed_password=hash_password("disabled-login"),
-                role="manager",
+                hashed_password=hash_password(secrets.token_urlsafe(32)),
+                role="admin",
                 is_active=True,
             )
             db.add(user)
             db.flush()
+        else:
+            if user.role == "manager":
+                user.role = "admin"
+            if verify_password(_LEGACY_ROLE_ACCOUNT_PASSWORD, user.hashed_password):
+                user.hashed_password = hash_password(secrets.token_urlsafe(32))
         mapping[title] = user.id
     db.commit()
     return mapping
