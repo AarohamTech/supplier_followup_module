@@ -36,6 +36,8 @@ _PO_MATERIAL_COLUMNS: list[tuple[str, str]] = [
     ("CRM No", "crm_no"),
     ("Material Name", "material_name"),
     ("PO Qty", "po_qty"),
+    ("Received Qty", "inward_qty"),
+    ("Remaining Qty", "pending_qty"),
     ("UOM", "uom"),
     ("Due Date", "due_date"),
     ("Current Status", "current_status"),
@@ -122,6 +124,49 @@ def _cell(value: Any) -> str:
     return escape(str(value))
 
 
+def _fmt_qty(value: Any) -> Any:
+    """10.0 -> 10, 2.5 -> 2.5; non-numbers pass through."""
+    try:
+        num = float(value)
+    except (TypeError, ValueError):
+        return value
+    return int(num) if num.is_integer() else round(num, 3)
+
+
+def _fmt_date(value: Any) -> Any:
+    """ISO datetime/date string -> DD-MM-YYYY (suppliers read dates this way)."""
+    if not value:
+        return value
+    from datetime import date, datetime
+
+    if isinstance(value, (date, datetime)):
+        return value.strftime("%d-%m-%Y")
+    try:
+        return datetime.fromisoformat(str(value)).strftime("%d-%m-%Y")
+    except ValueError:
+        return value
+
+
+def _material_row(idx: int, mat: dict[str, Any]) -> dict[str, Any]:
+    """One material row's display values, shared by the HTML and text tables."""
+    commitment = mat.get("commitment") or {}
+    return {
+        "sr": idx,
+        "crm_no": mat.get("crm_no") or mat.get("material_code"),
+        "material_name": mat.get("material_name"),
+        "po_qty": _fmt_qty(mat.get("po_qty")),
+        # Received at Hariom (GRN) and still to receive; see services/po_quantities.py.
+        # Received is "-" until the quantity feed has matched the line.
+        "inward_qty": _fmt_qty(mat.get("inward_qty")),
+        "pending_qty": _fmt_qty(mat.get("pending_qty")),
+        "uom": mat.get("uom"),
+        "due_date": _fmt_date(mat.get("due_date")),
+        "current_status": mat.get("current_status") or mat.get("signal"),
+        "last_commitment_date": _fmt_date(commitment.get("commitment_date")),
+        "last_supplier_remark": commitment.get("supplier_remark"),
+    }
+
+
 def render_po_materials_table_html(materials: list[dict[str, Any]]) -> str:
     """Render a self-contained HTML table for the PO group materials.
 
@@ -143,18 +188,7 @@ def render_po_materials_table_html(materials: list[dict[str, Any]]) -> str:
     head = "".join(f"<th style=\"{th_style}\">{escape(label)}</th>" for label, _ in _PO_MATERIAL_COLUMNS)
     rows_html: list[str] = []
     for idx, mat in enumerate(materials, start=1):
-        commitment = mat.get("commitment") or {}
-        row_data = {
-            "sr": idx,
-            "crm_no": mat.get("crm_no") or mat.get("material_code"),
-            "material_name": mat.get("material_name"),
-            "po_qty": mat.get("po_qty"),
-            "uom": mat.get("uom"),
-            "due_date": mat.get("due_date"),
-            "current_status": mat.get("current_status") or mat.get("signal"),
-            "last_commitment_date": commitment.get("commitment_date"),
-            "last_supplier_remark": commitment.get("supplier_remark"),
-        }
+        row_data = _material_row(idx, mat)
         zebra = "#ffffff" if idx % 2 else "#f8fafc"
         cells = []
         for _, key in _PO_MATERIAL_COLUMNS:
@@ -192,7 +226,7 @@ def render_po_reply_table_html(materials: list[dict[str, Any]]) -> str:
         prefill = {
             "CRM No": mat.get("crm_no") or mat.get("material_code"),
             "Material Name": mat.get("material_name"),
-            "Qty": mat.get("po_qty"),
+            "Qty": _fmt_qty(mat.get("pending_qty") if mat.get("pending_qty") is not None else mat.get("po_qty")),
         }
         cells = []
         for label in _REPLY_COLUMNS:
@@ -220,17 +254,10 @@ def render_po_materials_table_text(materials: list[dict[str, Any]]) -> str:
     sep = "| " + " | ".join("---" for _ in _PO_MATERIAL_COLUMNS) + " |"
     lines = [header, sep]
     for idx, mat in enumerate(materials, start=1):
-        commitment = mat.get("commitment") or {}
+        row = _material_row(idx, mat)
         values = [
-            str(idx),
-            str(mat.get("crm_no") or mat.get("material_code") or "-"),
-            str(mat.get("material_name") or "-"),
-            str(mat.get("po_qty") if mat.get("po_qty") is not None else "-"),
-            str(mat.get("uom") or "-"),
-            str(mat.get("due_date") or "-"),
-            str(mat.get("current_status") or mat.get("signal") or "-"),
-            str(commitment.get("commitment_date") or "-"),
-            str(commitment.get("supplier_remark") or "-"),
+            "-" if row.get(key) is None or row.get(key) == "" else str(row.get(key))
+            for _, key in _PO_MATERIAL_COLUMNS
         ]
         lines.append("| " + " | ".join(values) + " |")
     return "\n".join(lines)

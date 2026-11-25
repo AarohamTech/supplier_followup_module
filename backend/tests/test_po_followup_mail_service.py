@@ -47,6 +47,7 @@ class PoFollowupMailServiceTests(unittest.TestCase):
         rec = SimpleNamespace(
             supplier_name="Acme",
             supplier_po_no="PO-42",
+            po_short_ref=None,
             mail_status="NOT_SENT",
             next_followup_date=datetime.utcnow() - timedelta(minutes=1),
         )
@@ -83,6 +84,7 @@ class PoFollowupMailServiceTests(unittest.TestCase):
         rec = SimpleNamespace(
             supplier_name="Acme",
             supplier_po_no="PO-42",
+            po_short_ref=None,
             mail_status="NOT_SENT",
             next_followup_date=None,
         )

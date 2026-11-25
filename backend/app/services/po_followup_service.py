@@ -607,14 +607,44 @@ def get_po_group(
     return build_po_group_payload(db, records, records[0].supplier_name, po)
 
 
+def get_po_group_for_records(
+    db: Session, record_ids: Sequence[int], *, chaseable_only: bool = True
+) -> Optional[dict[str, Any]]:
+    """One vendor-PO group built from explicit records (a vendor_ref_buckets
+    bucket), so a vendor PO spread over several recycled CRM counters becomes
+    ONE follow-up mail instead of one mail per counter."""
+    if not record_ids:
+        return None
+    stmt = select(ProcurementRecord).where(ProcurementRecord.id.in_(list(record_ids)))
+    if chaseable_only:
+        stmt = stmt.where(chaseable_line_clause())
+    records = sorted(
+        db.scalars(stmt).all(),
+        key=lambda r: (r.shipment_date or datetime.max, r.material_name or ""),
+    )
+    if not records:
+        return None
+    return build_po_group_payload(
+        db, records, records[0].supplier_name, records[0].supplier_po_no
+    )
+
+
+def _po_no_filter(col, supplier_po_no: str | Sequence[str]):
+    """`col` equals the counter, or is any of the vendor-PO thread's counters."""
+    if isinstance(supplier_po_no, str):
+        return col == supplier_po_no.strip()
+    return col.in_([p.strip() for p in supplier_po_no if p and p.strip()])
+
+
 def find_today_draft(
     db: Session,
     *,
     supplier_name: Optional[str],
-    supplier_po_no: str,
+    supplier_po_no: str | Sequence[str],
     mail_type: str,
 ) -> Optional[MailHistory]:
-    """Return an existing PO-wise DRAFT/SENT mail from today for the same supplier+PO+mail_type."""
+    """Return an existing PO-wise DRAFT/SENT mail from today for the same
+    supplier + PO (any counter of the vendor-PO thread) + mail_type."""
     if not supplier_po_no or not mail_type:
         return None
     midnight = datetime.combine(date.today(), datetime.min.time())
@@ -622,7 +652,7 @@ def find_today_draft(
     stmt = (
         select(MailHistory)
         .where(
-            MailHistory.supplier_po_no == supplier_po_no.strip(),
+            _po_no_filter(MailHistory.supplier_po_no, supplier_po_no),
             MailHistory.mail_type == mail_type,
             # Only reuse a live draft/sent mail — never a FAILED/CANCELLED one,
             # so regenerating after a failure produces a fresh mail.

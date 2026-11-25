@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 from app.services.mail_template_service import (
     render_po_materials_table_html,
+    render_po_materials_table_text,
     render_po_reply_table_html,
     _status_badge,
 )
@@ -43,6 +44,23 @@ class HtmlMailGenerationTests(unittest.TestCase):
         self.assertIn("Steel Rod", html)
         # inline CSS present
         self.assertIn("border-collapse", html)
+
+    def test_materials_table_shows_remaining_qty_and_plain_dates(self) -> None:
+        mats = [{
+            "crm_no": "2627-021830", "material_name": "3M PLATE", "po_qty": 10.0,
+            "inward_qty": 6.0, "pending_qty": 4.0, "uom": "NOS",
+            "due_date": "2026-11-30T09:37:00",
+        }]
+        html = render_po_materials_table_html(mats)
+        self.assertIn("Received Qty", html)
+        self.assertIn("Remaining Qty", html)
+        self.assertIn(">6<", html)
+        self.assertIn(">4<", html)           # 4.0 shown as 4
+        self.assertIn("30-11-2026", html)    # not the raw ISO timestamp
+        self.assertNotIn("T09:37", html)
+        text = render_po_materials_table_text(mats)
+        self.assertIn("Remaining Qty", text)
+        self.assertIn("| 10 | 6 | 4 | NOS | 30-11-2026 |", text)
 
     def test_status_badge_uses_color_for_known_status(self) -> None:
         badge = _status_badge("CONFIRMED")

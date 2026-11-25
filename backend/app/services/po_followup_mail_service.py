@@ -28,6 +28,7 @@ from .mail_template_service import (
     render,
     render_po_materials_table_html,
     render_po_reply_table_html,
+    _fmt_date,
 )
 
 TYPE_LABELS_PO = {
@@ -130,7 +131,7 @@ def _po_fallback_body(group: dict[str, Any], table_text: str) -> str:
         f"Dear {group.get('supplier_name') or 'Supplier'},\n\n"
         f"Status update is required for PO No. {_group_po_display(group)}.\n"
         f"Overall signal: {group.get('overall_signal')}.\n"
-        f"Earliest required dispatch: {group.get('earliest_due_date') or '-'}.\n\n"
+        f"Earliest required dispatch: {_fmt_date(group.get('earliest_due_date')) or '-'}.\n\n"
         "Material-wise summary:\n"
         f"{table_text}\n\n"
         f"{_commitment_instruction_text(group.get('supplier_po_no'))}\n\n"
@@ -148,7 +149,7 @@ def _po_body_html(
     po_no = escape(_group_po_display(group))
     count = escape(str(group.get("material_count") or 0))
     signal = escape(str(group.get("overall_signal") or "GREEN"))
-    due = escape(str(group.get("earliest_due_date") or "-"))
+    due = escape(str(_fmt_date(group.get("earliest_due_date")) or "-"))
     signal_bg = {
         "GREEN": "#dcfce7",
         "YELLOW": "#fef9c3",
@@ -339,13 +340,20 @@ def find_active_po_mail(
     db: Session,
     *,
     supplier_name: str | None,
-    supplier_po_no: str,
+    supplier_po_no: str | list[str],
     mail_type: str,
 ) -> MailHistory | None:
+    """A live auto mail of this type for the PO — any counter of the vendor-PO
+    thread when a list is given."""
+    po_filter = (
+        MailHistory.supplier_po_no == supplier_po_no.strip()
+        if isinstance(supplier_po_no, str)
+        else MailHistory.supplier_po_no.in_([p.strip() for p in supplier_po_no if p])
+    )
     stmt = (
         select(MailHistory)
         .where(
-            MailHistory.supplier_po_no == supplier_po_no.strip(),
+            po_filter,
             MailHistory.mail_type == mail_type,
             MailHistory.sent_status.in_(ACTIVE_AUTO_STATUSES),
             MailHistory.created_at >= _active_window_start(),
@@ -420,12 +428,18 @@ def create_po_followup_mail(
     commit: bool = True,
     instruction: str | None = None,
     source: str = "manual",
+    record_ids: list[int] | None = None,
 ) -> PoMailQueueResult:
     # Only lines the supplier may still be chased for (po_open_lines): closed
     # and cancel-pending lines never appear in the mail or set its signal.
-    group = po_followup_service.get_po_group(
-        db, supplier_name, supplier_po_no, chaseable_only=True
-    )
+    # `record_ids` = one vendor-PO bucket (auto queue): one mail for the vendor
+    # PO even when its lines sit under several recycled CRM counters.
+    if record_ids:
+        group = po_followup_service.get_po_group_for_records(db, record_ids)
+    else:
+        group = po_followup_service.get_po_group(
+            db, supplier_name, supplier_po_no, chaseable_only=True
+        )
     if not group:
         closed = po_followup_service.get_po_group(
             db, supplier_name, supplier_po_no, include_closed=True
@@ -501,7 +515,7 @@ def create_po_followup_mail(
         existing = po_followup_service.find_today_draft(
             db,
             supplier_name=group.get("supplier_name"),
-            supplier_po_no=group["supplier_po_no"],
+            supplier_po_no=group.get("supplier_po_nos") or group["supplier_po_no"],
             mail_type=resolved_mail_type,
         )
         if existing:
@@ -815,12 +829,18 @@ def queue_due_po_followups(
         .order_by(ProcurementRecord.supplier_name.asc(), ProcurementRecord.supplier_po_no.asc())
     ).all()
 
-    buckets: dict[tuple[str, str], list[ProcurementRecord]] = {}
+    # One mail per VENDOR PO (po_short_ref), not per CRM counter: the counter is
+    # recycled and one vendor PO can sit under several counters, which sent the
+    # supplier two mails for the same PO (25-Nov: 2627-019982 = 012736 + 012738).
+    by_supplier: dict[str, list[ProcurementRecord]] = {}
     for rec in records:
         if not rec.supplier_po_no:
             continue
-        key = ((rec.supplier_name or "").strip().upper(), rec.supplier_po_no.strip())
-        buckets.setdefault(key, []).append(rec)
+        by_supplier.setdefault((rec.supplier_name or "").strip().upper(), []).append(rec)
+    buckets: dict[tuple[str, str], list[ProcurementRecord]] = {}
+    for sup, recs in by_supplier.items():
+        for vkey, items in po_followup_service.vendor_ref_buckets(recs).items():
+            buckets[(sup, vkey)] = items
 
     results: list[dict[str, Any]] = []
     queued = 0
@@ -913,7 +933,7 @@ def queue_due_po_followups(
         existing = find_active_po_mail(
             db,
             supplier_name=group.get("supplier_name"),
-            supplier_po_no=group["supplier_po_no"],
+            supplier_po_no=group.get("supplier_po_nos") or group["supplier_po_no"],
             mail_type=mail_type,
         )
         if existing:
@@ -951,6 +971,7 @@ def queue_due_po_followups(
                 require_mapping=True,
                 commit=False,
                 source="auto",
+                record_ids=[r.id for r in group_records],
             )
         except Exception as exc:  # noqa: BLE001 — record the failure, keep the run going
             log.exception("PO follow-up generation failed for %s", group.get("supplier_po_no"))
