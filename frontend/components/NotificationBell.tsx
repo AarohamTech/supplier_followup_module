@@ -114,7 +114,7 @@ export default function NotificationBell() {
       </button>
 
       {open && (
-        <div className="animate-fade-in absolute right-0 z-50 mt-2 w-[min(22rem,calc(100vw-2rem))] origin-top-right overflow-hidden rounded-lg border border-brand-border bg-card shadow-xl">
+        <div className="popover-panel absolute right-0 z-50 mt-2 w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-lg border border-brand-border bg-card shadow-xl">
           <div className="flex items-center justify-between border-b border-brand-border px-4 py-2.5">
             <span className="text-sm font-semibold text-brand-dark">Notifications</span>
             {items.some((x) => !x.is_read) && (

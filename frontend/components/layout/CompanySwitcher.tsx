@@ -64,7 +64,7 @@ export default function CompanySwitcher({ fallback = "H-Connect" }: { fallback?:
         <ChevronDown size={14} className="text-brand-muted" />
       </button>
       {open && (
-        <div className="absolute right-0 z-40 mt-1 w-44 overflow-hidden rounded-md border border-brand-border bg-card shadow-card animate-slide-down">
+        <div className="absolute right-0 z-40 mt-1 w-44 overflow-hidden rounded-md border border-brand-border bg-card shadow-card popover-panel">
           {companies.map((c) => (
             <button
               key={c.code}

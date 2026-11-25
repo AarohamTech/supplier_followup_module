@@ -12,16 +12,19 @@ import SendToaster from "@/components/SendToaster";
 import SupplierShell from "@/components/portal/SupplierShell";
 import EmployeeShell from "@/components/eportal/EmployeeShell";
 import PortalChangePassword from "@/components/portal/PortalChangePassword";
+import { LogoLoader } from "@/components/brand/Logo";
 
 const PUBLIC_PATHS = ["/login"];
 // Pages anyone may open, signed in or not, without the app chrome or any
 // redirect (e.g. the PO acknowledgement link a supplier clicks in a mail).
 const OPEN_PREFIXES = ["/po-ack/"];
 
-function FullScreen({ children }: { children: React.ReactNode }) {
+// Session / redirect states. Uses the brand loader instead of bare text so the
+// first paint looks like the product, not a blank page.
+function FullScreen({ children }: { children: string }) {
   return (
-    <div className="min-h-screen flex items-center justify-center text-sm text-brand-muted">
-      {children}
+    <div className="flex min-h-screen items-center justify-center" aria-busy="true" aria-live="polite">
+      <LogoLoader size={56} label={children} />
     </div>
   );
 }

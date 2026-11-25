@@ -234,7 +234,7 @@ export default function PoExpandableTable({
             {colMenuOpen && (
               <>
                 <div className="fixed inset-0 z-10" onClick={() => setColMenuOpen(false)} aria-hidden />
-                <div className="absolute right-0 z-20 mt-1 w-56 rounded-md border border-brand-border bg-card p-2 shadow-lg">
+                <div className="popover-panel absolute right-0 z-20 mt-1 w-56 rounded-md border border-brand-border bg-card p-2 shadow-lg">
                   <div className="mb-1 px-1 text-[10px] font-semibold uppercase tracking-wider text-brand-muted">
                     {t("Material columns")}
                   </div>
@@ -406,8 +406,8 @@ export default function PoExpandableTable({
       </div>
 
       {confirmPo && (
-        <div className="fixed inset-0 z-50 bg-black/40 grid place-items-center p-4" onClick={() => !requesting && setConfirmPo(null)}>
-          <div className="bg-card rounded-lg shadow-xl w-full max-w-sm" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
+        <div className="modal-overlay fixed inset-0 z-50 bg-black/40 grid place-items-center p-4" onClick={() => !requesting && setConfirmPo(null)}>
+          <div className="modal-panel bg-card rounded-lg shadow-xl w-full max-w-sm" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
             <div className="border-b border-brand-border px-5 py-3 font-semibold text-sm">{t("Request PO cancellation")}</div>
             <div className="px-5 py-4 space-y-2 text-sm">
               <p>

@@ -7,8 +7,12 @@ import {
   ArrowUpDown,
   ChevronLeft,
   ChevronRight,
+  Inbox,
   Search,
 } from "lucide-react";
+
+// Varied widths so skeleton rows read as text, not as a grid of bars.
+const SKELETON_WIDTHS = ["w-24", "w-32", "w-16", "w-28", "w-20", "w-36"];
 
 export type Column<T> = {
   /** Stable key; also used as the sort key. */
@@ -127,30 +131,40 @@ export function DataTable<T>({
             <tr className="border-b border-brand-border bg-brand-surface">
               {columns.map((col) => {
                 const active = sort?.key === col.key;
+                const icon = col.sortValue
+                  ? active
+                    ? sort!.dir === "asc"
+                      ? <ArrowUp className="h-3 w-3 text-brand-dark" />
+                      : <ArrowDown className="h-3 w-3 text-brand-dark" />
+                    : <ArrowUpDown className="h-3 w-3 opacity-40" />
+                  : null;
                 return (
                   <th
                     key={col.key}
-                    onClick={() => toggleSort(col)}
+                    scope="col"
+                    aria-sort={active ? (sort!.dir === "asc" ? "ascending" : "descending") : undefined}
                     className={[
                       "table-header px-3 py-2",
                       alignClass[col.align ?? "left"],
-                      col.sortValue ? "cursor-pointer select-none hover:text-brand-dark" : "",
                       col.headerClassName ?? "",
                     ].join(" ")}
                   >
-                    <span className="inline-flex items-center gap-1">
-                      {col.header}
-                      {col.sortValue &&
-                        (active ? (
-                          sort!.dir === "asc" ? (
-                            <ArrowUp className="h-3 w-3" />
-                          ) : (
-                            <ArrowDown className="h-3 w-3" />
-                          )
-                        ) : (
-                          <ArrowUpDown className="h-3 w-3 opacity-40" />
-                        ))}
-                    </span>
+                    {col.sortValue ? (
+                      // A real button, so sorting works from the keyboard too.
+                      <button
+                        type="button"
+                        onClick={() => toggleSort(col)}
+                        className={[
+                          "-mx-1 inline-flex select-none items-center gap-1 rounded px-1 uppercase tracking-wider hover:text-brand-dark",
+                          active ? "text-brand-dark" : "",
+                        ].join(" ")}
+                      >
+                        {col.header}
+                        {icon}
+                      </button>
+                    ) : (
+                      col.header
+                    )}
                   </th>
                 );
               })}
@@ -158,15 +172,37 @@ export function DataTable<T>({
           </thead>
           <tbody>
             {loading ? (
-              <tr>
-                <td colSpan={columns.length} className="px-3 py-10 text-center text-sm text-brand-muted">
-                  Loading…
-                </td>
-              </tr>
+              // Skeleton rows keep the table's shape, so nothing jumps when data lands.
+              Array.from({ length: Math.min(pageSize ?? 6, 6) }, (_, r) => (
+                <tr key={`sk-${r}`} className="border-b border-brand-border last:border-0" aria-hidden>
+                  {columns.map((col, c) => (
+                    <td key={col.key} className={["px-3 py-3", alignClass[col.align ?? "left"]].join(" ")}>
+                      <div
+                        className={[
+                          "skeleton inline-block h-3 max-w-full",
+                          SKELETON_WIDTHS[(r + c * 2) % SKELETON_WIDTHS.length],
+                        ].join(" ")}
+                      />
+                    </td>
+                  ))}
+                </tr>
+              ))
             ) : visible.length === 0 ? (
               <tr>
-                <td colSpan={columns.length} className="px-3 py-10 text-center text-sm text-brand-muted">
-                  {emptyMessage}
+                <td colSpan={columns.length} className="px-3 py-12 text-center">
+                  <div className="mx-auto flex max-w-xs flex-col items-center gap-2">
+                    <span className="grid h-9 w-9 place-items-center rounded-full bg-subtle text-brand-muted">
+                      {query.trim() ? <Search size={16} /> : <Inbox size={16} />}
+                    </span>
+                    <p className="text-sm text-brand-muted">
+                      {query.trim() ? <>No rows match &ldquo;{query.trim()}&rdquo;.</> : emptyMessage}
+                    </p>
+                    {query.trim() && (
+                      <button type="button" onClick={() => setQuery("")} className="text-xs font-medium text-signal-red hover:underline">
+                        Clear search
+                      </button>
+                    )}
+                  </div>
                 </td>
               </tr>
             ) : (
@@ -193,14 +229,15 @@ export function DataTable<T>({
 
       {pageSize && pageCount > 1 && (
         <div className="flex items-center justify-end gap-2 text-xs text-brand-muted">
-          <span>
+          <span className="tabular">
             Page {safePage + 1} of {pageCount}
           </span>
           <button
             type="button"
             onClick={() => setPage((p) => Math.max(0, p - 1))}
             disabled={safePage === 0}
-            className="inline-flex items-center rounded-md border border-brand-border bg-card p-1 hover:bg-subtle disabled:opacity-40"
+            aria-label="Previous page"
+            className="inline-flex items-center rounded-md border border-brand-border bg-card p-1 hover:bg-subtle active:scale-[0.96] disabled:opacity-40"
           >
             <ChevronLeft className="h-4 w-4" />
           </button>
@@ -208,7 +245,8 @@ export function DataTable<T>({
             type="button"
             onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
             disabled={safePage >= pageCount - 1}
-            className="inline-flex items-center rounded-md border border-brand-border bg-card p-1 hover:bg-subtle disabled:opacity-40"
+            aria-label="Next page"
+            className="inline-flex items-center rounded-md border border-brand-border bg-card p-1 hover:bg-subtle active:scale-[0.96] disabled:opacity-40"
           >
             <ChevronRight className="h-4 w-4" />
           </button>

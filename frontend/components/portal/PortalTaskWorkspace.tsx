@@ -810,11 +810,11 @@ function PortalTaskDrawer({
 
   return (
     // Edit modal: closes via X / Escape only, never on a backdrop click.
-    <div className="fixed inset-0 z-50 grid place-items-center p-2 sm:p-4 bg-black/50">
+    <div className="modal-overlay fixed inset-0 z-50 grid place-items-center p-2 sm:p-4 bg-black/50">
       <div
         role="dialog"
         aria-modal="true"
-        className="relative w-full max-w-6xl h-[94vh] bg-card rounded-xl shadow-2xl flex flex-col overflow-hidden"
+        className="modal-panel relative w-full max-w-6xl h-[94vh] bg-card rounded-xl shadow-2xl flex flex-col overflow-hidden"
       >
         {/* Header */}
         <div className="px-6 py-4 border-b border-brand-border flex items-start justify-between gap-3">
@@ -1066,8 +1066,8 @@ function PortalTaskCreateForm({
 
   return (
     // Form modal: X / Cancel only — a backdrop click must not drop typed data.
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4">
-      <div className="w-full max-w-2xl rounded-xl bg-card shadow-2xl" role="dialog" aria-modal="true">
+    <div className="modal-overlay fixed inset-0 z-50 grid place-items-center bg-black/40 p-4">
+      <div className="modal-panel w-full max-w-2xl rounded-xl bg-card shadow-2xl" role="dialog" aria-modal="true">
         <div className="flex items-center justify-between border-b border-brand-border px-5 py-3">
           <div className="flex items-center gap-2">
             <Plus size={16} className="text-signal-red" />

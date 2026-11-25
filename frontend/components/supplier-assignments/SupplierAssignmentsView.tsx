@@ -211,9 +211,9 @@ export default function SupplierAssignmentsView({
       {!loading && <Pager page={page} size={PAGE_SIZE} total={total} onPage={setPage} unit="suppliers" />}
 
       {editing && (
-        <div className="fixed inset-0 z-50 bg-black/40 grid place-items-center p-4" onClick={() => !saving && setEditing(null)}>
+        <div className="modal-overlay fixed inset-0 z-50 bg-black/40 grid place-items-center p-4" onClick={() => !saving && setEditing(null)}>
           <div
-            className="bg-card rounded-lg shadow-xl w-full max-w-md max-h-[90vh] flex flex-col"
+            className="modal-panel bg-card rounded-lg shadow-xl w-full max-w-md max-h-[90vh] flex flex-col"
             onClick={(e) => e.stopPropagation()}
             role="dialog"
             aria-modal="true"

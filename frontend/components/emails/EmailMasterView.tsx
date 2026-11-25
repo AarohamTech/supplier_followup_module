@@ -393,8 +393,8 @@ export default function EmailMasterView({
       <Pager page={page} size={SIZE} total={filtered.length} onPage={setPage} unit="mappings" />
 
       {editing && (
-        <div className="fixed inset-0 z-50 bg-black/40 grid place-items-center p-4" onClick={() => !busy && setEditing(null)}>
-          <div className="bg-card rounded-lg shadow-xl w-full max-w-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-overlay fixed inset-0 z-50 bg-black/40 grid place-items-center p-4" onClick={() => !busy && setEditing(null)}>
+          <div className="modal-panel bg-card rounded-lg shadow-xl w-full max-w-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="px-5 py-3 border-b border-brand-border flex items-center justify-between">
               <div className="font-semibold">{editing.id ? t("Edit Email Mapping") : t("Add Email Mapping")}</div>
               <button className="p-1 rounded hover:bg-subtle" onClick={() => setEditing(null)}><X size={18} /></button>

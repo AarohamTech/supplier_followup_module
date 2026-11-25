@@ -25,7 +25,7 @@ export default function KpiStrip() {
             </div>
             <div className="min-w-0">
               <div className="truncate text-[10px] font-semibold uppercase tracking-[0.12em] text-brand-muted" title={t(it.label)}>{t(it.label)}</div>
-              <div className={"mt-0.5 text-2xl font-semibold tracking-tight " + (it.strong ? "text-signal-red" : "text-brand-dark")}>{it.value}</div>
+              <div className={"tabular mt-0.5 text-2xl font-semibold tracking-tight " + (it.strong && it.value > 0 ? "text-signal-red" : "text-brand-dark")}>{it.value.toLocaleString("en-IN")}</div>
             </div>
           </div>
         );

@@ -120,9 +120,9 @@ function NavList({ onNavigate }: { onNavigate?: () => void }) {
                     onClick={onNavigate}
                     aria-current={active ? "page" : undefined}
                     className={cn(
-                      "group flex items-center gap-3 rounded-md px-3 py-2 text-[13px] font-medium",
+                      "group relative flex items-center gap-3 rounded-md px-3 py-2 text-[13px] font-medium active:scale-[0.98]",
                       active
-                        ? "bg-card text-brand-dark shadow-sm ring-1 ring-inset ring-brand-border"
+                        ? "bg-card text-brand-dark shadow-sm ring-1 ring-inset ring-brand-border before:absolute before:inset-y-2 before:left-0 before:w-[3px] before:rounded-r-full before:bg-signal-red"
                         : "text-brand-muted hover:bg-card hover:text-brand-dark",
                     )}
                   >

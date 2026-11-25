@@ -393,8 +393,8 @@ export default function EmployeesAdminPage() {
 
       {/* Edit employee modal */}
       {editUser && (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4" onClick={() => setEditUser(null)}>
-          <div className="w-full max-w-md rounded-xl bg-card shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-overlay fixed inset-0 z-50 grid place-items-center bg-black/50 p-4" onClick={() => setEditUser(null)}>
+          <div className="modal-panel w-full max-w-md rounded-xl bg-card shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between border-b border-brand-border px-5 py-3">
               <div className="text-sm font-semibold text-brand-dark">
                 Edit {editUser.username}

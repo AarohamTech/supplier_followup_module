@@ -119,9 +119,9 @@ export default function AsnCreateModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/40 grid place-items-center p-4" onClick={onClose}>
+    <div className="modal-overlay fixed inset-0 z-50 bg-black/40 grid place-items-center p-4" onClick={onClose}>
       <div
-        className="bg-card rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto"
+        className="modal-panel bg-card rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="px-5 py-3 border-b border-brand-border flex items-center justify-between sticky top-0 bg-card">

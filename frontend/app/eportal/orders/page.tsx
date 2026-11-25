@@ -375,8 +375,8 @@ export default function EmployeeOrdersPage() {
       )}
 
       {confirmLine && (
-        <div className="fixed inset-0 z-50 bg-black/40 grid place-items-center p-4" onClick={() => !requesting && setConfirmLine(null)}>
-          <div className="bg-card rounded-lg shadow-xl w-full max-w-sm" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
+        <div className="modal-overlay fixed inset-0 z-50 bg-black/40 grid place-items-center p-4" onClick={() => !requesting && setConfirmLine(null)}>
+          <div className="modal-panel bg-card rounded-lg shadow-xl w-full max-w-sm" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
             <div className="border-b border-brand-border px-5 py-3 font-semibold text-sm">{t("Cancel material")}</div>
             <div className="px-5 py-4 space-y-2 text-sm">
               <p>

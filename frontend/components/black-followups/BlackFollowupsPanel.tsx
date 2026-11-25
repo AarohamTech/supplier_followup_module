@@ -396,8 +396,8 @@ function DRow({ label, children }: { label: string; children: React.ReactNode })
 function AttemptDetailModal({ attempt: a, onClose }: { attempt: FollowupAttempt; onClose: () => void }) {
   const { t } = useT();
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" onClick={onClose}>
-      <div className="w-full max-w-lg overflow-hidden rounded-lg bg-card shadow-xl" onClick={(e) => e.stopPropagation()}>
+    <div className="modal-overlay fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" onClick={onClose}>
+      <div className="modal-panel w-full max-w-lg overflow-hidden rounded-lg bg-card shadow-xl" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between border-b border-brand-border px-5 py-3">
           <div className="font-semibold text-brand-dark">{t("Follow-up attempt · {po}", { po: a.supplier_po_no || "—" })}</div>
           <button className="rounded p-1 hover:bg-subtle" onClick={onClose} aria-label={t("Close")}><X size={18} /></button>

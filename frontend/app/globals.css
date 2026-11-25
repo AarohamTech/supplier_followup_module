@@ -19,6 +19,10 @@
     --subtle: 243 244 246;       /* subtle/hover background */
     --ink: 17 24 39;             /* always-dark background */
     --focus-ring: 225 29 46;
+    /* Motion tokens — use these instead of raw cubic-beziers. */
+    --ease-out: cubic-bezier(0.23, 1, 0.32, 1);       /* enter / exit, press */
+    --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);   /* on-screen movement */
+    --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);    /* drawers, side panels */
     --red-50: 254 242 242;
     --red-100: 254 226 226;
     --red-200: 254 202 202;
@@ -85,6 +89,9 @@
     text-rendering: optimizeLegibility;
   }
 
+  /* Figures in tables and KPI tiles line up column-to-column. */
+  table, .kpi-num, .tabular { font-variant-numeric: tabular-nums; }
+
   ::selection {
     background: rgb(var(--brand-red) / 0.14);
   }
@@ -141,29 +148,49 @@
   100% { box-shadow: 0 0 0 0 rgba(239,68,68,0); }
 }
 
-.animate-fade-in    { animation: fadeIn .18s cubic-bezier(.23,1,.32,1) both; }
-.animate-slide-down { animation: slideDown .2s cubic-bezier(.23,1,.32,1) both; }
+.animate-fade-in    { animation: fadeIn .18s var(--ease-out) both; }
+.animate-slide-down { animation: slideDown .2s var(--ease-out) both; }
 .animate-pulse-ring { animation: pulseRing 2s ease-out infinite; }
 
-.mobile-nav-backdrop {
+/* Entrances use @starting-style: the browser animates from these values on
+   mount, no JS state needed. Browsers without support just show the element. */
+.mobile-nav-backdrop { opacity: 1; transition: opacity .2s var(--ease-out); }
+.mobile-nav-drawer   { transform: translateX(0); transition: transform .3s var(--ease-drawer); }
+.side-panel-right    { transform: translateX(0); transition: transform .3s var(--ease-drawer); }
+
+/* Modals: backdrop fades, panel rises a touch and scales from 0.96 (never 0).
+   Modals stay centred — they are not anchored to a trigger. */
+.modal-overlay { opacity: 1; transition: opacity .2s var(--ease-out); }
+.modal-panel {
   opacity: 1;
-  transition: opacity .18s cubic-bezier(.23,1,.32,1);
-
-  @starting-style { opacity: 0; }
+  transform: none;
+  transition: opacity .2s var(--ease-out), transform .24s var(--ease-out);
 }
 
-.mobile-nav-drawer {
-  transform: translateX(0);
-  transition: transform .22s cubic-bezier(.23,1,.32,1);
-
-  @starting-style { transform: translateX(-100%); }
+/* Dropdowns/popovers anchored to a trigger on their right edge. */
+.popover-panel {
+  opacity: 1;
+  transform: none;
+  transform-origin: top right;
+  transition: opacity .15s var(--ease-out), transform .18s var(--ease-out);
 }
 
-.side-panel-right {
-  transform: translateX(0);
-  transition: transform .22s cubic-bezier(.23,1,.32,1);
+/* Skeleton shimmer for loading rows. */
+@keyframes shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+.skeleton {
+  border-radius: 4px;
+  background: linear-gradient(90deg, rgb(var(--subtle)) 25%, rgb(var(--brand-border) / .7) 50%, rgb(var(--subtle)) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s linear infinite;
+}
 
-  @starting-style { transform: translateX(100%); }
+@starting-style {
+  .mobile-nav-backdrop { opacity: 0; }
+  .mobile-nav-drawer   { transform: translateX(-100%); }
+  .side-panel-right    { transform: translateX(100%); }
+  .modal-overlay       { opacity: 0; }
+  .modal-panel         { opacity: 0; transform: translateY(6px) scale(0.96); }
+  .popover-panel       { opacity: 0; transform: scale(0.96); }
 }
 
 /* Harmony logo "draw" loop — used for loaders and AI-generating states. */
@@ -176,13 +203,24 @@
 .logo-anim rect, .logo-anim path { stroke-dasharray: 1; animation: logoDraw 2.1s ease-in-out infinite; }
 .logo-anim path { animation-delay: .18s; }
 
-/* Smooth, consistent micro-interactions across the whole app. */
+/* Smooth, consistent micro-interactions across the whole app.
+   Colours ease gently; the press-scale uses a strong ease-out so it answers
+   instantly. */
 button, a, .chip, input, select, textarea {
   transition: background-color .15s ease, color .15s ease, box-shadow .15s ease,
-              transform .15s ease, opacity .15s ease, border-color .15s ease;
+              opacity .15s ease, border-color .15s ease, transform .16s var(--ease-out);
 }
 
-/* Accessibility: honour the OS "reduce motion" setting. */
+/* Accessibility: honour the OS "reduce motion" setting. Reduced motion means
+   gentler, not frozen: movement goes, but fades stay, and loading spinners keep
+   turning so the app never looks hung. */
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { animation: none !important; transition: none !important; }
+  *, *::before, *::after {
+    transition-property: opacity, color, background-color, border-color !important;
+    scroll-behavior: auto !important;
+  }
+  .animate-slide-down { animation-name: fadeIn; }
+  .animate-pulse-ring, .logo-anim rect, .logo-anim path, .skeleton { animation: none; }
+  .modal-panel, .popover-panel, .mobile-nav-drawer, .side-panel-right { transform: none !important; }
+  [class*="active:scale"]:active { transform: none; }
 }
