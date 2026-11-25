@@ -1052,7 +1052,7 @@ class _AssistantRequest(BaseModel):
 
 @router.get("/assistant/health")
 def assistant_health(user: User = Depends(get_current_supplier)) -> dict:
-    return {"enabled": bool(ai_service.is_enabled())}
+    return {"enabled": bool(ai_service.any_enabled())}
 
 
 @router.post("/assistant/chat")
@@ -1075,7 +1075,7 @@ def assistant_chat(
         "can only help with their POs and shipments." + ai_service.AGENT_TOOLS_SUFFIX
     )
     try:
-        if not ai_service.is_enabled():
+        if not ai_service.any_enabled():
             raise AIDisabledError("Harmony Intelligent is currently unavailable.")
         result = ai_service.chat_with_tools(
             [m.model_dump() for m in payload.messages],
@@ -1091,6 +1091,6 @@ def assistant_chat(
 
     return {
         "reply": result["reply"],
-        "model": settings.LLM_MODEL,
+        "model": ai_service.active_model(),
         "tools_used": result.get("tools_used", []),
     }

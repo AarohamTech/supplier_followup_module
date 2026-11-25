@@ -339,7 +339,7 @@ def build_draft_reply(
         template_source = "generic"
 
     # Prefer an AI-polished reply grounded in the same facts; fall back on error.
-    if use_ai and ai_service.is_enabled():
+    if use_ai and ai_service.any_enabled():
         try:
             ai_body = ai_service.suggest_customer_reply(
                 customer_name=name,

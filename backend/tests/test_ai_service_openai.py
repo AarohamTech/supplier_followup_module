@@ -45,10 +45,11 @@ def _both_enabled():
 
 
 class ProviderOrderTests(unittest.TestCase):
-    def test_prefer_openai_puts_nano_first(self) -> None:
+    def test_nano_always_first(self) -> None:
+        # 2026-11-25: the NVIDIA model is end-of-life; gpt-5-nano answers first.
         with _both_enabled():
             self.assertEqual(ai_service._provider_order(True), ["openai", "primary"])
-            self.assertEqual(ai_service._provider_order(False), ["primary", "openai"])
+            self.assertEqual(ai_service._provider_order(False), ["openai", "primary"])
 
     def test_openai_only(self) -> None:
         with patch.multiple(settings, LLM_ENABLED=False,
@@ -101,18 +102,28 @@ class OpenAICompleteTests(unittest.TestCase):
         self.assertEqual(fake.calls[0]["extra_body"].get("service_tier"), "flex")
         self.assertNotIn("service_tier", fake.calls[1]["extra_body"])
 
-    def test_primary_failure_falls_back_to_openai(self) -> None:
-        primary = _FakeClient(results=[RuntimeError("nim down")])
-        backup = _FakeClient(results=[_completion("from-nano")])
+    def test_background_runs_on_nano_flex_and_falls_back_to_primary(self) -> None:
+        nano = _FakeClient(results=[_completion("from-nano")])
+        primary = _FakeClient(results=[_completion("from-nim")])
         with _both_enabled(), \
                 patch.object(ai_service, "_client", return_value=primary), \
-                patch.object(ai_service, "_openai_client", return_value=backup), \
+                patch.object(ai_service, "_openai_client", return_value=nano), \
                 patch.object(ai_service, "_prompt", lambda key: "sys"):
             out = ai_service.summarize_thread("some transcript", background=True)
         self.assertEqual(out, "from-nano")
-        self.assertEqual(len(primary.calls), 1)
-        # Cron/backend backup call rides the cheap flex tier.
-        self.assertEqual(backup.calls[0]["extra_body"].get("service_tier"), "flex")
+        self.assertEqual(len(primary.calls), 0)
+        # Cron/backend calls ride the cheap flex tier.
+        self.assertEqual(nano.calls[0]["extra_body"].get("service_tier"), "flex")
+
+        # nano down (both flex + standard retry) → the primary endpoint answers.
+        nano = _FakeClient(results=[RuntimeError("down"), RuntimeError("down")])
+        primary = _FakeClient(results=[_completion("from-nim")])
+        with _both_enabled(), \
+                patch.object(ai_service, "_client", return_value=primary), \
+                patch.object(ai_service, "_openai_client", return_value=nano), \
+                patch.object(ai_service, "_prompt", lambda key: "sys"):
+            out = ai_service.summarize_thread("some transcript", background=True)
+        self.assertEqual(out, "from-nim")
 
 
 class AgentRoutingTests(unittest.TestCase):
@@ -150,8 +161,9 @@ class AgentRoutingTests(unittest.TestCase):
         self.assertEqual(backup.calls[0]["tool_choice"], "required")
 
     def test_agent_switches_provider_on_failure(self) -> None:
-        primary = _FakeClient(results=[RuntimeError("nim down")])
-        backup = _FakeClient(results=[_completion("recovered")])
+        # nano (first) fails → the primary endpoint takes over.
+        primary = _FakeClient(results=[_completion("recovered")])
+        backup = _FakeClient(results=[RuntimeError("nano down")])
         with _both_enabled(), \
                 patch.object(ai_service, "_client", return_value=primary), \
                 patch.object(ai_service, "_openai_client", return_value=backup):

@@ -228,16 +228,24 @@ def _openai_client():
     )
 
 
-def _provider_order(prefer_openai: bool) -> list[str]:
-    """Enabled providers in attempt order. HI chat prefers OpenAI (gpt-5-nano);
-    everything else runs the primary endpoint with OpenAI as the backup."""
+def active_model() -> str:
+    """The model that answers first (for API responses / health)."""
+    return settings.OPENAI_MODEL if openai_enabled() else settings.LLM_MODEL
+
+
+def _provider_order(prefer_openai: bool = True) -> list[str]:
+    """Enabled providers in attempt order.
+
+    2026-11-25: gpt-5-nano (OpenAI) answers everything first — HI chat, drafts,
+    triage, summaries, cron jobs. The NVIDIA endpoint's model
+    (meta/llama-3.3-70b-instruct) reached end of life on 2026-08-26, so the
+    primary endpoint is only a fallback now. `prefer_openai` is kept for
+    callers but no longer changes the order."""
     order: list[str] = []
-    if prefer_openai and openai_enabled():
+    if openai_enabled():
         order.append("openai")
     if is_enabled():
         order.append("primary")
-    if not prefer_openai and openai_enabled():
-        order.append("openai")
     return order
 
 
@@ -720,8 +728,9 @@ def health() -> dict[str, Any]:
     from . import embeddings_service  # local import avoids a cycle at module load
 
     return {
-        "enabled": is_enabled(),
-        "model": settings.LLM_MODEL,
+        "enabled": any_enabled(),
+        "model": active_model(),
+        "fallback_model": settings.LLM_MODEL if is_enabled() else None,
         "base_url": settings.LLM_BASE_URL,
         "has_key": bool(settings.LLM_API_KEY),
         "agent_enabled": bool(settings.AI_AGENT_ENABLED and any_enabled()),
@@ -731,7 +740,7 @@ def health() -> dict[str, Any]:
             "enabled": openai_enabled(),
             "model": settings.OPENAI_MODEL,
             "has_key": bool(settings.OPENAI_API_KEY),
-            "role": "hi-chat primary + cron/backend backup",
+            "role": "primary for all AI calls (NVIDIA endpoint is fallback only)",
             "flex_for_background": bool(settings.OPENAI_FLEX_FOR_BACKGROUND),
         },
         "rag": embeddings_service.health(),

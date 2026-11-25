@@ -799,7 +799,7 @@ def generate_ai_summary(
     actor: User = Depends(get_current_staff),
 ):
     row = _visible_task_or_404(db, task_id, actor)
-    if not ai_service.is_enabled():
+    if not ai_service.any_enabled():
         raise HTTPException(503, "AI is not enabled")
     transcript = collab.build_transcript(db, row)
     try:

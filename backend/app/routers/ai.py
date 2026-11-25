@@ -68,7 +68,7 @@ def ai_health() -> dict:
 def ai_tools() -> dict:
     specs = ai_tools_service.tool_specs()
     return {
-        "agent_enabled": bool(settings.AI_AGENT_ENABLED and ai_service.is_enabled()),
+        "agent_enabled": bool(settings.AI_AGENT_ENABLED and ai_service.any_enabled()),
         "tools": [s["function"]["name"] for s in specs],
     }
 
@@ -87,7 +87,7 @@ def ai_chat(
         settings.AI_AGENT_ENABLED if payload.use_tools is None else payload.use_tools
     )
     try:
-        if use_tools and ai_service.is_enabled():
+        if use_tools and ai_service.any_enabled():
             # Non-admins: tools only see the caller's own POs (staff_scope).
             tool_scope = ai_tools_service.ToolScope(staff=staff_scope)
             result = ai_service.chat_with_tools(
@@ -108,7 +108,7 @@ def ai_chat(
 
     return ChatResponse(
         reply=reply,
-        model=settings.LLM_MODEL,
+        model=ai_service.active_model(),
         tools_used=[ToolUse(**t) for t in tools_used],
     )
 

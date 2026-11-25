@@ -1738,7 +1738,7 @@ def ai_reply(
     # the template on any error so the button always returns something usable.
     body = template_body
     source = "template"
-    if ai_service.is_enabled():
+    if ai_service.any_enabled():
         try:
             days_late = (datetime.utcnow() - rec.shipment_date).days if rec.shipment_date else None
             materials_summary = (
