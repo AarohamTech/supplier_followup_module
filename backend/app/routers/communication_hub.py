@@ -462,25 +462,72 @@ def comm_dashboard(
 # ─────────────────────────────────────────────────────────────────────────────
 # 2. Suppliers list
 # ─────────────────────────────────────────────────────────────────────────────
+def _live_supplier_keys(
+    db: Session, rec_conds: tuple = (), msg_conds: tuple = ()
+) -> tuple[set[str], set[int]]:
+    """Suppliers worth listing in the hub: at least one OPEN PO line, or an
+    unread supplier mail. Suppliers whose POs are all closed / expired (delisted
+    from the CRM pending desk, fully received, cancelled) drop out — ~85-90% of
+    lines — which also keeps the list fast. Returns (UPPER names, supplier ids)."""
+    names = {
+        n.strip().upper()
+        for n in db.scalars(
+            select(ProcurementRecord.supplier_name)
+            .where(open_line_clause(), ProcurementRecord.supplier_name.isnot(None), *rec_conds)
+            .distinct()
+        ).all()
+        if n and n.strip()
+    }
+    ids: set[int] = set()
+    for name, sid in db.execute(
+        select(CommunicationMessage.supplier_name, CommunicationMessage.supplier_id)
+        .where(
+            CommunicationMessage.direction == "INCOMING",
+            CommunicationMessage.read_at.is_(None),
+            *msg_conds,
+        )
+        .distinct()
+    ).all():
+        if name and name.strip():
+            names.add(name.strip().upper())
+        if sid is not None:
+            ids.add(int(sid))
+    return names, ids
+
+
 @router.get("/suppliers")
 def list_suppliers(
     db: Session = Depends(get_db),
     staff: StaffScopeDep = None,
+    # Plain default (not Query(...)) so direct Python calls get False too.
+    include_idle: bool = False,
 ) -> list[dict[str, Any]]:
     """
     Live supplier list from supplier_master enriched with PO / mail / task aggregates.
     Also surfaces procurement_records suppliers not yet in master.
     Non-admins get only their in-scope suppliers, with counts over their own POs.
+    Suppliers with only closed / expired POs and nothing unread are left out
+    unless ``include_idle``.
     """
     masters = db.scalars(
         select(SupplierMaster).where(SupplierMaster.is_active.is_(True))
     ).all()
+    # Names of every active master: a master hidden below (idle / out of scope)
+    # must not reappear as a "not in master" extra name.
+    all_master_upper = {m.supplier_name.strip().upper() for m in masters}
     if staff is not None:
         masters = [m for m in masters if staff.allows_supplier(m.supplier_name, m.id)]
-    master_by_upper: dict[str, SupplierMaster] = {
-        m.supplier_name.strip().upper(): m for m in masters
-    }
-
+    live_names: Optional[set[str]] = None
+    if not include_idle:
+        live_names, live_ids = _live_supplier_keys(
+            db,
+            rec_conds=(staff.record_clause(ProcurementRecord),) if staff is not None else (),
+            msg_conds=(_message_scope_clause(staff),) if staff is not None else (),
+        )
+        masters = [
+            m for m in masters
+            if m.supplier_name.strip().upper() in live_names or m.id in live_ids
+        ]
     po_names: list[str] = list(
         db.execute(select(ProcurementRecord.supplier_name).distinct()).scalars().all()
     )
@@ -488,8 +535,9 @@ def list_suppliers(
         {
             n.strip()
             for n in po_names
-            if n and n.strip().upper() not in master_by_upper
+            if n and n.strip().upper() not in all_master_upper
             and (staff is None or staff.allows_supplier(n))
+            and (live_names is None or n.strip().upper() in live_names)
         }
     )
 
@@ -535,11 +583,20 @@ def _build_supplier_entry(
         )
     ).all()
 
-    mails = db.scalars(
-        select(MailHistory)
-        .where(func.upper(MailHistory.supplier_name) == upper, *mail_scope)
+    # Aggregates instead of loading every historical mail row (lag on big suppliers).
+    mail_where = [func.upper(MailHistory.supplier_name) == upper, *mail_scope]
+    mail_count, draft_count = db.execute(
+        select(
+            func.count(MailHistory.id),
+            func.count(MailHistory.id).filter(MailHistory.sent_status == "DRAFT"),
+        ).where(*mail_where)
+    ).one()
+    latest = db.execute(
+        select(MailHistory.subject, MailHistory.created_at)
+        .where(*mail_where)
         .order_by(MailHistory.created_at.desc())
-    ).all()
+        .limit(1)
+    ).first()
 
     open_task_count: int = db.execute(
         select(func.count(CommunicationTask.id)).where(
@@ -589,11 +646,16 @@ def _build_supplier_entry(
         )
     ).scalar_one() or 0
 
+    # The signal comes from OPEN lines only: old follow-up mails of expired /
+    # closed POs must not paint a supplier BLACK. A supplier listed only for an
+    # unread mail (no open line) falls back to the mail history's signal.
     po_signals = [_norm_signal(p.signal) for p in pos]
-    mail_signals = [_signal_from_mail_type(m.mail_type) for m in mails]
-    highest = _worst_signal(po_signals + mail_signals) if (po_signals or mail_signals) else "GREEN"
-    latest = mails[0] if mails else None
-    draft_count = sum(1 for m in mails if m.sent_status == "DRAFT")
+    if po_signals:
+        highest = _worst_signal(po_signals)
+    else:
+        mail_types = db.scalars(select(MailHistory.mail_type).where(*mail_where).distinct()).all()
+        mail_signals = [_signal_from_mail_type(t) for t in mail_types]
+        highest = _worst_signal(mail_signals) if mail_signals else "GREEN"
 
     return {
         "supplier_id": supplier_id,
@@ -601,8 +663,8 @@ def _build_supplier_entry(
         "last_subject": latest.subject if latest else None,
         "last_activity_at": latest.created_at.isoformat() if latest else None,
         "open_po_count": len(pos),
-        "mail_count": len(mails),
-        "draft_mail_count": draft_count,
+        "mail_count": int(mail_count or 0),
+        "draft_mail_count": int(draft_count or 0),
         "task_count": open_task_count,
         "unread_inbound": int(unread_inbound or 0),
         "non_po_count": int(non_po_count or 0),

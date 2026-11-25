@@ -37,6 +37,9 @@ def _temp_db():
 def _supplier(db, name):
     s = SupplierMaster(supplier_name=name, is_active=True)
     db.add(s)
+    # An open PO line keeps the supplier listed (idle suppliers are hidden).
+    db.add(ProcurementRecord(crm_no=f"C-{name}", material_name="Bolt",
+                             supplier_po_no=f"{name[:4]}-1", supplier_name=name))
     db.commit()
     db.refresh(s)
     return s

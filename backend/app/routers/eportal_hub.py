@@ -329,6 +329,19 @@ def list_suppliers(
     owned_names = _owned_supplier_names(db, user.emp_code)
     if not owned_names:
         return []
+    # Hide suppliers whose owned POs are all closed / expired and have nothing
+    # unread (same rule as the staff hub).
+    pairs = _owned_po_pairs(db, user.emp_code)
+    live_names, _ids = hub._live_supplier_keys(
+        db,
+        rec_conds=(ProcurementRecord.owner_emp_code == user.emp_code,),
+        msg_conds=(
+            _pair_clause(CommunicationMessage.supplier_name, CommunicationMessage.supplier_po_no, pairs),
+        ) if pairs else (CommunicationMessage.id.is_(None),),
+    )
+    owned_names = owned_names & live_names
+    if not owned_names:
+        return []
 
     # Map uppercased name → master row (if any) so we can pass the real supplier_id.
     masters = db.scalars(
