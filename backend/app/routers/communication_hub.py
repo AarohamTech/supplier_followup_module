@@ -9,7 +9,7 @@ Only consumes those systems as data sources and triggers them via their own serv
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Optional
+from typing import Annotated, Any, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -56,10 +56,117 @@ from ..services import task_visibility as task_vis
 from ..services import po_followup_service
 from ..services.po_open_lines import open_line_clause, open_lines
 from ..services.reply_table_parser import parse_reply_table
+from ..services.staff_scope import StaffScope, get_staff_scope
+
+# Annotated with a None default: FastAPI injects it, while direct Python calls
+# (eportal_hub reuses these handlers after its own scoping) get None = no filter.
+StaffScopeDep = Annotated[Optional[StaffScope], Depends(get_staff_scope)]
 
 log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/communication-hub", tags=["communication-hub"])
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Staff scope (services/staff_scope.py): admins see everything (staff=None);
+# manager / user / viewer see only their own POs and assigned suppliers.
+# Out-of-scope targets answer 404 so ids never leak.
+# ─────────────────────────────────────────────────────────────────────────────
+_NOT_FOUND = "Not found"
+
+
+def _resolve_supplier_name(
+    db: Session, supplier_id: Optional[int], supplier_name: Optional[str]
+) -> Optional[str]:
+    name = (supplier_name or "").strip() or None
+    if name is None and supplier_id is not None:
+        sup = db.get(SupplierMaster, supplier_id)
+        name = sup.supplier_name if sup else None
+    return name
+
+
+def _record_visible(db: Session, staff: StaffScope, rec: Optional[ProcurementRecord]) -> bool:
+    """The record, or any record of its vendor-PO thread, is in scope."""
+    if rec is None:
+        return False
+    if staff.allows_record(rec):
+        return True
+    if rec.supplier_po_no:
+        group = po_followup_service.vendor_ref_group_for_record(db, rec)
+        return any(staff.allows_record(r) for r in group)
+    return False
+
+
+def _assert_po_scope(
+    db: Session,
+    staff: Optional[StaffScope],
+    *,
+    procurement_record_id: Optional[int] = None,
+    supplier_po_no: Optional[str] = None,
+    supplier_name: Optional[str] = None,
+    supplier_id: Optional[int] = None,
+) -> None:
+    if staff is None:
+        return
+    if procurement_record_id is not None:
+        if _record_visible(db, staff, db.get(ProcurementRecord, procurement_record_id)):
+            return
+        raise HTTPException(404, _NOT_FOUND)
+    name = _resolve_supplier_name(db, supplier_id, supplier_name)
+    if supplier_po_no and staff.allows_pair(name, supplier_po_no):
+        return
+    raise HTTPException(404, _NOT_FOUND)
+
+
+def _assert_supplier_scope(
+    db: Session,
+    staff: Optional[StaffScope],
+    supplier_id: Optional[int],
+    supplier_name: Optional[str],
+) -> None:
+    if staff is None:
+        return
+    name = _resolve_supplier_name(db, supplier_id, supplier_name)
+    if not staff.allows_supplier(name, supplier_id):
+        raise HTTPException(404, _NOT_FOUND)
+
+
+def _customer_mail_visible(db: Session, staff: StaffScope, customer_mail_id: Optional[int]) -> bool:
+    """Same rule as /api/customer-mails: linked to an own PO or allocated by name."""
+    mail = db.get(CustomerMail, customer_mail_id) if customer_mail_id is not None else None
+    if mail is None:
+        return False
+    if mail.linked_supplier_po_no and mail.linked_supplier_po_no in staff.po_counters:
+        return True
+    user = db.get(User, staff.user_id)
+    names = {n for n in ((user.full_name, user.username) if user else ()) if n}
+    return (mail.assigned_to or "") in names
+
+
+def _message_visible(db: Session, staff: Optional[StaffScope], msg: CommunicationMessage) -> bool:
+    if staff is None:
+        return True
+    if staff.user_id in (msg.assigned_user_ids or []):
+        return True
+    if msg.customer_mail_id is not None:
+        return _customer_mail_visible(db, staff, msg.customer_mail_id)
+    if msg.procurement_record_id is not None and _record_visible(
+        db, staff, db.get(ProcurementRecord, msg.procurement_record_id)
+    ):
+        return True
+    if msg.supplier_po_no:
+        return staff.allows_pair(msg.supplier_name, msg.supplier_po_no)
+    return staff.allows_supplier(msg.supplier_name, msg.supplier_id)
+
+
+def _message_scope_clause(staff: StaffScope):
+    """SQL mirror of _message_visible for supplier mail (PO pair, or a PO-less
+    mail of an in-scope supplier). Customer-inbox messages are left out."""
+    M = CommunicationMessage
+    return or_(
+        staff.pair_clause(M.supplier_name, M.supplier_po_no),
+        and_(M.supplier_po_no.is_(None), staff.supplier_clause(M.supplier_id, M.supplier_name)),
+    )
 
 
 @router.get("/sent-feed")
@@ -67,6 +174,7 @@ def sent_feed(
     since: Optional[str] = Query(None, description="ISO timestamp; only sends after this"),
     limit: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
+    staff: StaffScopeDep = None,
 ) -> dict[str, Any]:
     """Recently SENT outbound messages — drives the live 'mail sent' toasts.
 
@@ -78,6 +186,8 @@ def sent_feed(
         CommunicationMessage.status == "SENT",
         CommunicationMessage.sent_at.isnot(None),
     )
+    if staff is not None:
+        stmt = stmt.where(_message_scope_clause(staff))
     if since:
         try:
             ts = datetime.fromisoformat(since.replace("Z", ""))
@@ -295,15 +405,30 @@ def _looks_like_po_draft_echo(body: str | None) -> bool:
 # ─────────────────────────────────────────────────────────────────────────────
 @router.get("/dashboard")
 def comm_dashboard(
-    db: Session = Depends(get_db), viewer: User = Depends(get_current_staff)
+    db: Session = Depends(get_db),
+    viewer: User = Depends(get_current_staff),
+    staff: StaffScopeDep = None,
 ) -> dict[str, Any]:
     """Aggregate KPI counts from existing data sources. Task counters follow
-    task visibility (admins: all; others: open tasks they are involved in)."""
+    task visibility (admins: all; others: open tasks they are involved in);
+    every other counter follows the staff scope (own POs + assigned suppliers)."""
+
+    # Extra scope condition per model (None = admin, no filter).
+    scope_cond: dict[Any, Any] = {}
+    if staff is not None:
+        scope_cond = {
+            SupplierMaster: staff.supplier_clause(SupplierMaster.id, SupplierMaster.supplier_name),
+            ProcurementRecord: staff.record_clause(ProcurementRecord),
+            MailHistory: staff.pair_clause(MailHistory.supplier_name, MailHistory.supplier_po_no),
+            CommunicationMessage: _message_scope_clause(staff),
+        }
 
     def _count(model: Any, *conds: Any) -> int:
         stmt = select(func.count(model.id))
         for c in conds:
             stmt = stmt.where(c)
+        if model in scope_cond:
+            stmt = stmt.where(scope_cond[model])
         return db.execute(stmt).scalar_one()
 
     def _task_count(*conds: Any) -> int:
@@ -338,14 +463,20 @@ def comm_dashboard(
 # 2. Suppliers list
 # ─────────────────────────────────────────────────────────────────────────────
 @router.get("/suppliers")
-def list_suppliers(db: Session = Depends(get_db)) -> list[dict[str, Any]]:
+def list_suppliers(
+    db: Session = Depends(get_db),
+    staff: StaffScopeDep = None,
+) -> list[dict[str, Any]]:
     """
     Live supplier list from supplier_master enriched with PO / mail / task aggregates.
     Also surfaces procurement_records suppliers not yet in master.
+    Non-admins get only their in-scope suppliers, with counts over their own POs.
     """
     masters = db.scalars(
         select(SupplierMaster).where(SupplierMaster.is_active.is_(True))
     ).all()
+    if staff is not None:
+        masters = [m for m in masters if staff.allows_supplier(m.supplier_name, m.id)]
     master_by_upper: dict[str, SupplierMaster] = {
         m.supplier_name.strip().upper(): m for m in masters
     }
@@ -358,14 +489,15 @@ def list_suppliers(db: Session = Depends(get_db)) -> list[dict[str, Any]]:
             n.strip()
             for n in po_names
             if n and n.strip().upper() not in master_by_upper
+            and (staff is None or staff.allows_supplier(n))
         }
     )
 
     result: list[dict[str, Any]] = []
     for m in masters:
-        result.append(_build_supplier_entry(db, m.id, m.supplier_name))
+        result.append(_build_supplier_entry(db, m.id, m.supplier_name, staff))
     for name in extra_names:
-        result.append(_build_supplier_entry(db, None, name))
+        result.append(_build_supplier_entry(db, None, name, staff))
 
     result.sort(
         key=lambda s: (
@@ -378,9 +510,20 @@ def list_suppliers(db: Session = Depends(get_db)) -> list[dict[str, Any]]:
 
 
 def _build_supplier_entry(
-    db: Session, supplier_id: Optional[int], supplier_name: str
+    db: Session,
+    supplier_id: Optional[int],
+    supplier_name: str,
+    staff: Optional[StaffScope] = None,
 ) -> dict[str, Any]:
     upper = supplier_name.strip().upper()
+    # Non-admins: counts cover only their own POs of this supplier.
+    rec_scope = [staff.record_clause(ProcurementRecord)] if staff is not None else []
+    mail_scope = (
+        [staff.pair_clause(MailHistory.supplier_name, MailHistory.supplier_po_no)]
+        if staff is not None
+        else []
+    )
+    msg_scope = [_message_scope_clause(staff)] if staff is not None else []
 
     # Open lines only (po_open_lines): closed lines neither count as open POs
     # nor lift the supplier's signal.
@@ -388,12 +531,13 @@ def _build_supplier_entry(
         select(ProcurementRecord).where(
             func.upper(ProcurementRecord.supplier_name) == upper,
             open_line_clause(),
+            *rec_scope,
         )
     ).all()
 
     mails = db.scalars(
         select(MailHistory)
-        .where(func.upper(MailHistory.supplier_name) == upper)
+        .where(func.upper(MailHistory.supplier_name) == upper, *mail_scope)
         .order_by(MailHistory.created_at.desc())
     ).all()
 
@@ -416,6 +560,7 @@ def _build_supplier_entry(
                 if supplier_id
                 else False,
             ),
+            *msg_scope,
         )
     ).scalar_one() or 0
 
@@ -472,19 +617,22 @@ def _build_supplier_entry(
 # ─────────────────────────────────────────────────────────────────────────────
 @router.get("/suppliers/{supplier_id}/purchase-orders")
 def supplier_pos_by_id(
-    supplier_id: int, db: Session = Depends(get_db)
+    supplier_id: int,
+    db: Session = Depends(get_db),
+    staff: StaffScopeDep = None,
 ) -> list[dict[str, Any]]:
     """POs for a supplier identified by supplier_master.id."""
     supplier = db.get(SupplierMaster, supplier_id)
     if not supplier:
         raise HTTPException(404, "Supplier not found")
-    return _pos_for_supplier(db, supplier_id, supplier.supplier_name)
+    return _scoped_pos(staff, _pos_for_supplier(db, supplier_id, supplier.supplier_name))
 
 
 @router.get("/purchase-orders")
 def pos_by_supplier_name(
     supplier_name: str = Query(...),
     db: Session = Depends(get_db),
+    staff: StaffScopeDep = None,
 ) -> list[dict[str, Any]]:
     """POs for a supplier identified by name (fallback for suppliers without master entry)."""
     master = db.scalar(
@@ -492,7 +640,20 @@ def pos_by_supplier_name(
             func.upper(SupplierMaster.supplier_name) == supplier_name.strip().upper()
         )
     )
-    return _pos_for_supplier(db, master.id if master else None, supplier_name)
+    return _scoped_pos(staff, _pos_for_supplier(db, master.id if master else None, supplier_name))
+
+
+def _scoped_pos(staff: Optional[StaffScope], rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Keep the vendor-PO threads where any of its counters is in scope."""
+    if staff is None:
+        return rows
+    return [
+        r for r in rows
+        if any(
+            staff.allows_pair(r.get("supplier_name"), c)
+            for c in (r.get("supplier_po_nos") or [r.get("supplier_po_no")])
+        )
+    ]
 
 
 def _ack_fields(row: Any) -> dict[str, Any]:
@@ -648,6 +809,7 @@ def get_thread(
     supplier_name: Optional[str] = None,
     non_po_subject: Optional[str] = None,
     db: Session = Depends(get_db),
+    staff: StaffScopeDep = None,
 ) -> dict[str, Any]:
     """Build conversation thread from existing mail_history for a given PO.
 
@@ -655,7 +817,12 @@ def get_thread(
     "Other Mails" conversation for that subject instead.
     """
     if non_po_subject is not None:
-        return _non_po_thread(db, supplier_id, supplier_name, non_po_subject)
+        return _non_po_thread(db, supplier_id, supplier_name, non_po_subject, staff)
+    if procurement_record_id is not None or supplier_po_no:
+        _assert_po_scope(
+            db, staff, procurement_record_id=procurement_record_id,
+            supplier_po_no=supplier_po_no, supplier_name=supplier_name, supplier_id=supplier_id,
+        )
 
     stmt = select(MailHistory)
     selected_rec: Optional[ProcurementRecord] = None
@@ -894,12 +1061,19 @@ def mark_thread_read(
     supplier_name: Optional[str] = None,
     non_po_subject: Optional[str] = None,
     db: Session = Depends(get_db),
+    staff: StaffScopeDep = None,
 ) -> dict[str, Any]:
     """Mark all inbound supplier mails in a thread as read (clears the unread badge)."""
     if non_po_subject is not None:
+        if staff is not None and not _scoped_non_po(db, staff, supplier_id, supplier_name):
+            raise HTTPException(404, _NOT_FOUND)
         return _mark_non_po_read(db, supplier_id, supplier_name, non_po_subject)
     if not supplier_po_no and not procurement_record_id:
         raise HTTPException(400, "Provide supplier_po_no or procurement_record_id")
+    _assert_po_scope(
+        db, staff, procurement_record_id=procurement_record_id,
+        supplier_po_no=supplier_po_no, supplier_name=supplier_name, supplier_id=supplier_id,
+    )
     now = datetime.utcnow()
     # Resolve the supplier this thread belongs to so the recycled PO counter
     # never marks another supplier's inbound mail as read.
@@ -1147,13 +1321,14 @@ def list_other_mails(
     supplier_id: Optional[int] = None,
     supplier_name: Optional[str] = None,
     db: Session = Depends(get_db),
+    staff: StaffScopeDep = None,
 ) -> list[dict[str, Any]]:
     """Non-PO supplier mails grouped into subject-threads for the "Other Mails" list.
 
     Only groups that contain at least one INCOMING mail surface (so a pure
     outbound message never appears on its own).
     """
-    rows = _non_po_messages(db, supplier_id, supplier_name)
+    rows = _scoped_non_po(db, staff, supplier_id, supplier_name)
     groups: dict[str, list[CommunicationMessage]] = {}
     for m in rows:
         groups.setdefault(msg_service.normalize_subject(m.subject), []).append(m)
@@ -1183,15 +1358,34 @@ def list_other_mails(
     return result
 
 
+def _scoped_non_po(
+    db: Session,
+    staff: Optional[StaffScope],
+    supplier_id: Optional[int],
+    supplier_name: Optional[str],
+) -> list[CommunicationMessage]:
+    """Non-PO messages the caller may see: all of an in-scope supplier's, else
+    only those routed to the caller (assigned_user_ids)."""
+    rows = _non_po_messages(db, supplier_id, supplier_name)
+    if staff is None:
+        return rows
+    if staff.allows_supplier(_resolve_supplier_name(db, supplier_id, supplier_name), supplier_id):
+        return rows
+    return [m for m in rows if staff.user_id in (m.assigned_user_ids or [])]
+
+
 def _non_po_thread(
     db: Session,
     supplier_id: Optional[int],
     supplier_name: Optional[str],
     non_po_subject: str,
+    staff: Optional[StaffScope] = None,
 ) -> dict[str, Any]:
     key = msg_service.normalize_subject(non_po_subject)
-    msgs = [m for m in _non_po_messages(db, supplier_id, supplier_name)
+    msgs = [m for m in _scoped_non_po(db, staff, supplier_id, supplier_name)
             if msg_service.normalize_subject(m.subject) == key]
+    if staff is not None and not msgs:
+        raise HTTPException(404, _NOT_FOUND)
     first_in = next((m for m in msgs if m.direction == "INCOMING"), msgs[0] if msgs else None)
     s_id = supplier_id or (first_in.supplier_id if first_in else None)
     return {
@@ -1431,13 +1625,14 @@ def update_hub_task(
 def ai_reply(
     procurement_record_id: int = Query(...),
     db: Session = Depends(get_db),
+    staff: StaffScopeDep = None,
 ) -> dict[str, str]:
     """
     Generate an AI reply body from the existing follow-up engine.
     Returns subject + body for the frontend composer. Does not persist anything.
     """
     rec = db.get(ProcurementRecord, procurement_record_id)
-    if not rec:
+    if not rec or (staff is not None and not _record_visible(db, staff, rec)):
         raise HTTPException(404, "Procurement record not found")
 
     apply_followup_logic(rec)
@@ -1515,6 +1710,7 @@ def ai_reply(
 def escalate(
     procurement_record_id: int = Query(...),
     db: Session = Depends(get_db),
+    staff: StaffScopeDep = None,
 ) -> dict[str, Any]:
     """
     Trigger escalation via existing mail draft logic.
@@ -1522,7 +1718,7 @@ def escalate(
     Does not modify procurement_records signal or any other pipeline state.
     """
     rec = db.get(ProcurementRecord, procurement_record_id)
-    if not rec:
+    if not rec or (staff is not None and not _record_visible(db, staff, rec)):
         raise HTTPException(404, "Procurement record not found")
 
     from ..services.mail_template_service import find_supplier_email as _find_email
@@ -1636,6 +1832,7 @@ def escalate(
 def send_mail_now(
     mail_history_id: int = Query(..., description="MailHistory row to send"),
     db: Session = Depends(get_db),
+    staff: StaffScopeDep = None,
 ) -> dict[str, Any]:
     """Queue the given mail draft and invoke the SMTP send worker immediately.
 
@@ -1643,7 +1840,15 @@ def send_mail_now(
     this mail_history_id, no new queue row is created.
     """
     history = db.get(MailHistory, mail_history_id)
-    if history is None:
+    if history is None or (
+        staff is not None
+        and not staff.allows_pair(history.supplier_name, history.supplier_po_no)
+        and not _record_visible(
+            db, staff,
+            db.get(ProcurementRecord, history.procurement_record_id)
+            if history.procurement_record_id else None,
+        )
+    ):
         raise HTTPException(404, "MailHistory not found")
 
     # Ensure an OUTGOING message exists for this mail history. Match across both
@@ -1705,8 +1910,29 @@ class HubReplyIn(BaseModel):
     attachment_ids: list[int] = []
 
 
+def _assert_reply_scope(db: Session, staff: Optional[StaffScope], payload: HubReplyIn) -> None:
+    """A reply targets a PO thread, a non-PO supplier thread, or a supplier."""
+    if staff is None:
+        return
+    if payload.procurement_record_id is not None or payload.supplier_po_no:
+        _assert_po_scope(
+            db, staff, procurement_record_id=payload.procurement_record_id,
+            supplier_po_no=payload.supplier_po_no, supplier_name=payload.supplier_name,
+            supplier_id=payload.supplier_id,
+        )
+    elif payload.non_po_subject is not None:
+        if not _scoped_non_po(db, staff, payload.supplier_id, payload.supplier_name):
+            raise HTTPException(404, _NOT_FOUND)
+    elif payload.supplier_id is not None or payload.supplier_name:
+        _assert_supplier_scope(db, staff, payload.supplier_id, payload.supplier_name)
+
+
 @router.post("/reply-outlook", dependencies=[Depends(require_manager)])
-def reply_outlook(payload: HubReplyIn, db: Session = Depends(get_db)) -> dict[str, Any]:
+def reply_outlook(
+    payload: HubReplyIn,
+    db: Session = Depends(get_db),
+    staff: StaffScopeDep = None,
+) -> dict[str, Any]:
     """'Send by Outlook': record the reply (MAILTO_OPENED — it still shows in
     the supplier's portal thread and this Hub) and hand back the resolved
     to/cc/subject/body so the browser can open the user's own Outlook with a
@@ -1714,6 +1940,7 @@ def reply_outlook(payload: HubReplyIn, db: Session = Depends(get_db)) -> dict[st
     body = (payload.body or "").strip()
     if not body:
         raise HTTPException(422, "Message body is required")
+    _assert_reply_scope(db, staff, payload)
 
     rec = (
         db.get(ProcurementRecord, payload.procurement_record_id)
@@ -1777,13 +2004,18 @@ def reply_outlook(payload: HubReplyIn, db: Session = Depends(get_db)) -> dict[st
 
 
 @router.post("/reply", dependencies=[Depends(require_manager)])
-def reply_now(payload: HubReplyIn, db: Session = Depends(get_db)) -> dict[str, Any]:
+def reply_now(
+    payload: HubReplyIn,
+    db: Session = Depends(get_db),
+    staff: StaffScopeDep = None,
+) -> dict[str, Any]:
     """Staff reply on a PO thread. Always lands in the supplier's portal thread;
     `send_email` additionally delivers it over SMTP. Both appear here in the Hub.
     """
     body = (payload.body or "").strip()
     if not body:
         raise HTTPException(422, "Message body is required")
+    _assert_reply_scope(db, staff, payload)
 
     rec = (
         db.get(ProcurementRecord, payload.procurement_record_id)
@@ -1920,13 +2152,29 @@ class HubComposeIn(BaseModel):
 
 
 @router.post("/compose", dependencies=[Depends(require_writer)])
-def compose_now(payload: HubComposeIn, db: Session = Depends(get_db)) -> dict[str, Any]:
+def compose_now(
+    payload: HubComposeIn,
+    db: Session = Depends(get_db),
+    staff: StaffScopeDep = None,
+) -> dict[str, Any]:
     """Compose and (optionally) send a standalone mail via the mail engine.
 
     Unlike /reply this is not tied to an existing thread — recipients are chosen
     freely. It is logged as an OUTGOING CommunicationMessage (so it appears in the
     hub) and delivered over SMTP when `send` is true; otherwise it is a DRAFT.
+    Free recipients stay open to any writer; a PO / customer-mail thread
+    context must be in the caller's scope.
     """
+    if staff is not None:
+        if payload.procurement_record_id is not None or payload.supplier_po_no:
+            _assert_po_scope(
+                db, staff, procurement_record_id=payload.procurement_record_id,
+                supplier_po_no=payload.supplier_po_no, supplier_name=payload.supplier_name,
+            )
+        if payload.customer_mail_id is not None and not _customer_mail_visible(
+            db, staff, payload.customer_mail_id
+        ):
+            raise HTTPException(404, _NOT_FOUND)
     return compose_service.compose_and_send(
         db,
         to_emails=payload.to_emails,
@@ -1986,7 +2234,10 @@ def _draft_dict(m: CommunicationMessage) -> dict[str, Any]:
 
 
 @router.get("/drafts")
-def list_outbox_drafts(db: Session = Depends(get_db)) -> list[dict[str, Any]]:
+def list_outbox_drafts(
+    db: Session = Depends(get_db),
+    staff: StaffScopeDep = None,
+) -> list[dict[str, Any]]:
     """Outbound messages awaiting human approval (DRAFT, not yet queued to send)."""
     rows = db.scalars(
         select(CommunicationMessage)
@@ -1996,14 +2247,18 @@ def list_outbox_drafts(db: Session = Depends(get_db)) -> list[dict[str, Any]]:
         )
         .order_by(CommunicationMessage.created_at.desc())
     ).all()
-    return [_draft_dict(m) for m in rows]
+    return [_draft_dict(m) for m in rows if _message_visible(db, staff, m)]
 
 
 @router.post("/messages/{message_id}/approve", dependencies=[Depends(require_manager)])
-def approve_message(message_id: int, db: Session = Depends(get_db)) -> dict[str, Any]:
+def approve_message(
+    message_id: int,
+    db: Session = Depends(get_db),
+    staff: StaffScopeDep = None,
+) -> dict[str, Any]:
     """Approve a DRAFT outbound message → READY, so the SMTP worker sends it."""
     msg = db.get(CommunicationMessage, message_id)
-    if msg is None:
+    if msg is None or not _message_visible(db, staff, msg):
         raise HTTPException(404, "Message not found")
     if msg.direction != "OUTGOING" or msg.status != "DRAFT":
         raise HTTPException(409, "Only OUTGOING DRAFT messages can be approved")
@@ -2013,10 +2268,14 @@ def approve_message(message_id: int, db: Session = Depends(get_db)) -> dict[str,
 
 
 @router.post("/messages/{message_id}/discard", dependencies=[Depends(require_manager)])
-def discard_message(message_id: int, db: Session = Depends(get_db)) -> dict[str, Any]:
+def discard_message(
+    message_id: int,
+    db: Session = Depends(get_db),
+    staff: StaffScopeDep = None,
+) -> dict[str, Any]:
     """Discard a DRAFT outbound message (it will never be sent)."""
     msg = db.get(CommunicationMessage, message_id)
-    if msg is None:
+    if msg is None or not _message_visible(db, staff, msg):
         raise HTTPException(404, "Message not found")
     if msg.direction != "OUTGOING" or msg.status != "DRAFT":
         raise HTTPException(409, "Only OUTGOING DRAFT messages can be discarded")
@@ -2087,12 +2346,16 @@ def _notify_agent_recipient(db: Session, msg: CommunicationMessage) -> bool:
     return False
 
 
-def _confirm_action(db: Session, *, action_type: str, action_id: int) -> dict[str, Any]:
+def _confirm_action(
+    db: Session, *, action_type: str, action_id: int, staff: Optional[StaffScope] = None
+) -> dict[str, Any]:
     """Promote a pending HI-agent action. Drafts → READY + send now; subs → ACTIVE."""
     if action_type == "draft":
         msg = db.get(CommunicationMessage, action_id)
         if msg is None:
             return {"ok": False, "error": "Draft not found"}
+        if not _message_visible(db, staff, msg):
+            raise HTTPException(404, "Draft not found")
         if msg.direction != "OUTGOING" or msg.status != "DRAFT":
             return {"ok": False, "error": "Only an OUTGOING DRAFT can be confirmed"}
         msg.status = "READY"
@@ -2118,9 +2381,11 @@ def _confirm_action(db: Session, *, action_type: str, action_id: int) -> dict[st
 def get_agent_history(
     procurement_record_id: int = Query(...),
     db: Session = Depends(get_db),
+    staff: StaffScopeDep = None,
 ) -> dict[str, Any]:
     """Return the durable HI transcript for one PO-ID thread."""
-    if db.get(ProcurementRecord, procurement_record_id) is None:
+    rec = db.get(ProcurementRecord, procurement_record_id)
+    if rec is None or (staff is not None and not _record_visible(db, staff, rec)):
         raise HTTPException(404, "Purchase order not found")
     return agent_history.history(db, procurement_record_id)
 
@@ -2130,16 +2395,27 @@ def run_agent(
     payload: HubAgentIn,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    staff: StaffScopeDep = None,
 ) -> dict[str, Any]:
     """Run the /hi agent on the current thread. Returns a reply + pending actions
     (drafts/subscriptions awaiting confirmation). Never sends anything itself."""
     if not (payload.message or "").strip():
         raise HTTPException(422, "message is required")
+    if staff is not None and payload.customer_mail_id is None:
+        if payload.procurement_record_id is not None or payload.supplier_po_no:
+            _assert_po_scope(
+                db, staff, procurement_record_id=payload.procurement_record_id,
+                supplier_po_no=payload.supplier_po_no, supplier_id=payload.supplier_id,
+            )
+        elif payload.supplier_id is not None:
+            _assert_supplier_scope(db, staff, payload.supplier_id, None)
     customer_email = None
     customer_name = None
     if payload.customer_mail_id is not None:
         cmail = db.get(CustomerMail, payload.customer_mail_id)
-        if cmail is None:
+        if cmail is None or (
+            staff is not None and not _customer_mail_visible(db, staff, cmail.id)
+        ):
             raise HTTPException(404, "Customer mail not found")
         customer_email = cmail.from_email
         customer_name = cmail.customer_name or cmail.from_name
@@ -2174,10 +2450,14 @@ def run_agent(
 
 @router.post("/agent/confirm")
 def confirm_agent_action(
-    payload: HubAgentConfirmIn, db: Session = Depends(get_db)
+    payload: HubAgentConfirmIn,
+    db: Session = Depends(get_db),
+    staff: StaffScopeDep = None,
 ) -> dict[str, Any]:
     """Confirm a pending HI-agent draft (send) or subscription (activate)."""
-    out = _confirm_action(db, action_type=payload.action_type, action_id=payload.id)
+    out = _confirm_action(
+        db, action_type=payload.action_type, action_id=payload.id, staff=staff
+    )
     if not out["ok"]:
         raise HTTPException(409, out.get("error") or "Could not confirm action")
     return out

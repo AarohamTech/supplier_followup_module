@@ -30,6 +30,7 @@ from ..services import (
     vector_store,
 )
 from ..services.ai_service import AIDisabledError
+from ..services.staff_scope import StaffScopeDep, StaffScope, get_staff_scope
 
 log = logging.getLogger(__name__)
 
@@ -73,7 +74,11 @@ def ai_tools() -> dict:
 
 
 @router.post("/chat", response_model=ChatResponse)
-def ai_chat(payload: ChatRequest, db: Session = Depends(get_db)) -> ChatResponse:
+def ai_chat(
+    payload: ChatRequest,
+    db: Session = Depends(get_db),
+    staff_scope: StaffScopeDep = None,
+) -> ChatResponse:
     if not payload.messages:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "messages cannot be empty")
 
@@ -83,10 +88,12 @@ def ai_chat(payload: ChatRequest, db: Session = Depends(get_db)) -> ChatResponse
     )
     try:
         if use_tools and ai_service.is_enabled():
+            # Non-admins: tools only see the caller's own POs (staff_scope).
+            tool_scope = ai_tools_service.ToolScope(staff=staff_scope)
             result = ai_service.chat_with_tools(
                 messages,
-                tools=ai_tools_service.tool_specs(),
-                executor=ai_tools_service.make_executor(db),
+                tools=ai_tools_service.tool_specs(tool_scope),
+                executor=ai_tools_service.make_executor(db, tool_scope),
             )
             reply = result["reply"]
             tools_used = result.get("tools_used", [])

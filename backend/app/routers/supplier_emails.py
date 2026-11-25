@@ -1,3 +1,5 @@
+from typing import Optional
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -16,6 +18,7 @@ from ..schemas.supplier_email import (
     LoginProvisioningSummary,
 )
 from ..services import supplier_account_service
+from ..services.staff_scope import StaffScopeDep
 
 router = APIRouter(prefix="/api/supplier-emails", tags=["supplier-emails"])
 
@@ -98,8 +101,14 @@ def _load_supplier(db: Session, supplier_id: int, *, require_active: bool = True
 
 
 @router.get("", response_model=list[SupplierEmailOut])
-def list_emails(db: Session = Depends(get_db)):
-    return db.scalars(select(SupplierEmail).order_by(SupplierEmail.supplier_name)).all()
+def list_emails(
+    db: Session = Depends(get_db),
+    scope: StaffScopeDep = None,
+):
+    stmt = select(SupplierEmail).order_by(SupplierEmail.supplier_name)
+    if scope is not None:  # non-admins: only their suppliers (staff_scope)
+        stmt = stmt.where(scope.supplier_clause(SupplierEmail.supplier_id, SupplierEmail.supplier_name))
+    return db.scalars(stmt).all()
 
 
 @router.get("/audit", response_model=list[SupplierEmailAuditOut])
@@ -119,9 +128,12 @@ def create(
     payload: SupplierEmailCreate,
     db: Session = Depends(get_db),
     actor: User = Depends(get_current_staff),
+    scope: StaffScopeDep = None,
 ):
     data = payload.model_dump(mode="json")
     supplier = _load_supplier(db, data["supplier_id"])
+    if scope is not None and not scope.allows_supplier(supplier.supplier_name, supplier.id):
+        raise HTTPException(404, "Supplier not found")
     if not data.get("to_emails"):
         raise HTTPException(422, "At least one TO email is required")
     if data.get("is_active", True) and _active_mapping_exists(db, supplier.id):

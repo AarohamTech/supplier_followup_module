@@ -36,10 +36,12 @@ log = logging.getLogger(__name__)
 class ToolScope:
     """Who the assistant is acting for. A supplier scope hard-filters every tool
     to that supplier's data so one supplier can never see another's. Staff scope
-    (the default) is unrestricted.
+    (the default) is unrestricted, unless ``staff`` carries a non-admin
+    ``staff_scope.StaffScope`` — then every tool sees only that user's POs.
     """
     supplier_id: int | None = None
     supplier_name: str | None = None
+    staff: Any = None  # services.staff_scope.StaffScope | None
 
     @property
     def is_supplier(self) -> bool:
@@ -56,7 +58,10 @@ _SUPPLIER_TOOLS = {"get_overview", "list_red_pos", "get_po_status", "get_mail_th
 
 
 def _owns_po(db: Session, scope: ToolScope, supplier_po_no: str) -> bool:
-    """True if the PO has at least one line belonging to the scoped supplier."""
+    """True if the PO has at least one line belonging to the scoped supplier
+    (or, for a scoped staff user, is one of their own POs)."""
+    if scope.staff is not None and supplier_po_no not in scope.staff.po_counters:
+        return False
     if not scope.is_supplier or not scope.supplier_name:
         return True
     return db.scalar(
@@ -114,14 +119,20 @@ def _get_overview(db: Session, args: dict[str, Any], scope: ToolScope) -> dict[s
         sig_stmt = sig_stmt.where(cond)
         total_stmt = total_stmt.where(cond)
         high_stmt = high_stmt.where(cond)
+    if scope.staff is not None:
+        cond = scope.staff.record_clause(ProcurementRecord)
+        sig_stmt = sig_stmt.where(cond)
+        total_stmt = total_stmt.where(cond)
+        high_stmt = high_stmt.where(cond)
     by_signal = {(sig or "UNSET"): int(c) for sig, c in db.execute(sig_stmt.group_by(func.upper(ProcurementRecord.signal))).all()}
     out: dict[str, Any] = {
         "total_records": int(db.scalar(total_stmt) or 0),
         "records_by_signal": by_signal,
         "high_risk_records": int(db.scalar(high_stmt) or 0),
     }
-    # Customer inbox is internal-only — never surfaced to suppliers.
-    if not scope.is_supplier:
+    # Customer inbox is internal-only — never surfaced to suppliers, and not
+    # PO-scoped, so left out for scoped staff too.
+    if not scope.is_supplier and scope.staff is None:
         out["open_customer_mails"] = int(
             db.scalar(select(func.count(CustomerMail.id)).where(CustomerMail.status == "OPEN")) or 0
         )
@@ -132,10 +143,16 @@ def _list_red_pos(db: Session, args: dict[str, Any], scope: ToolScope) -> dict[s
     limit = max(1, min(int(args.get("limit", 10) or 10), 50))
     # A supplier scope forces their own name; staff may filter by any supplier.
     supplier = scope.supplier_name if scope.is_supplier else ((args.get("supplier_name") or "").strip() or None)
-    payload = po_followup_service.list_po_groups(db, supplier_name=supplier, size=200)
+    if scope.staff is not None:
+        groups = [
+            g for g in po_followup_service.build_all_po_groups(db, supplier_name=supplier)
+            if scope.staff.allows_pair(g.get("supplier_name"), g.get("supplier_po_no"))
+        ]
+    else:
+        groups = po_followup_service.list_po_groups(db, supplier_name=supplier, size=200).get("items", [])
     red = [
         _group_brief(g)
-        for g in payload.get("items", [])
+        for g in groups
         if (g.get("overall_signal") or "").upper() in {"RED", "BLACK"}
     ]
     return {"count": len(red), "purchase_orders": red[:limit]}
@@ -147,11 +164,13 @@ def _get_po_status(db: Session, args: dict[str, Any], scope: ToolScope) -> dict[
         return {"error": "supplier_po_no is required"}
     if not _owns_po(db, scope, po):
         return {"found": False, "supplier_po_no": po, "message": "No PO found with that number"}
-    anchor = db.scalar(
-        select(ProcurementRecord)
-        .where(ProcurementRecord.supplier_po_no == po)
-        .order_by(ProcurementRecord.created_at.desc())
-    )
+    anchor_stmt = select(ProcurementRecord).where(ProcurementRecord.supplier_po_no == po)
+    if scope.staff is not None:
+        # The counter is recycled across suppliers — anchor on the user's own pair.
+        anchor_stmt = anchor_stmt.where(
+            scope.staff.pair_clause(ProcurementRecord.supplier_name, ProcurementRecord.supplier_po_no)
+        )
+    anchor = db.scalar(anchor_stmt.order_by(ProcurementRecord.created_at.desc()))
     if anchor is None:
         return {"found": False, "supplier_po_no": po, "message": "No PO found with that number"}
     group = po_followup_service.get_po_group(db, anchor.supplier_name or "", po) or {}
@@ -208,6 +227,8 @@ def _search_supplier(db: Session, args: dict[str, Any], scope: ToolScope) -> dic
     ).all()
     # Also match supplier names that only appear on procurement rows.
     names = {s.supplier_name for s in suppliers}
+    if scope.staff is not None:
+        names = {n for n in names if scope.staff.allows_supplier(n)}
     extra = db.execute(
         select(ProcurementRecord.supplier_name)
         .where(ProcurementRecord.supplier_name.ilike(like))
@@ -215,16 +236,18 @@ def _search_supplier(db: Session, args: dict[str, Any], scope: ToolScope) -> dic
         .limit(10)
     ).all()
     for (name,) in extra:
-        if name:
+        if name and (scope.staff is None or scope.staff.allows_supplier(name)):
             names.add(name)
 
     out: list[dict[str, Any]] = []
     for name in sorted(n for n in names if n):
-        rows = db.execute(
+        count_stmt = (
             select(func.upper(ProcurementRecord.signal), func.count(ProcurementRecord.id))
             .where(func.upper(ProcurementRecord.supplier_name) == name.upper())
-            .group_by(func.upper(ProcurementRecord.signal))
-        ).all()
+        )
+        if scope.staff is not None:
+            count_stmt = count_stmt.where(scope.staff.record_clause(ProcurementRecord))
+        rows = db.execute(count_stmt.group_by(func.upper(ProcurementRecord.signal))).all()
         by_signal = {(sig or "UNSET"): int(c) for sig, c in rows}
         out.append(
             {
@@ -251,6 +274,10 @@ def _get_mail_thread(db: Session, args: dict[str, Any], scope: ToolScope) -> dic
     if scope.is_supplier:
         # Only this supplier's own visible messages (no internal drafts).
         stmt = stmt.where(CommunicationMessage.supplier_id == scope.supplier_id)
+    if scope.staff is not None:
+        stmt = stmt.where(scope.staff.pair_clause(
+            CommunicationMessage.supplier_name, CommunicationMessage.supplier_po_no
+        ))
     msgs = [
         m for m in db.scalars(stmt.limit(limit)).all()
         if not scope.is_supplier
@@ -273,8 +300,8 @@ def _get_mail_thread(db: Session, args: dict[str, Any], scope: ToolScope) -> dic
 
 
 def _search_knowledge(db: Session, args: dict[str, Any], scope: ToolScope) -> dict[str, Any]:
-    # Shared memory spans all suppliers' threads → staff-only (no cross-tenant leak).
-    if scope.is_supplier:
+    # Shared memory spans all suppliers' threads → admin/unscoped staff only.
+    if scope.is_supplier or scope.staff is not None:
         return {"available": False, "message": "not available"}
     if not (embeddings_service.is_enabled() and vector_store.available()):
         return {"available": False, "message": "Semantic memory is not enabled."}
@@ -402,7 +429,7 @@ def tool_specs(scope: ToolScope = STAFF_SCOPE) -> list[dict[str, Any]]:
     if scope.is_supplier:
         return [s for s in _BASE_SPECS if s["function"]["name"] in _SUPPLIER_TOOLS]
     specs = list(_BASE_SPECS)
-    if embeddings_service.is_enabled() and vector_store.available():
+    if scope.staff is None and embeddings_service.is_enabled() and vector_store.available():
         specs.append(_KNOWLEDGE_SPEC)
     return specs
 

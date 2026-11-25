@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta
 from io import BytesIO
-from typing import Any
+from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
@@ -21,6 +21,7 @@ from ..core.roles import Role
 from ..database import get_db
 from ..models.communication_message import CommunicationMessage as M
 from ..services import settings_service
+from ..services.staff_scope import StaffScopeDep, StaffScope, get_staff_scope
 from ..workers.mail_send_worker import is_held_mail_type
 
 router = APIRouter(
@@ -41,8 +42,16 @@ def _filters(
     search: str | None,
     date_from: date | None,
     date_to: date | None,
+    scope: Optional[StaffScope] = None,
 ) -> list[Any]:
     conds: list[Any] = [M.direction == "OUTGOING"]
+    if scope is not None:
+        # Non-admins: only mail about their own POs / assigned suppliers
+        # (services/staff_scope.py).
+        own = [scope.pair_clause(M.supplier_name, M.supplier_po_no)]
+        if scope.assigned_supplier_ids:
+            own.append(M.supplier_id.in_(sorted(scope.assigned_supplier_ids)))
+        conds.append(or_(*own))
     if status:
         conds.append(func.upper(M.status) == status.strip().upper())
     if mail_type:
@@ -109,9 +118,10 @@ def list_mail_log(
     page: int = Query(default=1, ge=1),
     size: int = Query(default=50, ge=1, le=200),
     db: Session = Depends(get_db),
+    scope: StaffScopeDep = None,
 ) -> dict[str, Any]:
     conds = _filters(status=status, mail_type=mail_type, search=search,
-                     date_from=date_from, date_to=date_to)
+                     date_from=date_from, date_to=date_to, scope=scope)
     total = db.scalar(select(func.count()).select_from(M).where(*conds)) or 0
     rows = db.scalars(
         select(M).where(*conds).order_by(M.created_at.desc(), M.id.desc())
@@ -121,7 +131,7 @@ def list_mail_log(
     # Status tiles ignore the status filter (so they stay stable while you click
     # through them) but honour every other filter.
     tile_conds = _filters(status=None, mail_type=mail_type, search=search,
-                          date_from=date_from, date_to=date_to)
+                          date_from=date_from, date_to=date_to, scope=scope)
     counts: dict[str, int] = {s: 0 for s in STATUSES}
     for st, n in db.execute(
         select(func.upper(M.status), func.count()).where(*tile_conds).group_by(func.upper(M.status))
@@ -131,7 +141,11 @@ def list_mail_log(
     window, window_open, next_change = _window_state(db)
     mail_types = [
         t for (t,) in db.execute(
-            select(M.mail_type).where(M.direction == "OUTGOING", M.mail_type.isnot(None))
+            select(M.mail_type).where(
+                *_filters(status=None, mail_type=None, search=None, date_from=None,
+                          date_to=None, scope=scope),
+                M.mail_type.isnot(None),
+            )
             .group_by(M.mail_type).order_by(M.mail_type)
         ).all()
     ]
@@ -159,12 +173,13 @@ def export_mail_log(
     date_from: date | None = Query(default=None),
     date_to: date | None = Query(default=None),
     db: Session = Depends(get_db),
+    scope: StaffScopeDep = None,
 ):
     from openpyxl import Workbook
     from openpyxl.styles import Font
 
     conds = _filters(status=status, mail_type=mail_type, search=search,
-                     date_from=date_from, date_to=date_to)
+                     date_from=date_from, date_to=date_to, scope=scope)
     rows = db.scalars(
         select(M).where(*conds).order_by(M.created_at.desc(), M.id.desc()).limit(5000)
     ).all()

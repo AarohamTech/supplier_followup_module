@@ -220,10 +220,13 @@ def add_event(
 
 
 # ── Queries ───────────────────────────────────────────────────────────────────
-def _base_query(supplier_id: int | None, po_nos: set[str] | None = None):
+def _base_query(supplier_id: int | None, po_nos: set[str] | None = None, where: Any = None):
     stmt = select(Asn).options(selectinload(Asn.items), selectinload(Asn.events))
     if supplier_id is not None:
         stmt = stmt.where(Asn.supplier_id == supplier_id)
+    # Staff scope (services/staff_scope.py): an extra SQL clause, None = all.
+    if where is not None:
+        stmt = stmt.where(where)
     # Employee scope: only shipments against this PO-number set (empty → none).
     if po_nos is not None:
         stmt = stmt.where(Asn.supplier_po_no.in_(po_nos))
@@ -236,8 +239,9 @@ def get_asn(
     *,
     supplier_id: int | None = None,
     po_nos: set[str] | None = None,
+    where: Any = None,
 ) -> Optional[Asn]:
-    stmt = _base_query(supplier_id, po_nos).where(Asn.id == asn_id)
+    stmt = _base_query(supplier_id, po_nos, where).where(Asn.id == asn_id)
     return db.scalar(stmt)
 
 
@@ -249,8 +253,9 @@ def list_asns(
     search: str | None = None,
     status: str | None = None,
     po_nos: set[str] | None = None,
+    where: Any = None,
 ) -> list[Asn]:
-    stmt = _base_query(supplier_id, po_nos)
+    stmt = _base_query(supplier_id, po_nos, where)
     tab = (tab or "").lower()
     if tab == "active":
         stmt = stmt.where(Asn.status.in_(ACTIVE_STATUSES))
@@ -276,7 +281,8 @@ def list_asns(
 
 
 def asn_summary(
-    db: Session, *, supplier_id: int | None = None, po_nos: set[str] | None = None
+    db: Session, *, supplier_id: int | None = None, po_nos: set[str] | None = None,
+    where: Any = None,
 ) -> dict[str, int]:
     """The four shipment-tracking cards: active / pending / urgent / finalized."""
     def count(*conditions) -> int:
@@ -285,6 +291,8 @@ def asn_summary(
             stmt = stmt.where(Asn.supplier_id == supplier_id)
         if po_nos is not None:
             stmt = stmt.where(Asn.supplier_po_no.in_(po_nos))
+        if where is not None:
+            stmt = stmt.where(where)
         for cond in conditions:
             stmt = stmt.where(cond)
         return int(db.scalar(stmt) or 0)

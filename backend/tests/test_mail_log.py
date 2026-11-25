@@ -62,7 +62,8 @@ class MailLogTests(unittest.TestCase):
 
     def test_lists_outgoing_only_with_counts_and_hold_state(self):
         self._seed()
-        token = self._token("viewer@x.com", "viewer")
+        # Admin: non-admin staff only see their own POs' mail (staff_scope).
+        token = self._token("admin@x.com", "admin")
         with unittest.mock.patch("app.routers.mail_log.datetime") as dt:
             dt.utcnow.return_value = OFFICE_HOURS_UTC
             dt.combine = datetime.combine
@@ -86,7 +87,7 @@ class MailLogTests(unittest.TestCase):
 
     def test_filters_by_status_supplier_and_type(self):
         self._seed()
-        token = self._token("user@x.com", "user")
+        token = self._token("admin@x.com", "admin")
         h = {"Authorization": f"Bearer {token}"}
         r = self.client.get("/api/mail-log?status=FAILED", headers=h).json()
         self.assertEqual([i["mail_type"] for i in r["items"]], ["HUB_COMPOSE"])

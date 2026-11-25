@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Annotated, Any, Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
@@ -19,9 +19,34 @@ from ..models.customer_mail import (
     CustomerMail,
 )
 from ..services import customer_mail_service
+from ..services.staff_scope import StaffScope, get_staff_scope
+
+# Annotated with a None default: FastAPI injects it, while direct Python calls
+# (eportal_hub reuses these handlers after its own scoping) get None = no filter.
+StaffScopeDep = Annotated[Optional[StaffScope], Depends(get_staff_scope)]
 from ..workers import mail_send_worker
 
 router = APIRouter(prefix="/api/customer-mails", tags=["customer-mails"])
+
+
+# Non-admin staff see only customer mails linked to one of their POs or
+# allocated to them by name (services/staff_scope.py; same rule as eportal_mails).
+def _assigned_names(user: User) -> list[str]:
+    return [n for n in {user.full_name, user.username} if n]
+
+
+def _visible_mail_or_404(
+    db: Session, mail_id: int, staff: StaffScope | None, user: User
+) -> CustomerMail:
+    mail = customer_mail_service.get_mail(db, mail_id)
+    if mail is None:
+        raise HTTPException(404, "Customer mail not found")
+    if staff is not None and not (
+        (mail.linked_supplier_po_no and mail.linked_supplier_po_no in staff.po_counters)
+        or (mail.assigned_to or "") in set(_assigned_names(user))
+    ):
+        raise HTTPException(404, "Customer mail not found")
+    return mail
 
 
 def _task_counts_for_mail(db: Session, mail_id: int) -> dict[str, int]:
@@ -172,7 +197,14 @@ def list_customer_mails(
     scope: str = Query(default="customer", pattern="^(customer|other)$"),
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
+    user: User = Depends(get_current_staff),
+    staff: StaffScopeDep = None,
 ) -> Any:
+    owned = (
+        {"owned_po_nos": set(staff.po_counters), "assigned_names": _assigned_names(user)}
+        if staff is not None
+        else {}
+    )
     rows, total = customer_mail_service.list_mails(
         db,
         status=status,
@@ -182,6 +214,7 @@ def list_customer_mails(
         scope=scope,
         limit=limit,
         offset=offset,
+        **owned,
     )
     counts = _task_counts_bulk(db, [row.id for row in rows])
     items: list[CustomerMailOut] = []
@@ -199,11 +232,13 @@ def list_customer_mails(
 
 
 @router.get("/{mail_id}", response_model=CustomerMailOut)
-def get_customer_mail(mail_id: int, db: Session = Depends(get_db)):
-    row = customer_mail_service.get_mail(db, mail_id)
-    if row is None:
-        raise HTTPException(404, "Customer mail not found")
-    return _serialize_mail(db, row)
+def get_customer_mail(
+    mail_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_staff),
+    staff: StaffScopeDep = None,
+):
+    return _serialize_mail(db, _visible_mail_or_404(db, mail_id, staff, user))
 
 
 @router.patch("/{mail_id}/assign", response_model=CustomerMailOut)
@@ -211,7 +246,10 @@ def assign_customer_mail(
     mail_id: int,
     payload: CustomerMailAssignPayload,
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_staff),
+    staff: StaffScopeDep = None,
 ):
+    _visible_mail_or_404(db, mail_id, staff, user)
     try:
         row = customer_mail_service.assign_mail(
             db,
@@ -234,7 +272,10 @@ def resolve_customer_mail(
     mail_id: int,
     payload: CustomerMailResolvePayload,
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_staff),
+    staff: StaffScopeDep = None,
 ):
+    _visible_mail_or_404(db, mail_id, staff, user)
     row = customer_mail_service.resolve_mail(
         db,
         mail_id,
@@ -251,7 +292,9 @@ def create_task_for_mail(
     payload: CustomerMailTaskPayload,
     db: Session = Depends(get_db),
     actor: User = Depends(get_current_staff),
+    staff: StaffScopeDep = None,
 ):
+    _visible_mail_or_404(db, mail_id, staff, actor)
     mail, task = customer_mail_service.create_task_from_mail(
         db,
         mail_id,
@@ -278,8 +321,11 @@ def reply_to_customer_mail(
     mail_id: int,
     payload: CustomerReplyPayload,
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_staff),
+    staff: StaffScopeDep = None,
 ):
     """Queue an outbound reply to the customer, then send it immediately."""
+    _visible_mail_or_404(db, mail_id, staff, user)
     try:
         mail, msg = customer_mail_service.reply_to_mail(
             db, mail_id, body=payload.body, subject=payload.subject
@@ -307,9 +353,13 @@ def reply_to_customer_mail(
 
 
 @router.get("/{mail_id}/replies", response_model=list[CustomerReplyOut])
-def list_customer_mail_replies(mail_id: int, db: Session = Depends(get_db)):
-    if customer_mail_service.get_mail(db, mail_id) is None:
-        raise HTTPException(404, "Customer mail not found")
+def list_customer_mail_replies(
+    mail_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_staff),
+    staff: StaffScopeDep = None,
+):
+    _visible_mail_or_404(db, mail_id, staff, user)
     return customer_mail_service.list_replies(db, mail_id)
 
 
@@ -319,10 +369,13 @@ def draft_customer_reply(
     ai: bool = Query(default=False, description="Use the LLM (slower) vs the instant template"),
     payload: DraftReplyPayload | None = Body(default=None),
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_staff),
+    staff: StaffScopeDep = None,
 ) -> dict:
     """Suggested reply from order data. `ai=true` polishes it with the LLM; the
     default is the instant deterministic template (no LLM call). An optional
     `instruction` in the body is passed to the AI as the agent's guidance."""
+    _visible_mail_or_404(db, mail_id, staff, user)
     instruction = payload.instruction if payload else None
     draft = customer_mail_service.build_draft_reply(
         db, mail_id, use_ai=ai, instruction=instruction

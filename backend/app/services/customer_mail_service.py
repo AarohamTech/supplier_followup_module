@@ -53,9 +53,10 @@ def list_mails(
         for name in assigned_names or []:
             if name:
                 clauses.append(CustomerMail.assigned_to == name)
-        scope = or_(*clauses) if clauses else CustomerMail.id.is_(None)
-        stmt = stmt.where(scope)
-        count_stmt = count_stmt.where(scope)
+        # Not named `scope`: that is the customer/other toggle used below.
+        owner_clause = or_(*clauses) if clauses else CustomerMail.id.is_(None)
+        stmt = stmt.where(owner_clause)
+        count_stmt = count_stmt.where(owner_clause)
     if status:
         stmt = stmt.where(CustomerMail.status == status)
         count_stmt = count_stmt.where(CustomerMail.status == status)

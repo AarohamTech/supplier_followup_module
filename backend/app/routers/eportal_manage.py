@@ -94,7 +94,7 @@ def list_suppliers(
 
 @router.get("/supplier-emails", response_model=list[SupplierEmailOut])
 def list_emails(db: Session = Depends(get_db), _user: User = Depends(require_email_master)):
-    return staff_emails.list_emails(db=db)
+    return staff_emails.list_emails(db=db, scope=None)
 
 
 @router.post("/supplier-emails", response_model=SupplierEmailOut, status_code=201)
@@ -103,7 +103,7 @@ def create_email(
     db: Session = Depends(get_db),
     user: User = Depends(require_email_master),
 ):
-    return staff_emails.create(payload=payload, db=db, actor=user)
+    return staff_emails.create(payload=payload, db=db, actor=user, scope=None)
 
 
 @router.put("/supplier-emails/{eid}", response_model=SupplierEmailOut)

@@ -23,12 +23,17 @@ from ..services.followup_engine import apply_followup_logic
 from ..services import crm_ingest_service
 from ..services import procurement_breakdown_service as breakdown_service
 from ..services.po_open_lines import open_line_clause
+from ..services.staff_scope import StaffScopeDep
 
 router = APIRouter(prefix="/api/procurement", tags=["procurement"])
 
 
 @router.get("/dashboard", response_model=DashboardKpis)
-def dashboard(db: Session = Depends(get_db), owner_emp_code: Optional[str] = None):
+def dashboard(
+    db: Session = Depends(get_db),
+    owner_emp_code: Optional[str] = None,
+    scope: StaffScopeDep = None,
+):
     R = ProcurementRecord
     today = date.today()
     start = datetime.combine(today, datetime.min.time())
@@ -41,9 +46,13 @@ def dashboard(db: Session = Depends(get_db), owner_emp_code: Optional[str] = Non
     # PO Follow-ups and the auto follow-up cycle.
     owner = (R.owner_emp_code == owner_emp_code) if owner_emp_code else None
     live = open_line_clause(R)
+    # Non-admins only ever count their own POs (staff_scope).
+    mine = scope.record_clause(R) if scope is not None else None
 
     def cnt(*conds):
         all_conds = list(conds) + [live] + ([owner] if owner is not None else [])
+        if mine is not None:
+            all_conds.append(mine)
         return func.count().filter(*all_conds)
 
     # Single round-trip: conditional COUNT(*) FILTER(...) instead of 8 queries —
@@ -87,6 +96,7 @@ def breakdown(
     shipment_date_to: Optional[date] = None,
     search: Optional[str] = None,
     include_closed: bool = False,
+    scope: StaffScopeDep = None,
 ):
     """Signal + supplier + pending aggregations for the dashboard pies, under the
     same filters as the list (so the pies match the visible table)."""
@@ -97,6 +107,8 @@ def breakdown(
         shipment_date_to=shipment_date_to, search=search,
         include_closed=include_closed,
     )
+    if scope is not None:
+        conds = [scope.record_clause(ProcurementRecord), *conds]
     return ProcurementBreakdown(**breakdown_service.compute_breakdown(db, conds))
 
 
@@ -116,9 +128,12 @@ def list_records(
     include_closed: bool = False,
     page: int = Query(1, ge=1),
     size: int = Query(50, ge=1, le=500),
+    scope: StaffScopeDep = None,
 ):
     R = ProcurementRecord
     stmt = select(R)
+    if scope is not None:
+        stmt = stmt.where(scope.record_clause(R))
     # Open lines only unless asked (po_open_lines) — matches Orders / My Orders.
     if not include_closed: stmt = stmt.where(open_line_clause(R))
     if signal: stmt = stmt.where(R.signal == signal.upper())
@@ -192,6 +207,7 @@ def export_records(
     owner_emp_code: Optional[str] = None,
     search: Optional[str] = None,
     include_closed: bool = False,
+    scope: StaffScopeDep = None,
 ):
     """Download the (filtered) PO lines as an Excel workbook — the PO Follow-ups
     'Download PO' action. Same filters as the list endpoint, capped at 5000 rows."""
@@ -201,6 +217,8 @@ def export_records(
 
     R = ProcurementRecord
     stmt = select(R)
+    if scope is not None:
+        stmt = stmt.where(scope.record_clause(R))
     if not include_closed:
         stmt = stmt.where(open_line_clause(R))
     if signal: stmt = stmt.where(R.signal == signal.upper())
@@ -285,9 +303,13 @@ def crm_quantity_api_probe(db: Session = Depends(get_db)) -> dict[str, Any]:
 
 
 @router.get("/{rec_id}", response_model=ProcurementOut)
-def get_one(rec_id: int, db: Session = Depends(get_db)):
+def get_one(
+    rec_id: int,
+    db: Session = Depends(get_db),
+    scope: StaffScopeDep = None,
+):
     rec = db.get(ProcurementRecord, rec_id)
-    if not rec:
+    if not rec or (scope is not None and not scope.allows_record(rec)):
         raise HTTPException(404, "Not found")
     return rec
 

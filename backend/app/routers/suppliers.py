@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
@@ -8,6 +9,7 @@ from ..database import get_db
 from ..models.supplier import SupplierMaster
 from ..models.supplier_email import SupplierEmail
 from ..schemas.supplier import SupplierOut, SupplierUpdate
+from ..services.staff_scope import StaffScopeDep
 
 router = APIRouter(prefix="/api/suppliers", tags=["suppliers"])
 
@@ -33,8 +35,14 @@ def _to_out(row: SupplierMaster, mapping: SupplierEmail | None = None) -> dict:
 
 
 @router.get("", response_model=list[SupplierOut])
-def list_suppliers(db: Session = Depends(get_db)):
-    suppliers = db.scalars(select(SupplierMaster).order_by(SupplierMaster.supplier_name)).all()
+def list_suppliers(
+    db: Session = Depends(get_db),
+    scope: StaffScopeDep = None,
+):
+    stmt = select(SupplierMaster).order_by(SupplierMaster.supplier_name)
+    if scope is not None:  # non-admins: only their suppliers (staff_scope)
+        stmt = stmt.where(scope.supplier_clause(SupplierMaster.id, SupplierMaster.supplier_name))
+    suppliers = db.scalars(stmt).all()
     mappings = db.scalars(
         select(SupplierEmail).where(SupplierEmail.is_active.is_(True))
     ).all()
@@ -43,9 +51,13 @@ def list_suppliers(db: Session = Depends(get_db)):
 
 
 @router.get("/{supplier_id}", response_model=SupplierOut)
-def get_supplier(supplier_id: int, db: Session = Depends(get_db)):
+def get_supplier(
+    supplier_id: int,
+    db: Session = Depends(get_db),
+    scope: StaffScopeDep = None,
+):
     row = db.get(SupplierMaster, supplier_id)
-    if not row:
+    if not row or (scope is not None and not scope.allows_supplier(row.supplier_name, row.id)):
         raise HTTPException(404, "Supplier not found")
     mapping = db.scalar(
         select(SupplierEmail).where(
@@ -82,4 +94,4 @@ def update_supplier(supplier_id: int, payload: SupplierUpdate, db: Session = Dep
     row.updated_at = datetime.utcnow()
     db.commit()
     db.refresh(row)
-    return get_supplier(row.id, db)
+    return get_supplier(row.id, db, scope=None)

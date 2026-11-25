@@ -20,8 +20,19 @@ from ..core.roles import Role
 from ..database import get_db
 from ..models.mail_history import MailHistory
 from ..services import ai_insights_service, followup_audit_service, po_followup_mail_service
+from ..services.staff_scope import StaffScopeDep, StaffScope, get_staff_scope
 
 router = APIRouter(prefix="/api/ai/insights", tags=["ai-insights"])
+
+# Non-admin staff only see their own POs/suppliers (services/staff_scope.py).
+# For a scoped user, fetch a wide window and then filter, so their rows are not
+# cut off by other people's POs ranking above them.
+_SCOPED_FETCH = 2000
+
+
+def _scope(scope) -> StaffScope | None:
+    # employee_portal calls these handlers directly (no DI) and filters itself.
+    return scope if isinstance(scope, StaffScope) else None
 
 
 @router.get("/delay-risk")
@@ -29,8 +40,16 @@ def delay_risk(
     db: Session = Depends(get_db),
     band: str | None = Query(default=None, description="Filter: LOW / MEDIUM / HIGH"),
     limit: int = Query(default=50, ge=1, le=200),
+    scope: StaffScopeDep = None,
 ) -> dict:
-    items = ai_insights_service.list_delay_risk(db, band=band, limit=limit)
+    scope = _scope(scope)
+    if scope is None:
+        items = ai_insights_service.list_delay_risk(db, band=band, limit=limit)
+    else:
+        items = [
+            i for i in ai_insights_service.list_delay_risk(db, band=band, limit=_SCOPED_FETCH)
+            if scope.allows_pair(i.get("supplier_name"), i.get("supplier_po_no"))
+        ][:limit]
     return {
         "count": len(items),
         "band": band,
@@ -50,9 +69,17 @@ def rescore_delay_risk(
 def black_followups(
     db: Session = Depends(get_db),
     limit: int = Query(default=100, ge=1, le=300),
+    scope: StaffScopeDep = None,
 ) -> dict:
     """BLACK-signal POs with their AI conversation thread + commitment status."""
-    items = ai_insights_service.list_black_followups(db, limit=limit)
+    scope = _scope(scope)
+    if scope is None:
+        items = ai_insights_service.list_black_followups(db, limit=limit)
+    else:
+        items = [
+            i for i in ai_insights_service.list_black_followups(db, limit=_SCOPED_FETCH)
+            if scope.allows_pair(i.get("supplier_name"), i.get("supplier_po_no"))
+        ][:limit]
     return {
         "count": len(items),
         "chasing": sum(1 for i in items if not i["commitment_captured"]),
@@ -67,12 +94,17 @@ def followup_history(
     outcome: str | None = Query(default=None, description="QUEUED / SKIPPED / FAILED"),
     supplier_po_no: str | None = Query(default=None),
     limit: int = Query(default=100, ge=1, le=300),
+    scope: StaffScopeDep = None,
 ) -> dict:
     """Audit log of follow-up attempts (auto + manual) — every attempt, even the
     ones that were skipped or failed, with AI status and the linked send result."""
+    scope = _scope(scope)
     rows = followup_audit_service.list_attempts(
-        db, signal=signal, outcome=outcome, supplier_po_no=supplier_po_no, limit=limit
+        db, signal=signal, outcome=outcome, supplier_po_no=supplier_po_no,
+        limit=limit if scope is None else _SCOPED_FETCH,
     )
+    if scope is not None:
+        rows = [r for r in rows if scope.allows_pair(r.supplier_name, r.supplier_po_no)][:limit]
     # Batch the linked mail send status so the UI can show Sent/Failed/Queued.
     hist_ids = [r.history_id for r in rows if r.history_id]
     sent_by_hist: dict[int, MailHistory] = {}
@@ -118,9 +150,13 @@ def black_followup_command(
     payload: FollowupCommand,
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
+    scope: StaffScopeDep = None,
 ) -> dict:
     """Tell the AI what to follow up on for a PO. Preview (default, user+) or
     actually send it to the supplier (send=true, manager+)."""
+    scope = _scope(scope)
+    if scope is not None and payload.supplier_po_no not in scope.po_counters:
+        raise HTTPException(404, "PO not found")
     if not roles_mod.role_at_least(user.role, Role.USER):
         raise HTTPException(403, "Read-only role — commanding the AI requires 'user' or higher")
     if payload.send and not roles_mod.role_at_least(user.role, Role.MANAGER):
@@ -140,14 +176,29 @@ def black_followup_command(
 def supplier_scorecards(
     db: Session = Depends(get_db),
     limit: int = Query(default=100, ge=1, le=500),
+    scope: StaffScopeDep = None,
 ) -> dict:
-    items = ai_insights_service.supplier_scorecards(db, limit=limit)
+    scope = _scope(scope)
+    if scope is None:
+        items = ai_insights_service.supplier_scorecards(db, limit=limit)
+    else:
+        items = [
+            i for i in ai_insights_service.supplier_scorecards(db, limit=_SCOPED_FETCH)
+            if scope.allows_supplier(i.get("supplier_name"))
+        ][:limit]
     return {"count": len(items), "items": items}
 
 
 @router.get("/suppliers/{name}")
-def supplier_scorecard(name: str, db: Session = Depends(get_db)) -> dict:
+def supplier_scorecard(
+    name: str,
+    db: Session = Depends(get_db),
+    scope: StaffScopeDep = None,
+) -> dict:
+    scope = _scope(scope)
     items = ai_insights_service.supplier_scorecards(db, name=name, limit=1)
+    if scope is not None and items and not scope.allows_supplier(items[0].get("supplier_name")):
+        items = []
     if not items:
         raise HTTPException(404, f"No procurement records for supplier '{name}'")
     return items[0]

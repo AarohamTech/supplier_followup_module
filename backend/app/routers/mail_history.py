@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from ..core.deps import require_manager
@@ -11,8 +11,32 @@ from ..models.mail_history import MailHistory
 from ..models.procurement import ProcurementRecord
 from ..schemas.mail_history import MailHistoryOut, MailHistoryStatusUpdate
 from ..services.followup_engine import apply_followup_logic
+from ..services.staff_scope import StaffScopeDep, StaffScope, get_staff_scope
 
 router = APIRouter(prefix="/api/mail-history", tags=["mail-history"])
+
+def _scope_clause(scope: Optional[StaffScope]):
+    """Non-admins: only mail about their own POs / assigned suppliers
+    (services/staff_scope.py). None = admin, no filter."""
+    if scope is None:
+        return None
+    own = [scope.pair_clause(MailHistory.supplier_name, MailHistory.supplier_po_no)]
+    if scope.assigned_supplier_ids:
+        own.append(MailHistory.supplier_id.in_(sorted(scope.assigned_supplier_ids)))
+    return or_(*own)
+
+
+def _scoped(stmt, scope: Optional[StaffScope]):
+    clause = _scope_clause(scope)
+    return stmt if clause is None else stmt.where(clause)
+
+
+def _get_or_404(db: Session, history_id: int, scope: Optional[StaffScope]) -> MailHistory:
+    row = db.scalar(_scoped(select(MailHistory).where(MailHistory.id == history_id), scope))
+    if not row:
+        raise HTTPException(404, "Mail history not found")
+    return row
+
 
 MAIL_HISTORY_STATUSES = {"DRAFT", "READY", "FAILED", "SENT", "COPIED", "MAILTO_OPENED", "SENT_MANUALLY"}
 
@@ -48,8 +72,9 @@ def list_history(
     mail_type: Optional[str] = None,
     status: Optional[str] = None,
     limit: int = Query(200, ge=1, le=1000),
+    scope: StaffScopeDep = None,
 ):
-    stmt = select(MailHistory)
+    stmt = _scoped(select(MailHistory), scope)
     if supplier:
         stmt = stmt.where(MailHistory.supplier_name.ilike(f"%{supplier}%"))
     po_filter = supplier_po_no or po_no
@@ -65,29 +90,38 @@ def list_history(
 
 
 @router.get("/by-record/{record_id}", response_model=list[MailHistoryOut])
-def by_record(record_id: int, db: Session = Depends(get_db)):
+def by_record(
+    record_id: int,
+    db: Session = Depends(get_db),
+    scope: StaffScopeDep = None,
+):
     return db.scalars(
-        select(MailHistory)
+        _scoped(select(MailHistory), scope)
         .where(MailHistory.procurement_record_id == record_id)
         .order_by(MailHistory.created_at.desc())
     ).all()
 
 
 @router.get("/by-subject", response_model=list[MailHistoryOut])
-def by_subject(subject: str, db: Session = Depends(get_db)):
+def by_subject(
+    subject: str,
+    db: Session = Depends(get_db),
+    scope: StaffScopeDep = None,
+):
     return db.scalars(
-        select(MailHistory)
+        _scoped(select(MailHistory), scope)
         .where(MailHistory.subject.ilike(f"%{subject}%"))
         .order_by(MailHistory.created_at.desc())
     ).all()
 
 
 @router.get("/{history_id}", response_model=MailHistoryOut)
-def get_history(history_id: int, db: Session = Depends(get_db)):
-    row = db.get(MailHistory, history_id)
-    if not row:
-        raise HTTPException(404, "Mail history not found")
-    return row
+def get_history(
+    history_id: int,
+    db: Session = Depends(get_db),
+    scope: StaffScopeDep = None,
+):
+    return _get_or_404(db, history_id, scope)
 
 
 @router.put("/{history_id}/status", response_model=MailHistoryOut, dependencies=[Depends(require_manager)])
@@ -95,14 +129,13 @@ def update_history_status(
     history_id: int,
     payload: MailHistoryStatusUpdate,
     db: Session = Depends(get_db),
+    scope: StaffScopeDep = None,
 ):
     status = payload.sent_status.upper()
     if status not in MAIL_HISTORY_STATUSES:
         raise HTTPException(422, f"Status must be one of: {', '.join(sorted(MAIL_HISTORY_STATUSES))}")
 
-    row = db.get(MailHistory, history_id)
-    if not row:
-        raise HTTPException(404, "Mail history not found")
+    row = _get_or_404(db, history_id, scope)
 
     old_status = row.sent_status
     row.sent_status = status
