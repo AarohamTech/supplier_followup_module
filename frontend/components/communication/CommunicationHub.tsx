@@ -2267,6 +2267,24 @@ function EmptyState({ children, icon }: { children: React.ReactNode; icon?: Reac
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Mail bubble
+// Plain-text parts written by Gmail/Outlook mark bold as *text* and repeat each
+// link as "<tel:…>" / "<mailto:…>" / "<https://…>" after the visible text.
+// Older mails stored only that part, so show it the way it read in the mailbox.
+function formatPlainMail(text: string): React.ReactNode[] {
+  const cleaned = text.replace(/[ \t]*<(?:mailto:|tel:|https?:\/\/|\+)[^>\s]*>/g, "");
+  const out: React.ReactNode[] = [];
+  const re = /\*([^*\n]*[^*\s][^*\n]*)\*/g;
+  let last = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(cleaned)) !== null) {
+    if (m.index > last) out.push(cleaned.slice(last, m.index));
+    out.push(<strong key={m.index}>{m[1].trim()}</strong>);
+    last = m.index + m[0].length;
+  }
+  out.push(cleaned.slice(last));
+  return out;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 function MailBubble({
   mail,
@@ -2323,7 +2341,7 @@ function MailBubble({
           <>
             {bodyText && (
               <p className="whitespace-pre-wrap text-sm leading-relaxed text-brand-dark">
-                {truncate(bodyText, tableRows.length > 0 ? 1200 : 600)}
+                {formatPlainMail(truncate(bodyText, tableRows.length > 0 ? 1200 : 600))}
               </p>
             )}
             {tableRows.length > 0 && <ThreadMessageTable rows={tableRows} />}

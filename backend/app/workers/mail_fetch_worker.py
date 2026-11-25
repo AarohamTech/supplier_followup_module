@@ -14,6 +14,7 @@ import email
 import imaplib
 import logging
 import poplib
+import re
 from datetime import datetime
 from email.header import decode_header
 from email.message import Message as EmailMessage
@@ -83,6 +84,35 @@ def _extract_body(msg: EmailMessage) -> str:
     return msg.get_payload() or ""
 
 
+# Where a reply's quoted history starts in common mail clients' HTML (Gmail,
+# Outlook, Apple Mail). Threads already show the earlier mails, so cut there.
+_QUOTE_START_RE = re.compile(
+    r"""(?is)<div[^>]*class=["'][^"']*gmail_quote|<div[^>]*id=["']?(divRplyFwdMsg|appendonsend)"""
+    r"""|<blockquote[^>]*type=["']?cite"""
+)
+
+
+def _extract_html(msg: EmailMessage) -> str | None:
+    """The text/html part of a multipart mail (what the sender actually saw),
+    without its quoted reply history. None when the mail has no HTML part or
+    is not multipart (a single-part HTML mail lands in ``body`` already)."""
+    if not msg.is_multipart():
+        return None
+    for part in msg.walk():
+        disp = str(part.get("Content-Disposition") or "")
+        if part.get_content_type() != "text/html" or "attachment" in disp:
+            continue
+        payload = part.get_payload(decode=True)
+        if not payload:
+            continue
+        html = payload.decode(part.get_content_charset() or "utf-8", errors="replace")
+        m = _QUOTE_START_RE.search(html)
+        if m and m.start() > 0:
+            html = html[: m.start()]
+        return html.strip() or None
+    return None
+
+
 def _config_ready() -> tuple[bool, str]:
     if not getattr(settings, "MAIL_INBOX_ENABLED", False):
         return False, "MAIL_INBOX_ENABLED is false"
@@ -140,6 +170,7 @@ def _process_one(
             received_at = None
 
     body = _extract_body(parsed_msg)
+    body_html = _extract_html(parsed_msg)
     sender_email = parseaddr(from_header)[1] or None
 
     if msg_service.message_exists(db, message_id):
@@ -237,6 +268,7 @@ def _process_one(
         supplier_po_no=(rec.supplier_po_no if rec else None) or parsed.get("supplier_po_no"),
         subject=subject,
         body=body,
+        body_html=body_html,
         sender_email=sender_email,
         receiver_email=parseaddr(to_header)[1] or settings.IMAP_USER,
         message_uid=message_id,
