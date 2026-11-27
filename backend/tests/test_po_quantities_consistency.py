@@ -102,18 +102,30 @@ class PortalMatchesStaffTests(unittest.TestCase):
     def test_portal_staff_and_employee_payloads_agree_per_counter(self):
         with _temp_db() as db:
             user, emp = self._seed(db)
-            for counter in ("002180", "002181"):
-                portal_rows = portal.po_materials(counter, user=user, db=db)
-                staff = po_view_service.po_detail(db, supplier_po_no=counter, supplier_name=SUP)
-                emp_rows = employee_portal.po_materials(counter, supplier_name=SUP, user=emp, db=db)
-                p = sorted(_key(m) for m in portal_rows)
-                self.assertEqual(p, sorted(_key(m) for m in staff["materials"]), counter)
-                self.assertEqual(p, sorted(_key(m) for m in emp_rows), counter)
+            counters = ("002180", "002181")
+            # The supplier portal shows one logical vendor PO (REF) across both
+            # counters; staff/employee details are per counter. Line for line
+            # the quantities must still agree.
+            staff_all = sorted(
+                _key(m) for c in counters
+                for m in po_view_service.po_detail(db, supplier_po_no=c, supplier_name=SUP)["materials"]
+            )
+            emp_all = sorted(
+                _key(m) for c in counters
+                for m in employee_portal.po_materials(c, supplier_name=SUP, user=emp, db=db)
+            )
+            for counter in counters:
+                p = sorted(_key(m) for m in portal.po_materials(counter, user=user, db=db))
+                self.assertEqual(p, staff_all, counter)
+                self.assertEqual(p, emp_all, counter)
 
-            # The delisted (received) line is gone on both sides: 1 line, qty 1.
+            # The delisted (received) line is gone on both sides; counter
+            # 002180's open line keeps qty 1.
             rows = portal.po_materials("002180", user=user, db=db)
-            self.assertEqual([m.material_name for m in rows], ["WF09-40 SSVT MAKE"])
-            self.assertEqual((rows[0].ordered_qty, rows[0].inward_qty, rows[0].pending_qty), (1.0, 0.0, 1.0))
+            self.assertNotIn("2627-018962", [m.crm_no for m in rows])
+            self.assertEqual({m.material_name for m in rows}, {"WF09-40 SSVT MAKE"})
+            line = next(m for m in rows if m.crm_no == "2627-018961")
+            self.assertEqual((line.ordered_qty, line.inward_qty, line.pending_qty), (1.0, 0.0, 1.0))
 
     def test_hub_group_lists_each_counter_line_without_summing(self):
         with _temp_db() as db:
@@ -123,14 +135,12 @@ class PortalMatchesStaffTests(unittest.TestCase):
             ]
             group = po_followup_service.build_po_group_payload(db, records, SUP, "002180")
             hub = sorted(_key(m) for m in group["materials"])
-            portal_all = sorted(
-                _key(m)
-                for counter in ("002180", "002181")
-                for m in portal.po_materials(counter, user=user, db=db)
-            )
             # Duplicate material across counters stays two lines with their own
-            # quantities, matching the portal line for line.
-            self.assertEqual(hub, portal_all)
+            # quantities, matching the portal line for line — the portal's
+            # logical PO (opened from either counter) is the hub's vendor-PO group.
+            for counter in ("002180", "002181"):
+                portal_rows = sorted(_key(m) for m in portal.po_materials(counter, user=user, db=db))
+                self.assertEqual(hub, portal_rows, counter)
             self.assertEqual(len(hub), 2)
             # Legacy "po_qty" key (mail templates) carries the ordered quantity.
             self.assertTrue(all(m["po_qty"] == m["ordered_qty"] for m in group["materials"]))

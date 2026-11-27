@@ -20,7 +20,11 @@ class PortalSummary(BaseModel):
 
 
 class PortalPo(BaseModel):
+    # Anchor internal CRM counter of this logical PO — the routing key.
     supplier_po_no: str
+    # Every internal CRM counter this logical vendor PO spans (one vendor PO can
+    # be spread over several recycled counters); includes supplier_po_no.
+    supplier_po_nos: list[str] = Field(default_factory=list)
     # PO document reference from the CRM (PoShortRefTrnNo) — the number the
     # supplier knows from their PO document. Shown as the primary number.
     po_ref: Optional[str] = None

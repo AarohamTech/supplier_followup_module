@@ -70,9 +70,15 @@ export default function PoDetailPage() {
           api.portalPoTasks(poNo),
         ]);
         if (cancelled) return;
-        setPo(pos.items.find((p) => p.supplier_po_no === poNo) ?? null);
+        // poNo may be any counter of a logical PO (old links / notifications).
+        const row =
+          pos.items.find((p) => p.supplier_po_no === poNo) ??
+          pos.items.find((p) => p.supplier_po_nos?.includes(poNo)) ??
+          null;
+        const counters = new Set(row?.supplier_po_nos?.length ? row.supplier_po_nos : [poNo]);
+        setPo(row);
         setMaterials(mats);
-        setAsns(asnRes.items.filter((a) => a.supplier_po_no === poNo));
+        setAsns(asnRes.items.filter((a) => counters.has(a.supplier_po_no)));
         setTasks(taskList);
       } catch (e) {
         if (!cancelled) setError((e as Error).message);

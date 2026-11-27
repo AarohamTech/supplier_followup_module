@@ -82,6 +82,61 @@ def _po_records(db: Session, supplier_name: str | None) -> list[ProcurementRecor
     )
 
 
+# ── Logical (vendor) PO grouping ──────────────────────────────────────────────
+# `supplier_po_no` is the internal CRM counter, which the CRM recycles; the
+# number on the supplier's PO document is the vendor PO ref (`po_short_ref`).
+# One vendor PO can be spread over several counters (e.g. 012736 and 012738
+# both carrying 2627-019982), so the portal treats a supplier's counters that
+# share a vendor ref as ONE logical PO. Callers pass records already scoped to
+# a single supplier, so two suppliers' POs never merge even when their vendor
+# refs match. A counter is never split across groups, so every counter-keyed
+# action (commitments, messages, ASN, acknowledgement) keeps working on any
+# counter of the group.
+def _logical_po_groups(records: list[ProcurementRecord]) -> list[list[str]]:
+    """Group one supplier's counters into logical vendor POs.
+
+    Returns sorted counter lists; the first (smallest) counter of each list is
+    the group's anchor — the routing key the portal hands out."""
+    parent: dict[str, str] = {}
+
+    def find(c: str) -> str:
+        while parent[c] != c:
+            parent[c] = parent[parent[c]]
+            c = parent[c]
+        return c
+
+    first_counter_by_ref: dict[str, str] = {}
+    for r in records:
+        counter = r.supplier_po_no
+        if not counter:
+            continue
+        parent.setdefault(counter, counter)
+        ref = (r.po_short_ref or "").strip().upper()
+        if not ref:
+            continue  # no vendor ref: the counter stays its own PO
+        other = first_counter_by_ref.setdefault(ref, counter)
+        ra, rb = find(other), find(counter)
+        if ra != rb:
+            parent[max(ra, rb)] = min(ra, rb)
+
+    groups: dict[str, list[str]] = {}
+    for counter in parent:
+        groups.setdefault(find(counter), []).append(counter)
+    return sorted((sorted(g) for g in groups.values()), key=lambda g: g[0])
+
+
+def _po_group_counters(db: Session, supplier_name: str | None, supplier_po_no: str) -> list[str]:
+    """Every counter of the logical PO that `supplier_po_no` belongs to, for
+    this supplier — the same grouping the PO list uses. A counter with no open
+    line left falls back to itself. Empty when the supplier does not own it."""
+    if not supplier_name or not supplier_po_no:
+        return []
+    for counters in _logical_po_groups(_po_records(db, supplier_name)):
+        if supplier_po_no in counters:
+            return counters
+    return [supplier_po_no] if _po_is_owned(db, supplier_name, supplier_po_no) else []
+
+
 def _load_owned_asn(db: Session, asn_id: int, user: User) -> Asn:
     asn = asn_service.get_asn(db, asn_id, supplier_id=user.supplier_id)
     if asn is None:
@@ -105,15 +160,18 @@ def me(user: User = Depends(get_current_supplier), db: Session = Depends(get_db)
 def summary(user: User = Depends(get_current_supplier), db: Session = Depends(get_db)) -> PortalSummary:
     name = _supplier_name(db, user)
     records = _po_records(db, name)
-    po_nos = {r.supplier_po_no for r in records if r.supplier_po_no}
-    completed = asn_service.completed_po_numbers(db, supplier_id=user.supplier_id) & po_nos
-    blocked = {r.supplier_po_no for r in records if (r.signal or "").upper() == "BLACK" and r.supplier_po_no}
+    # Count logical vendor POs, not internal counters (see _logical_po_groups).
+    groups = _logical_po_groups(records)
+    delivered = asn_service.completed_po_numbers(db, supplier_id=user.supplier_id)
+    black = {r.supplier_po_no for r in records if (r.signal or "").upper() == "BLACK" and r.supplier_po_no}
+    completed = sum(1 for g in groups if delivered.intersection(g))
+    blocked = sum(1 for g in groups if black.intersection(g))
     return PortalSummary(
         supplier_name=name,
-        total_pos=len(po_nos),
-        completed_pos=len(completed),
-        pending_pos=len(po_nos) - len(completed),
-        blocked_count=len(blocked),
+        total_pos=len(groups),
+        completed_pos=completed,
+        pending_pos=len(groups) - completed,
+        blocked_count=blocked,
         asn=AsnSummaryOut(**asn_service.asn_summary(db, supplier_id=user.supplier_id)),
     )
 
@@ -165,12 +223,16 @@ def list_pos(user: User = Depends(get_current_supplier), db: Session = Depends(g
         if direction == "OUTGOING" and status in _VISIBLE_OUTGOING and portal_read_at is None:
             unread_counts[po_no] = unread_counts.get(po_no, 0) + 1
 
+    # One row per logical vendor PO (a supplier's counters sharing a vendor
+    # ref), keyed by its anchor counter; every counter it spans is returned too.
+    anchor_of = {c: g[0] for g in _logical_po_groups(records) for c in g}
     groups: dict[str, dict] = {}
-    for r in records:
-        po = r.supplier_po_no
-        if not po:
+    for r in sorted(records, key=lambda x: (x.supplier_po_no or "", x.id)):
+        if not r.supplier_po_no:
             continue
+        po = anchor_of[r.supplier_po_no]
         g = groups.setdefault(po, {
+            "counters": set(),
             "crm_no": r.crm_no,
             "po_ref": None,
             "po_trn_no": None,
@@ -179,6 +241,7 @@ def list_pos(user: User = Depends(get_current_supplier), db: Session = Depends(g
             "count": 0,
             "escalated": False,
         })
+        g["counters"].add(r.supplier_po_no)
         g["count"] += 1
         g["signals"].append(r.signal)
         # The supplier-facing PO document reference (PoShortRefTrnNo).
@@ -192,23 +255,29 @@ def list_pos(user: User = Depends(get_current_supplier), db: Session = Depends(g
         if r.shipment_date and (g["earliest"] is None or r.shipment_date < g["earliest"]):
             g["earliest"] = r.shipment_date
 
-    items = [
-        PortalPo(
-            supplier_po_no=po,
-            po_ref=g["po_ref"],
-            crm_no=g["crm_no"],
-            material_count=g["count"],
-            overall_signal=_worst_signal(g["signals"]),
-            earliest_shipment_date=g["earliest"],
-            completed=po in completed,
-            asn_count=asn_counts.get(po, 0),
-            message_count=msg_counts.get(po, 0),
-            unread_inbound=unread_counts.get(po, 0),
-            escalated=g["escalated"],
-            po_trn_no=g["po_trn_no"],
+    def total(counts: dict[str, int], counters: list[str]) -> int:
+        return sum(counts.get(c, 0) for c in counters)
+
+    items = []
+    for po, g in sorted(groups.items()):
+        counters = sorted(g["counters"])
+        items.append(
+            PortalPo(
+                supplier_po_no=po,
+                supplier_po_nos=counters,
+                po_ref=g["po_ref"],
+                crm_no=g["crm_no"],
+                material_count=g["count"],
+                overall_signal=_worst_signal(g["signals"]),
+                earliest_shipment_date=g["earliest"],
+                completed=bool(completed.intersection(counters)),
+                asn_count=total(asn_counts, counters),
+                message_count=total(msg_counts, counters),
+                unread_inbound=total(unread_counts, counters),
+                escalated=g["escalated"],
+                po_trn_no=g["po_trn_no"],
+            )
         )
-        for po, g in sorted(groups.items())
-    ]
     # Escalated POs first; then worst signal; then by PO number (stable).
     items.sort(
         key=lambda p: (
@@ -227,21 +296,23 @@ def po_materials(
     db: Session = Depends(get_db),
 ) -> list[PortalPoMaterial]:
     name = _supplier_name(db, user)
-    if not name:
+    counters = _po_group_counters(db, name, supplier_po_no)
+    if not counters:
         return []
-    rows = _po_lines(db, name, supplier_po_no)
-    commits = _commitments_by_material(db, supplier_po_no, name)
-    return [_material_out(r, commits.get((r.material_name or "").strip().upper())) for r in rows]
+    rows = _po_lines(db, name, counters)
+    commits = _commitments_by_material(db, counters, name)
+    return [_material_out(r, _commitment_for(r, commits)) for r in rows]
 
 
-def _po_lines(db: Session, supplier_name: str | None, supplier_po_no: str) -> list[ProcurementRecord]:
-    """The material lines of one of this supplier's POs.
+def _po_lines(db: Session, supplier_name: str | None, counters: list[str]) -> list[ProcurementRecord]:
+    """The material lines of one of this supplier's logical POs — every
+    counter in `counters` (see _po_group_counters).
 
     Same line set as the staff PO detail (po_view_service.po_detail) and this
     portal's own PO list: delisted lines — closed or fully received on the CRM
     side — drop out. Before, the supplier still saw received lines the buyer no
     longer saw, so the two sides disagreed on a PO's lines and quantities."""
-    if not supplier_name:
+    if not supplier_name or not counters:
         return []
     return list(
         db.scalars(
@@ -249,7 +320,7 @@ def _po_lines(db: Session, supplier_name: str | None, supplier_po_no: str) -> li
             .where(
                 supplier_visible_clause(),
                 func.upper(ProcurementRecord.supplier_name) == supplier_name.upper(),
-                ProcurementRecord.supplier_po_no == supplier_po_no,
+                ProcurementRecord.supplier_po_no.in_(counters),
                 open_line_clause(),
             )
             .order_by(ProcurementRecord.shipment_date, ProcurementRecord.id)
@@ -264,10 +335,13 @@ def _as_dt(d) -> datetime | None:
 
 
 def _commitments_by_material(
-    db: Session, supplier_po_no: str, supplier_name: str | None = None
-) -> dict[str, SupplierMaterialCommitment]:
+    db: Session, counters: list[str], supplier_name: str | None = None
+) -> dict[tuple[str, str], SupplierMaterialCommitment]:
+    """Newest commitment per (counter, MATERIAL NAME) across a logical PO's
+    counters. Commitments stay stored per counter — identity
+    (supplier, counter, material) is unchanged."""
     stmt = select(SupplierMaterialCommitment).where(
-        SupplierMaterialCommitment.supplier_po_no == supplier_po_no
+        SupplierMaterialCommitment.supplier_po_no.in_(counters)
     )
     # PO numbers are recycled across suppliers — scope to this supplier so a
     # shared PO number does not surface another supplier's commitment.
@@ -279,12 +353,29 @@ def _commitments_by_material(
     rows = db.scalars(
         stmt.order_by(SupplierMaterialCommitment.updated_at.desc())
     ).all()
-    out: dict[str, SupplierMaterialCommitment] = {}
+    out: dict[tuple[str, str], SupplierMaterialCommitment] = {}
     for c in rows:
-        key = (c.material_name or "").strip().upper()
-        if key and key not in out:
+        key = ((c.supplier_po_no or "").strip(), (c.material_name or "").strip().upper())
+        if key[1] and key not in out:
             out[key] = c
     return out
+
+
+def _commitment_for(
+    r: ProcurementRecord, commits: dict[tuple[str, str], SupplierMaterialCommitment]
+) -> SupplierMaterialCommitment | None:
+    """The commitment for one line: its own counter's first. Else the newest
+    one for the same material on another counter of the same logical PO — a
+    mail reply to the vendor-PO thread may be captured under a sibling counter
+    (the staff PO view matches by material across the thread the same way)."""
+    material = (r.material_name or "").strip().upper()
+    own = commits.get(((r.supplier_po_no or "").strip(), material))
+    if own is not None:
+        return own
+    siblings = [c for (counter, m), c in commits.items() if m == material]
+    if not siblings:
+        return None
+    return max(siblings, key=lambda c: c.updated_at or datetime.min)
 
 
 def _material_out(r: ProcurementRecord, c: SupplierMaterialCommitment | None) -> PortalPoMaterial:
@@ -314,16 +405,18 @@ def submit_commitments(
     db: Session = Depends(get_db),
 ) -> list[PortalPoMaterial]:
     name = _supplier_name(db, user)
-    if not _po_is_owned(db, name, supplier_po_no):
+    counters = _po_group_counters(db, name, supplier_po_no)
+    if not counters:
         raise HTTPException(404, "PO not found for your account")
 
     saved = 0
     for item in payload.items:
         rec = db.get(ProcurementRecord, item.procurement_record_id)
-        # Only accept rows that actually belong to this supplier's PO.
+        # Only accept rows that actually belong to this supplier's PO (any
+        # counter of the logical vendor PO).
         if (
             rec is None
-            or rec.supplier_po_no != supplier_po_no
+            or rec.supplier_po_no not in counters
             or (rec.supplier_name or "").upper() != (name or "").upper()
         ):
             continue
@@ -337,7 +430,9 @@ def submit_commitments(
             continue  # a commitment requires a committed dispatch date
         po_followup_service.upsert_commitment(
             db,
-            supplier_po_no=supplier_po_no,
+            # Stored under the line's own counter — commitment identity stays
+            # (supplier, counter, material), whichever counter the URL used.
+            supplier_po_no=rec.supplier_po_no,
             material_name=rec.material_name,
             procurement_record_id=rec.id,
             supplier_id=user.supplier_id,
@@ -365,9 +460,9 @@ def submit_commitments(
             supplier_id=user.supplier_id,
             supplier_po_no=supplier_po_no,
         )
-    commits = _commitments_by_material(db, supplier_po_no, name)
-    rows = _po_lines(db, name, supplier_po_no)
-    return [_material_out(r, commits.get((r.material_name or "").strip().upper())) for r in rows]
+    commits = _commitments_by_material(db, counters, name)
+    rows = _po_lines(db, name, counters)
+    return [_material_out(r, _commitment_for(r, commits)) for r in rows]
 
 
 # ── PO tasks (read-only view of the internal team's tasks for this PO) ────────
@@ -378,11 +473,12 @@ def po_tasks(
     db: Session = Depends(get_db),
 ) -> list[PortalTask]:
     name = _supplier_name(db, user)
-    if not _po_is_owned(db, name, supplier_po_no):
+    counters = _po_group_counters(db, name, supplier_po_no)
+    if not counters:
         raise HTTPException(404, "PO not found for your account")
     rows = db.scalars(
         select(CommunicationTask).where(
-            CommunicationTask.supplier_po_no == supplier_po_no,
+            CommunicationTask.supplier_po_no.in_(counters),
             or_(
                 CommunicationTask.supplier_id == user.supplier_id,
                 func.upper(CommunicationTask.supplier_name) == (name or "").upper(),
@@ -625,11 +721,14 @@ def list_po_messages(
     db: Session = Depends(get_db),
 ) -> list[PortalMessage]:
     name = _supplier_name(db, user)
+    # The whole logical PO's thread (every counter); still only this
+    # supplier's own messages (supplier_id filter).
+    counters = _po_group_counters(db, name, supplier_po_no) or [supplier_po_no]
     rows = db.scalars(
         select(CommunicationMessage)
         .where(
             CommunicationMessage.supplier_id == user.supplier_id,
-            CommunicationMessage.supplier_po_no == supplier_po_no,
+            CommunicationMessage.supplier_po_no.in_(counters),
         )
         .order_by(CommunicationMessage.created_at.asc())
     ).all()
@@ -791,14 +890,21 @@ def escalate_po(
     # Texts the supplier reads (task title, thread subject) carry the vendor PO
     # number they know; the counter stays the key.
     po_display = rec.po_short_ref or supplier_po_no
+    counters = _po_group_counters(db, name, supplier_po_no) or [supplier_po_no]
 
-    # Idempotence: one open supplier-raised escalation per PO.
+    # Idempotence: one open supplier-raised escalation per logical PO (any of
+    # its counters), and only this supplier's — counters are recycled across
+    # suppliers.
     existing = db.scalar(
         select(CommunicationTask).where(
-            CommunicationTask.supplier_po_no == supplier_po_no,
+            CommunicationTask.supplier_po_no.in_(counters),
             CommunicationTask.task_source == "ESCALATION",
             CommunicationTask.assigned_by == "Supplier Portal",
             CommunicationTask.status != "DONE",
+            or_(
+                CommunicationTask.supplier_id == user.supplier_id,
+                func.upper(CommunicationTask.supplier_name) == (name or "").upper(),
+            ),
         )
     )
     if existing is not None:
@@ -809,7 +915,7 @@ def escalate_po(
         select(ProcurementRecord).where(
             supplier_visible_clause(),
             func.upper(ProcurementRecord.supplier_name) == (name or "").upper(),
-            ProcurementRecord.supplier_po_no == supplier_po_no,
+            ProcurementRecord.supplier_po_no.in_(counters),
         )
     ).all()
     for r in po_records or [rec]:
@@ -881,13 +987,14 @@ def mark_po_messages_read(
 ) -> dict:
     """Clear the supplier's unread badge for a PO (marks buyer messages read)."""
     name = _supplier_name(db, user)
-    if not _po_is_owned(db, name, supplier_po_no):
+    counters = _po_group_counters(db, name, supplier_po_no)
+    if not counters:
         raise HTTPException(404, "PO not found for your account")
     now = datetime.utcnow()
     rows = db.scalars(
         select(CommunicationMessage).where(
             CommunicationMessage.supplier_id == user.supplier_id,
-            CommunicationMessage.supplier_po_no == supplier_po_no,
+            CommunicationMessage.supplier_po_no.in_(counters),
             CommunicationMessage.direction == "OUTGOING",
             CommunicationMessage.portal_read_at.is_(None),
         )

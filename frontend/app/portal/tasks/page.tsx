@@ -12,7 +12,10 @@ const supplierAdapter: PortalTaskAdapter = {
   listTasks: async () => {
     const [tasks, pos] = await Promise.all([api.portalTasks(), api.portalPos().catch(() => null)]);
     const refs = new Map<string, string>();
-    for (const p of pos?.items ?? []) if (p.po_ref) refs.set(p.supplier_po_no, p.po_ref);
+    for (const p of pos?.items ?? []) {
+      if (!p.po_ref) continue;
+      for (const c of p.supplier_po_nos?.length ? p.supplier_po_nos : [p.supplier_po_no]) refs.set(c, p.po_ref);
+    }
     return tasks.map((t) =>
       t.supplier_po_no && refs.has(t.supplier_po_no) ? { ...t, supplier_po_no: refs.get(t.supplier_po_no)! } : t,
     );

@@ -1529,7 +1529,9 @@ export interface PortalSummary {
 }
 
 export interface PortalPo {
-  supplier_po_no: string;
+  supplier_po_no: string; // anchor internal CRM counter — the routing key
+  // Every internal CRM counter this logical vendor PO spans (incl. supplier_po_no).
+  supplier_po_nos?: string[];
   po_ref?: string | null; // PO document reference the supplier knows (PoShortRefTrnNo)
   crm_no?: string | null;
   material_count: number;

@@ -8,6 +8,7 @@ const supplierAdapter: CommHubAdapter = {
     const res = await api.portalPos();
     return res.items.map((p) => ({
       supplier_po_no: p.supplier_po_no,
+      supplier_po_nos: p.supplier_po_nos,
       po_ref: p.po_ref,
       counterparty: "Your buyer",
       crm_no: p.crm_no,

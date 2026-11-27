@@ -32,7 +32,11 @@ export function usePortalPoLabel(): (counter?: string | null) => string {
       .then((res) => {
         if (cancelled) return;
         const map: Record<string, string> = {};
-        for (const p of res.items) if (p.po_ref) map[p.supplier_po_no] = p.po_ref;
+        // A logical PO can span several counters — label every one of them.
+        for (const p of res.items) {
+          if (!p.po_ref) continue;
+          for (const c of p.supplier_po_nos?.length ? p.supplier_po_nos : [p.supplier_po_no]) map[c] = p.po_ref;
+        }
         setRefs(map);
       })
       .catch(() => {

@@ -29,6 +29,8 @@ import { supplierPoNo } from "@/lib/portalPoRefs";
 export interface CommHubPoRow {
   /** Routing / API key (the CRM counter). Never shown when po_ref exists. */
   supplier_po_no: string;
+  /** Every counter of this logical PO (deep links may name any of them). */
+  supplier_po_nos?: string[];
   /** Vendor PO document number the supplier knows — the displayed PO number. */
   po_ref?: string | null;
   /** Counterparty label — supplier name (employee) or buyer/"Your buyer" (supplier). */
@@ -127,6 +129,7 @@ export default function PortalCommHub({
           typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("po") : null;
         const target =
           (wanted && list.find((p) => p.supplier_po_no === wanted)) ||
+          (wanted && list.find((p) => p.supplier_po_nos?.includes(wanted))) ||
           list.find((p) => (p.unread_inbound ?? 0) > 0) ||
           list[0];
         if (target) setActive(target.supplier_po_no);
