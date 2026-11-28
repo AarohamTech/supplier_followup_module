@@ -6,6 +6,7 @@ import { AlertTriangle, ArrowLeft, CalendarCheck, ListChecks, MessageSquare, Sav
 
 import { api } from "@/lib/api";
 import { fmtDate, fmtNum } from "@/lib/format";
+import { useErrorText, useT } from "@/lib/i18n";
 import { SUPPLIER_ESCALATED_LABEL, supplierSignalChip } from "@/lib/messageLabels";
 import type { Asn, PortalPo, PortalPoMaterial, PortalTask } from "@/lib/types";
 import AsnTable from "@/components/portal/AsnTable";
@@ -13,7 +14,11 @@ import AsnDrawer from "@/components/portal/AsnDrawer";
 import PoPdfButton from "@/components/po/PoPdfButton";
 import PoAckButton from "@/components/portal/PoAckButton";
 
+// Values are sent to the server as-is; only the displayed words are translated.
 const STATUS_OPTIONS = ["CONFIRMED", "DELAYED", "PARTIAL", "DISPATCHED", "ON_HOLD", "CANCELLED"];
+const MATERIAL_COLUMNS = [
+  "Material", "CRM", "Ordered", "Inward", "Pending", "UOM", "PO date", "Required by", "Committed date", "Status", "Remark",
+];
 
 function taskStatusBadge(status: string): string {
   const s = (status || "").toUpperCase();
@@ -39,6 +44,8 @@ function isoDay(s?: string | null): string {
 
 export default function PoDetailPage() {
   const router = useRouter();
+  const { t, lang } = useT();
+  const errorText = useErrorText();
   const params = useParams<{ supplier_po_no: string }>();
   const poNo = decodeURIComponent(
     Array.isArray(params.supplier_po_no) ? params.supplier_po_no[0] : params.supplier_po_no,
@@ -120,7 +127,7 @@ export default function PoDetailPage() {
       setEscalated(true);
       setEscalateOpen(false);
       setEscalateReason("");
-      setSavedMsg("Escalation sent — your buyer team has been notified and will prioritise this PO.");
+      setSavedMsg(t("Escalation sent — your buyer team has been notified and will prioritise this PO."));
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -144,7 +151,7 @@ export default function PoDetailPage() {
       });
       const updated = await api.submitPortalCommitments(poNo, items);
       setMaterials(updated);
-      setSavedMsg("Commitment dates saved — your buyer has been notified.");
+      setSavedMsg(t("Commitment dates saved — your buyer has been notified."));
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -155,7 +162,7 @@ export default function PoDetailPage() {
   return (
     <div className="space-y-5">
       <button onClick={() => router.push("/portal/pos")} className="btn-ghost w-fit px-0 hover:bg-transparent">
-        <ArrowLeft size={15} /> Back to purchase orders
+        <ArrowLeft size={15} /> {t("Back to purchase orders")}
       </button>
 
       <section className="card overflow-hidden">
@@ -164,16 +171,20 @@ export default function PoDetailPage() {
             <div className="flex flex-wrap items-center gap-2">
               <h1 className="text-xl font-semibold tracking-tight text-brand-dark">PO {po?.po_ref || poNo}</h1>
               {/* Supplier-friendly status chips — not the internal signal enums. */}
-              {po?.escalated && <span className="badge badge-critical">{SUPPLIER_ESCALATED_LABEL}</span>}
+              {po?.escalated && <span className="badge badge-critical">{t(SUPPLIER_ESCALATED_LABEL)}</span>}
               {!po?.completed && supplierSignalChip(po?.overall_signal) && (
                 <span className={"badge " + supplierSignalChip(po?.overall_signal)!.cls}>
-                  {supplierSignalChip(po?.overall_signal)!.label}
+                  {t(supplierSignalChip(po?.overall_signal)!.label)}
                 </span>
               )}
-              {po?.completed ? <span className="badge badge-track">Completed</span> : <span className="badge badge-due">In progress</span>}
+              {po?.completed ? (
+                <span className="badge badge-track">{t("Completed")}</span>
+              ) : (
+                <span className="badge badge-due">{t("In progress")}</span>
+              )}
             </div>
             <p className="mt-1 max-w-2xl text-sm text-brand-muted">
-              Review material commitments, buyer tasks and shipment progress for this purchase order.
+              {t("Review material commitments, buyer tasks and shipment progress for this purchase order.")}
             </p>
           </div>
           <div className="flex shrink-0 flex-wrap items-center gap-2">
@@ -183,21 +194,21 @@ export default function PoDetailPage() {
                 trnNo={po.po_trn_no}
                 fileLabel={po.po_ref || poNo}
                 endpoint="/api/portal/po-pdf"
-                label="Download PO PDF"
+                label={t("Download PO PDF")}
                 className="btn-outline"
               />
             )}
             {isEscalated ? (
               <span className="inline-flex items-center gap-1.5 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-signal-red">
-                <AlertTriangle size={13} /> Escalated to buyer team
+                <AlertTriangle size={13} /> {t("Escalated to buyer team")}
               </span>
             ) : (
               <button onClick={() => setEscalateOpen((v) => !v)} className="btn-outline border-red-200 text-signal-red hover:bg-red-50">
-                <AlertTriangle size={15} /> Escalate
+                <AlertTriangle size={15} /> {t("Escalate")}
               </button>
             )}
             <button onClick={() => router.push(`/portal/communication?po=${encodeURIComponent(poNo)}`)} className="btn-outline">
-              <MessageSquare size={15} /> Open communication
+              <MessageSquare size={15} /> {t("Open communication")}
             </button>
           </div>
         </div>
@@ -205,25 +216,25 @@ export default function PoDetailPage() {
         {escalateOpen && !isEscalated && (
           <div className="border-t border-brand-border bg-red-50/40 px-5 py-4 dark:bg-red-950/20">
             <div className="mb-1 flex items-center gap-2 text-sm font-semibold text-brand-dark">
-              <AlertTriangle size={14} className="text-signal-red" /> Escalate this purchase order
+              <AlertTriangle size={14} className="text-signal-red" /> {t("Escalate this purchase order")}
             </div>
             <p className="mb-2 text-xs text-brand-muted">
-              This alerts the buyer team immediately and opens a priority task on their side. Add a short reason so they can act fast.
+              {t("This alerts the buyer team immediately and opens a priority task on their side. Add a short reason so they can act fast.")}
             </p>
             <textarea
               value={escalateReason}
               onChange={(e) => setEscalateReason(e.target.value)}
               rows={2}
               maxLength={500}
-              placeholder="e.g. Production line blocked — need dispatch confirmation today"
+              placeholder={t("e.g. Production line blocked — need dispatch confirmation today")}
               className="input w-full resize-none text-sm"
             />
             <div className="mt-2 flex items-center justify-end gap-2">
               <button className="btn-ghost text-xs" onClick={() => setEscalateOpen(false)} disabled={escalating}>
-                Cancel
+                {t("Cancel")}
               </button>
               <button className="btn-primary text-xs" onClick={() => void escalate()} disabled={escalating}>
-                {escalating ? "Sending…" : "Confirm escalation"}
+                {escalating ? t("Sending…") : t("Confirm escalation")}
               </button>
             </div>
           </div>
@@ -233,18 +244,18 @@ export default function PoDetailPage() {
           {[
             ["CRM reference", po?.crm_no || "—"],
             ["Materials", String(materials.length)],
-            ["Commitments", `${committedCount} of ${materials.length}`],
+            ["Commitments", t("{n} of {total}", { n: committedCount, total: materials.length })],
             ["Shipments", String(poAsns.length)],
           ].map(([label, value], index) => (
             <div key={label} className={`px-5 py-3 ${index % 2 ? "border-l border-brand-border" : ""} ${index > 1 ? "border-t border-brand-border sm:border-t-0" : ""} sm:border-l sm:first:border-l-0`}>
-              <dt className="text-[10px] font-semibold uppercase tracking-wider text-brand-muted">{label}</dt>
+              <dt className="text-[10px] font-semibold uppercase tracking-wider text-brand-muted">{t(label)}</dt>
               <dd className="mt-0.5 text-sm font-semibold text-brand-dark">{value}</dd>
             </div>
           ))}
         </dl>
       </section>
 
-      {error && <div role="alert" className="rounded-md border border-red-100 bg-red-50 px-3 py-2 text-xs text-signal-red">{error}</div>}
+      {error && <div role="alert" className="rounded-md border border-red-100 bg-red-50 px-3 py-2 text-xs text-signal-red">{errorText(error)}</div>}
       {savedMsg && <div role="status" className="rounded-md border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">{savedMsg}</div>}
 
       <section className="card overflow-hidden">
@@ -252,25 +263,29 @@ export default function PoDetailPage() {
           <div className="flex items-center gap-2">
             <CalendarCheck size={15} className="text-signal-red" />
             <div>
-              <h2 className="text-sm font-semibold text-brand-dark">Material commitments</h2>
-              <p className="text-xs text-brand-muted">Confirm dispatch dates and current material status.</p>
+              <h2 className="text-sm font-semibold text-brand-dark">{t("Material commitments")}</h2>
+              <p className="text-xs text-brand-muted">{t("Confirm dispatch dates and current material status.")}</p>
             </div>
           </div>
-          <span className="text-xs font-medium text-brand-muted">{committedCount}/{materials.length} recorded</span>
+          <span className="text-xs font-medium text-brand-muted">
+            {t("{n}/{total} recorded", { n: committedCount, total: materials.length })}
+          </span>
         </div>
 
         <div className="overflow-x-auto">
           <table className="min-w-[1120px] w-full text-sm">
             <thead className="bg-subtle">
               <tr>
-                {["Material", "CRM", "Ordered", "Inward", "Pending", "UOM", "PO date", "Required by", "Committed date", "Status", "Remark"].map((h) => (
-                  <th key={h} className="whitespace-nowrap px-3 py-3 text-left table-header">{h}</th>
+                {MATERIAL_COLUMNS.map((h) => (
+                  <th key={h} className="whitespace-nowrap px-3 py-3 text-left table-header">{t(h)}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {loading && <tr><td colSpan={11} className="px-4 py-10 text-center text-brand-muted">Loading…</td></tr>}
-              {!loading && materials.length === 0 && <tr><td colSpan={11} className="px-4 py-10 text-center text-brand-muted">No materials found for this order.</td></tr>}
+              {loading && <tr><td colSpan={11} className="px-4 py-10 text-center text-brand-muted">{t("Loading…")}</td></tr>}
+              {!loading && materials.length === 0 && (
+                <tr><td colSpan={11} className="px-4 py-10 text-center text-brand-muted">{t("No materials found for this order.")}</td></tr>
+              )}
               {materials.map((m) => {
                 const d = drafts[m.procurement_record_id] || { date: "", status: "CONFIRMED", remark: "" };
                 return (
@@ -282,18 +297,18 @@ export default function PoDetailPage() {
                     <td className="px-3 py-3 tabular-nums">{fmtNum(m.inward_qty)}</td>
                     <td className="px-3 py-3 tabular-nums">{fmtNum(m.pending_qty)}</td>
                     <td className="px-3 py-3 text-xs text-brand-muted">{m.uom || "—"}</td>
-                    <td className="whitespace-nowrap px-3 py-3 text-xs">{fmtDate(m.po_date)}</td>
-                    <td className="whitespace-nowrap px-3 py-3 text-xs">{fmtDate(m.shipment_date)}</td>
+                    <td className="whitespace-nowrap px-3 py-3 text-xs">{fmtDate(m.po_date, lang)}</td>
+                    <td className="whitespace-nowrap px-3 py-3 text-xs">{fmtDate(m.shipment_date, lang)}</td>
                     <td className="px-3 py-3">
                       <input type="date" className="input min-w-[9.5rem] py-1.5" value={d.date} onChange={(e) => setDraft(m.procurement_record_id, { date: e.target.value })} />
                     </td>
                     <td className="px-3 py-3">
                       <select className="input min-w-[8.5rem] py-1.5" value={d.status} onChange={(e) => setDraft(m.procurement_record_id, { status: e.target.value })}>
-                        {STATUS_OPTIONS.map((s) => <option key={s} value={s}>{s.replace(/_/g, " ")}</option>)}
+                        {STATUS_OPTIONS.map((s) => <option key={s} value={s}>{t(s.replace(/_/g, " "))}</option>)}
                       </select>
                     </td>
                     <td className="px-3 py-3">
-                      <input type="text" className="input min-w-[11rem] py-1.5" placeholder="Optional note" value={d.remark} onChange={(e) => setDraft(m.procurement_record_id, { remark: e.target.value })} />
+                      <input type="text" className="input min-w-[11rem] py-1.5" placeholder={t("Optional note")} value={d.remark} onChange={(e) => setDraft(m.procurement_record_id, { remark: e.target.value })} />
                     </td>
                   </tr>
                 );
@@ -304,10 +319,10 @@ export default function PoDetailPage() {
 
         <div className="flex flex-col gap-3 border-t border-brand-border bg-subtle/70 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
           <p className="max-w-3xl text-xs leading-relaxed text-brand-muted">
-            Add a dispatch date to stop automated follow-ups for that material and notify your buyer.
+            {t("Add a dispatch date to stop automated follow-ups for that material and notify your buyer.")}
           </p>
           <button className="btn-primary shrink-0" disabled={saving || loading || materials.length === 0} onClick={save}>
-            <Save size={15} /> {saving ? "Saving…" : "Save commitments"}
+            <Save size={15} /> {saving ? t("Saving…") : t("Save commitments")}
           </button>
         </div>
       </section>
@@ -317,32 +332,32 @@ export default function PoDetailPage() {
           <div className="flex items-center gap-2">
             <ListChecks size={15} className="text-signal-red" />
             <div>
-              <h2 className="text-sm font-semibold text-brand-dark">Buyer tasks</h2>
-              <p className="text-xs text-brand-muted">Read-only actions tracked by the buyer's team.</p>
+              <h2 className="text-sm font-semibold text-brand-dark">{t("Buyer tasks")}</h2>
+              <p className="text-xs text-brand-muted">{t("Read-only actions tracked by the buyer's team.")}</p>
             </div>
           </div>
           <span className="badge bg-subtle text-brand-dark">{tasks.length}</span>
         </div>
 
         {tasks.length === 0 ? (
-          <div className="px-4 py-10 text-center text-sm text-brand-muted">No buyer tasks for this purchase order.</div>
+          <div className="px-4 py-10 text-center text-sm text-brand-muted">{t("No buyer tasks for this purchase order.")}</div>
         ) : (
           <div className="divide-y divide-brand-border">
-            {tasks.map((t) => (
-              <article key={t.id} className="flex flex-col gap-2 px-4 py-3 hover:bg-subtle/60 sm:flex-row sm:items-start sm:justify-between">
+            {tasks.map((task) => (
+              <article key={task.id} className="flex flex-col gap-2 px-4 py-3 hover:bg-subtle/60 sm:flex-row sm:items-start sm:justify-between">
                 <div className="min-w-0 flex-1">
-                  <h3 className="text-sm font-medium leading-snug text-brand-dark">{t.title}</h3>
-                  {t.description && <p className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-brand-muted">{t.description}</p>}
-                  {(t.material_name || t.due_date) && (
+                  <h3 className="text-sm font-medium leading-snug text-brand-dark">{task.title}</h3>
+                  {task.description && <p className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-brand-muted">{task.description}</p>}
+                  {(task.material_name || task.due_date) && (
                     <div className="mt-1.5 flex flex-wrap items-center gap-x-2 text-[11px] text-brand-muted">
-                      {t.material_name && <span>{t.material_name}</span>}
-                      {t.due_date && <span>Due {fmtDate(t.due_date)}</span>}
+                      {task.material_name && <span>{task.material_name}</span>}
+                      {task.due_date && <span>{t("Due {date}", { date: fmtDate(task.due_date, lang) })}</span>}
                     </div>
                   )}
                 </div>
                 <div className="flex shrink-0 items-center gap-1.5">
-                  <span className={"badge " + taskPriorityBadge(t.priority)}>{t.priority}</span>
-                  <span className={"badge " + taskStatusBadge(t.status)}>{t.status.replace(/_/g, " ")}</span>
+                  <span className={"badge " + taskPriorityBadge(task.priority)}>{t(task.priority)}</span>
+                  <span className={"badge " + taskStatusBadge(task.status)}>{t(task.status.replace(/_/g, " "))}</span>
                 </div>
               </article>
             ))}
@@ -355,11 +370,13 @@ export default function PoDetailPage() {
           <div className="flex items-center gap-2">
             <Truck size={15} className="text-signal-red" />
             <div>
-              <h2 className="text-sm font-semibold text-brand-dark">Shipments</h2>
-              <p className="text-xs text-brand-muted">Advance Shipping Notices linked to this order.</p>
+              <h2 className="text-sm font-semibold text-brand-dark">{t("Shipments")}</h2>
+              <p className="text-xs text-brand-muted">{t("Advance Shipping Notices linked to this order.")}</p>
             </div>
           </div>
-          <span className="text-xs font-medium text-brand-muted">{poAsns.length} ASN{poAsns.length === 1 ? "" : "s"}</span>
+          <span className="text-xs font-medium text-brand-muted">
+            {t(poAsns.length === 1 ? "{n} ASN" : "{n} ASNs", { n: poAsns.length })}
+          </span>
         </div>
         <AsnTable items={poAsns} loading={loading} onOpen={setOpenAsn} poLabel={() => po?.po_ref || poNo} emptyLabel="No ASNs for this PO yet." />
       </section>

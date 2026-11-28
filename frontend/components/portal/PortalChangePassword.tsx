@@ -5,6 +5,7 @@ import { useState } from "react";
 import { Logo, ZanvarMark } from "@/components/brand/Logo";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { useErrorText, useT } from "@/lib/i18n";
 
 /**
  * Forced first-login (or post-reset) password change for supplier accounts.
@@ -13,6 +14,8 @@ import { useAuth } from "@/lib/auth";
  */
 export default function PortalChangePassword() {
   const { user, refresh, logout } = useAuth();
+  const { t } = useT();
+  const errorText = useErrorText();
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -23,11 +26,11 @@ export default function PortalChangePassword() {
     e.preventDefault();
     setError(null);
     if (next.length < 8) {
-      setError("New password must be at least 8 characters.");
+      setError(t("New password must be at least 8 characters."));
       return;
     }
     if (next !== confirm) {
-      setError("New password and confirmation do not match.");
+      setError(t("New password and confirmation do not match."));
       return;
     }
     setBusy(true);
@@ -35,7 +38,7 @@ export default function PortalChangePassword() {
       await api.changePassword(current, next);
       await refresh();
     } catch (err) {
-      setError((err as Error).message || "Could not change password.");
+      setError((err as Error).message || t("Could not change password."));
       setBusy(false);
     }
   };
@@ -50,16 +53,17 @@ export default function PortalChangePassword() {
               <Logo size={40} />
             </span>
           </div>
-          <h1 className="text-lg font-bold text-signal-red">Set a new password</h1>
+          <h1 className="text-lg font-bold text-signal-red">{t("Set a new password")}</h1>
           <p className="mt-1 text-xs text-brand-muted">
-            Welcome{user?.supplier_name ? `, ${user.supplier_name}` : ""}. For your security,
-            choose a new password before continuing.
+            {user?.supplier_name
+              ? t("Welcome, {name}. For your security, choose a new password before continuing.", { name: user.supplier_name })
+              : t("Welcome. For your security, choose a new password before continuing.")}
           </p>
         </div>
 
         <form onSubmit={onSubmit} className="space-y-4">
           <div>
-            <label className="mb-1 block text-xs font-medium text-brand-dark">Temporary password</label>
+            <label className="mb-1 block text-xs font-medium text-brand-dark">{t("Temporary password")}</label>
             <input
               type="password"
               required
@@ -67,41 +71,41 @@ export default function PortalChangePassword() {
               value={current}
               onChange={(e) => setCurrent(e.target.value)}
               className="input"
-              placeholder="The password we emailed you"
+              placeholder={t("The password we emailed you")}
             />
           </div>
           <div>
-            <label className="mb-1 block text-xs font-medium text-brand-dark">New password</label>
+            <label className="mb-1 block text-xs font-medium text-brand-dark">{t("New password")}</label>
             <input
               type="password"
               required
               value={next}
               onChange={(e) => setNext(e.target.value)}
               className="input"
-              placeholder="At least 8 characters"
+              placeholder={t("At least 8 characters")}
             />
           </div>
           <div>
-            <label className="mb-1 block text-xs font-medium text-brand-dark">Confirm new password</label>
+            <label className="mb-1 block text-xs font-medium text-brand-dark">{t("Confirm new password")}</label>
             <input
               type="password"
               required
               value={confirm}
               onChange={(e) => setConfirm(e.target.value)}
               className="input"
-              placeholder="Re-enter new password"
+              placeholder={t("Re-enter new password")}
             />
           </div>
 
           {error && (
-            <div className="rounded-md bg-red-50 px-3 py-2 text-xs text-signal-red">{error}</div>
+            <div className="rounded-md bg-red-50 px-3 py-2 text-xs text-signal-red">{errorText(error)}</div>
           )}
 
           <button type="submit" disabled={busy} className="btn-primary w-full">
-            {busy ? "Saving..." : "Set password & continue"}
+            {busy ? t("Saving...") : t("Set password & continue")}
           </button>
           <button type="button" onClick={logout} className="btn-ghost w-full">
-            Sign out
+            {t("Sign out")}
           </button>
         </form>
       </div>

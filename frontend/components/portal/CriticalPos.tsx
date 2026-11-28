@@ -4,10 +4,12 @@ import { useEffect, useState } from "react";
 import { AlertTriangle, ShieldAlert } from "lucide-react";
 
 import { fmtDate } from "@/lib/format";
+import { useT } from "@/lib/i18n";
 import type { PortalPo } from "@/lib/types";
 
 /** Live HH/MM/SS overdue counter for one black PO. */
 function Countdown({ due, now }: { due: number; now: number }) {
+  const { t } = useT();
   const diff = due - now;
   const overdue = diff < 0;
   const abs = Math.abs(diff);
@@ -20,18 +22,19 @@ function Countdown({ due, now }: { due: number; now: number }) {
     return (
       <span className="inline-flex items-center gap-1.5 rounded-md bg-signal-red px-2.5 py-1 font-mono text-sm font-bold text-white animate-pulse-ring">
         <AlertTriangle size={13} />
-        Overdue {d}d {h}h {m}m {s}s
+        {t("Overdue {d}d {h}h {m}m {s}s", { d, h, m, s })}
       </span>
     );
   }
   return (
     <span className="inline-flex items-center gap-1.5 rounded-md bg-amber-100 px-2.5 py-1 font-mono text-sm font-bold text-amber-700">
-      Due in {d}d {h}h {m}m
+      {t("Due in {d}d {h}h {m}m", { d, h, m })}
     </span>
   );
 }
 
 export default function CriticalPos({ pos }: { pos: PortalPo[] }) {
+  const { t, lang } = useT();
   const [now, setNow] = useState<number>(() => Date.now());
 
   // One ticking clock drives every row's countdown.
@@ -58,8 +61,8 @@ export default function CriticalPos({ pos }: { pos: PortalPo[] }) {
             <ShieldAlert size={16} />
           </div>
           <div>
-            <div className="font-semibold text-brand-dark">No critical (Black) POs</div>
-            <div className="text-xs text-brand-muted">You have no orders flagged Black right now.</div>
+            <div className="font-semibold text-brand-dark">{t("No critical (Black) POs")}</div>
+            <div className="text-xs text-brand-muted">{t("You have no orders flagged Black right now.")}</div>
           </div>
         </div>
       </div>
@@ -71,10 +74,10 @@ export default function CriticalPos({ pos }: { pos: PortalPo[] }) {
       <div className="flex items-center justify-between border-b border-brand-border bg-red-50/60 px-4 py-3">
         <div className="flex items-center gap-2">
           <ShieldAlert size={16} className="text-signal-red" />
-          <span className="font-semibold text-brand-dark">Critical — Black POs</span>
+          <span className="font-semibold text-brand-dark">{t("Critical — Black POs")}</span>
           <span className="badge badge-critical">{black.length}</span>
         </div>
-        <span className="text-[11px] uppercase tracking-wider text-brand-muted">Action required</span>
+        <span className="text-[11px] uppercase tracking-wider text-brand-muted">{t("Action required")}</span>
       </div>
 
       <ul className="divide-y divide-brand-border">
@@ -85,14 +88,14 @@ export default function CriticalPos({ pos }: { pos: PortalPo[] }) {
               <div className="min-w-0">
                 <div className="font-medium text-brand-dark">{p.po_ref || p.supplier_po_no}</div>
                 <div className="text-xs text-brand-muted">
-                  {p.material_count} material{p.material_count === 1 ? "" : "s"}
-                  {p.crm_no ? ` · CRM ${p.crm_no}` : ""} · Due {fmtDate(p.earliest_shipment_date)}
+                  {t(p.material_count === 1 ? "{n} material" : "{n} materials", { n: p.material_count })}
+                  {p.crm_no ? ` · CRM ${p.crm_no}` : ""} · {t("Due {date}", { date: fmtDate(p.earliest_shipment_date, lang) })}
                 </div>
               </div>
               {dueMs !== null ? (
                 <Countdown due={dueMs} now={now} />
               ) : (
-                <span className="badge badge-critical">No due date</span>
+                <span className="badge badge-critical">{t("No due date")}</span>
               )}
             </li>
           );

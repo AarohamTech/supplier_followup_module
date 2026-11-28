@@ -6,6 +6,7 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
 import { fmtDate } from "@/lib/format";
+import { useT } from "@/lib/i18n";
 import type { AsnEvent } from "@/lib/types";
 
 // Fix the default marker icon paths (broken under bundlers like Next/webpack).
@@ -22,6 +23,7 @@ const icon = L.icon({
 type Point = { lat: number; lng: number; label: string; sub: string };
 
 export default function ShipmentMapInner({ events }: { events: AsnEvent[] }) {
+  const { t, lang } = useT();
   const points = useMemo<Point[]>(() => {
     return [...events]
       .filter((e) => e.lat != null && e.lng != null)
@@ -29,15 +31,15 @@ export default function ShipmentMapInner({ events }: { events: AsnEvent[] }) {
       .map((e) => ({
         lat: Number(e.lat),
         lng: Number(e.lng),
-        label: e.location || e.status_label || e.stage,
-        sub: `${e.status_label || e.stage} · ${fmtDate(e.occurred_at)}`,
+        label: e.location || t(e.status_label || e.stage),
+        sub: `${t(e.status_label || e.stage)} · ${fmtDate(e.occurred_at, lang)}`,
       }));
-  }, [events]);
+  }, [events, lang, t]);
 
   if (points.length === 0) {
     return (
       <div className="grid h-64 place-items-center rounded-lg border border-brand-border bg-subtle text-xs text-brand-muted">
-        No mappable checkpoints yet.
+        {t("No mappable checkpoints yet.")}
       </div>
     );
   }
@@ -61,7 +63,7 @@ export default function ShipmentMapInner({ events }: { events: AsnEvent[] }) {
               <div className="text-xs">
                 <div className="font-semibold">{p.label}</div>
                 <div>{p.sub}</div>
-                {i === points.length - 1 && <div className="mt-1 font-medium text-rose-600">Current location</div>}
+                {i === points.length - 1 && <div className="mt-1 font-medium text-rose-600">{t("Current location")}</div>}
               </div>
             </Popup>
           </Marker>

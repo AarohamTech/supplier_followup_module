@@ -23,7 +23,7 @@ export default function AsnTable({
   /** Maps the PO counter to the number shown (supplier portal: the vendor ref). */
   poLabel?: (supplierPoNo: string) => string;
 }) {
-  const { t } = useT();
+  const { t, lang } = useT();
   const cols = showSupplier
     ? ["ASN ID", "Supplier", "PO Reference", "Carrier / Tracking", "Progress", "Status"]
     : ["ASN ID", "PO Reference", "Carrier / Tracking", "Progress", "Status"];
@@ -55,7 +55,7 @@ export default function AsnTable({
               >
                 <td className="px-4 py-3">
                   <div className="font-medium text-brand-dark">{a.asn_no}</div>
-                  <div className="text-[11px] text-brand-muted">{t("Created {date}", { date: fmtDate(a.created_at) })}</div>
+                  <div className="text-[11px] text-brand-muted">{t("Created {date}", { date: fmtDate(a.created_at, lang) })}</div>
                 </td>
                 {showSupplier && <td className="px-4 py-3 text-xs">{a.supplier_name || "—"}</td>}
                 <td className="px-4 py-3">

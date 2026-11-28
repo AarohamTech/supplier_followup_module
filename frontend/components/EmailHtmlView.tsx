@@ -2,6 +2,8 @@
 
 import { useCallback, useMemo, useRef, useState } from "react";
 
+import { useT } from "@/lib/i18n";
+
 /**
  * Shows an email's HTML the way it looked in the mailbox, isolated in a
  * sandboxed iframe: no scripts run (no `allow-scripts`), and the mail's CSS
@@ -9,6 +11,7 @@ import { useCallback, useMemo, useRef, useState } from "react";
  * content height; links open in a new tab.
  */
 export function EmailHtmlView({ html, maxHeight = 720 }: { html: string; maxHeight?: number }) {
+  const { t } = useT();
   const ref = useRef<HTMLIFrameElement>(null);
   const [height, setHeight] = useState(160);
   const [expanded, setExpanded] = useState(false);
@@ -35,7 +38,7 @@ export function EmailHtmlView({ html, maxHeight = 720 }: { html: string; maxHeig
     <div className="overflow-hidden rounded-lg border border-brand-border bg-white">
       <iframe
         ref={ref}
-        title="Email"
+        title={t("Email")}
         sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
         srcDoc={srcDoc}
         onLoad={measure}
@@ -48,7 +51,7 @@ export function EmailHtmlView({ html, maxHeight = 720 }: { html: string; maxHeig
           className="w-full border-t border-brand-border bg-subtle py-1 text-[11px] font-medium text-brand-muted hover:text-brand-dark"
           onClick={() => setExpanded((v) => !v)}
         >
-          {expanded ? "Show less" : "Show full email"}
+          {expanded ? t("Show less") : t("Show full email")}
         </button>
       )}
     </div>

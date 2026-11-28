@@ -5,19 +5,29 @@ import { Bot, Loader2, SendHorizonal, Sparkles, User, Wrench } from "lucide-reac
 
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { useErrorText, useT } from "@/lib/i18n";
 import type { ChatMessage, AiToolUse } from "@/lib/types";
 import AiThinkingIndicator from "@/components/AiThinkingIndicator";
 
 type UiMessage = ChatMessage & { tools?: AiToolUse[] };
 
+// English source strings; shown (and sent) in the chosen language.
 const SUGGESTIONS = [
   "Which of my POs are most at risk right now?",
   "What's the status of my latest purchase order?",
   "Show the message history for my most delayed PO.",
 ];
+const THINKING_STEPS = [
+  "Reading your question…",
+  "Searching your POs & shipments…",
+  "Reviewing your order history & messages…",
+  "Composing the answer…",
+];
 
 export default function PortalAssistantPage() {
   const { user } = useAuth();
+  const { t, lang } = useT();
+  const errorText = useErrorText();
   const [messages, setMessages] = useState<UiMessage[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
@@ -42,7 +52,10 @@ export default function PortalAssistantPage() {
     setInput("");
     setSending(true);
     try {
-      const res = await api.portalAssistantChat(next.map((m) => ({ role: m.role, content: m.content })));
+      const res = await api.portalAssistantChat(
+        next.map((m) => ({ role: m.role, content: m.content })),
+        lang,
+      );
       setMessages((prev) => [...prev, { role: "assistant", content: res.reply, tools: res.tools_used }]);
     } catch (e) {
       setError((e as Error).message);
@@ -68,12 +81,14 @@ export default function PortalAssistantPage() {
           <div>
             <h1 className="page-title">Harmony Intelligent</h1>
             <p className="page-subtitle">
-              Ask about {user?.supplier_name || "your"} purchase orders and shipments — it reads your live data.
+              {user?.supplier_name
+                ? t("Ask about {name} purchase orders and shipments — it reads your live data.", { name: user.supplier_name })
+                : t("Ask about your purchase orders and shipments — it reads your live data.")}
             </p>
           </div>
         </div>
         {enabled === false && (
-          <span className="rounded-md bg-amber-50 px-2 py-1 text-xs text-amber-700">Assistant is currently unavailable</span>
+          <span className="rounded-md bg-amber-50 px-2 py-1 text-xs text-amber-700">{t("Assistant is currently unavailable")}</span>
         )}
       </div>
 
@@ -81,15 +96,15 @@ export default function PortalAssistantPage() {
         {messages.length === 0 ? (
           <div className="m-auto max-w-md text-center">
             <Bot className="mx-auto mb-3 h-8 w-8 text-brand-muted" />
-            <p className="mb-4 text-sm text-brand-muted">Start a conversation. Try:</p>
+            <p className="mb-4 text-sm text-brand-muted">{t("Start a conversation. Try:")}</p>
             <div className="space-y-2">
               {SUGGESTIONS.map((s) => (
                 <button
                   key={s}
-                  onClick={() => void send(s)}
+                  onClick={() => void send(t(s))}
                   className="block w-full rounded-lg border border-brand-border px-3 py-2 text-left text-sm text-brand-dark hover:bg-subtle"
                 >
-                  {s}
+                  {t(s)}
                 </button>
               ))}
             </div>
@@ -117,13 +132,13 @@ export default function PortalAssistantPage() {
                   </div>
                   {m.tools && m.tools.length > 0 && (
                     <div className="mt-1.5 flex flex-wrap gap-1">
-                      {m.tools.map((t, ti) => (
+                      {m.tools.map((tool, ti) => (
                         <span
                           key={ti}
                           className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2 py-0.5 text-[11px] text-signal-red"
-                          title={JSON.stringify(t.args)}
+                          title={JSON.stringify(tool.args)}
                         >
-                          <Wrench size={10} /> {t.name}
+                          <Wrench size={10} /> {tool.name}
                         </span>
                       ))}
                     </div>
@@ -132,21 +147,14 @@ export default function PortalAssistantPage() {
               </div>
             ))}
             {sending && (
-              <AiThinkingIndicator
-                steps={[
-                  "Reading your question…",
-                  "Searching your POs & shipments…",
-                  "Reviewing your order history & messages…",
-                  "Composing the answer…",
-                ]}
-              />
+              <AiThinkingIndicator steps={THINKING_STEPS.map((s) => t(s))} />
             )}
             <div ref={endRef} />
           </div>
         )}
       </div>
 
-      {error && <div className="mt-2 rounded-md bg-red-50 px-3 py-2 text-xs text-signal-red">{error}</div>}
+      {error && <div className="mt-2 rounded-md bg-red-50 px-3 py-2 text-xs text-signal-red">{errorText(error)}</div>}
 
       <div className="mt-3 flex items-end gap-2 rounded-xl border border-brand-border bg-card p-2">
         <textarea
@@ -154,7 +162,7 @@ export default function PortalAssistantPage() {
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={onKeyDown}
           rows={1}
-          placeholder="Ask about your orders…  (Enter to send, Shift+Enter for a new line)"
+          placeholder={t("Ask about your orders…  (Enter to send, Shift+Enter for a new line)")}
           className="max-h-32 min-h-[40px] flex-1 resize-none bg-transparent px-2 py-2 text-sm outline-none"
         />
         <button
@@ -163,7 +171,7 @@ export default function PortalAssistantPage() {
           className="inline-flex h-9 items-center gap-1.5 rounded-md bg-signal-red px-3 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
         >
           {sending ? <Loader2 size={15} className="animate-spin" /> : <SendHorizonal size={15} />}
-          Send
+          {t("Send")}
         </button>
       </div>
     </div>

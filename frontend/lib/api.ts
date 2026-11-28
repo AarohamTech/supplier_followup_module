@@ -1175,10 +1175,10 @@ export const api = {
 
   // Supplier assistant (Harmony Intelligent, scoped to this supplier's data).
   portalAssistantHealth: () => http<{ enabled: boolean }>("/api/portal/assistant/health"),
-  portalAssistantChat: (messages: ChatMessage[]) =>
+  portalAssistantChat: (messages: ChatMessage[], language?: "en" | "mr") =>
     http<AiChatResponse>("/api/portal/assistant/chat", {
       method: "POST",
-      body: JSON.stringify({ messages }),
+      body: JSON.stringify({ messages, language }),
     }),
 
   // ─── Employee portal (employee accounts only) ─────────────────────────

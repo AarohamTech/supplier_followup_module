@@ -6,7 +6,7 @@ import { AlertTriangle, RefreshCw, Send, X } from "lucide-react";
 import { api } from "@/lib/api";
 import { ADVANCE_STAGES, stageMeta } from "@/lib/asn";
 import { fmtDate } from "@/lib/format";
-import { useT } from "@/lib/i18n";
+import { useErrorText, useT } from "@/lib/i18n";
 import type { Asn } from "@/lib/types";
 import ShipmentMap from "./ShipmentMap";
 
@@ -29,7 +29,8 @@ export default function AsnDrawer({
   // works, but no add-event / submit actions.
   mode?: "staff" | "portal" | "eportal";
 }) {
-  const { t } = useT();
+  const { t, lang } = useT();
+  const errorText = useErrorText();
   const m = mode ?? (staff ? "staff" : "portal");
   const readOnly = m === "eportal";
   const addEvent = m === "staff" ? api.addAsnEvent : api.addPortalAsnEvent;
@@ -135,7 +136,7 @@ export default function AsnDrawer({
         </div>
 
         <div className="flex-1 space-y-5 overflow-y-auto p-5">
-          {error && <div className="rounded-md bg-red-50 px-3 py-2 text-xs text-signal-red">{error}</div>}
+          {error && <div className="rounded-md bg-red-50 px-3 py-2 text-xs text-signal-red">{errorText(error)}</div>}
 
           {asn.alert && (
             <div className="flex items-start gap-2 rounded-md bg-red-50 px-3 py-2 text-xs text-signal-red">
@@ -161,8 +162,8 @@ export default function AsnDrawer({
             <Detail label={t("Tracking")} value={asn.tracking_no} />
             <Detail label={t("Mode")} value={asn.transport_mode} />
             <Detail label={t("Route")} value={asn.origin || asn.destination ? `${asn.origin || "—"} → ${asn.destination || "—"}` : null} />
-            <Detail label={t("Dispatch")} value={fmtDate(asn.dispatch_date)} />
-            <Detail label="ETA" value={fmtDate(asn.eta)} />
+            <Detail label={t("Dispatch")} value={fmtDate(asn.dispatch_date, lang)} />
+            <Detail label="ETA" value={fmtDate(asn.eta, lang)} />
           </dl>
 
           {/* Items */}
@@ -210,7 +211,7 @@ export default function AsnDrawer({
                     <span className="absolute -left-1.5 mt-1 h-3 w-3 rounded-full bg-signal-red" />
                     <div className="text-sm font-medium text-brand-dark">{t(ev.status_label || ev.stage)}</div>
                     <div className="text-xs text-brand-muted">
-                      {fmtDate(ev.occurred_at)}{ev.location ? ` · ${ev.location}` : ""}
+                      {fmtDate(ev.occurred_at, lang)}{ev.location ? ` · ${ev.location}` : ""}
                     </div>
                     {ev.note && <div className="text-xs text-brand-dark/80">{ev.note}</div>}
                   </li>

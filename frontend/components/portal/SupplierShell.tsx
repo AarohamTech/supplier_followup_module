@@ -8,6 +8,7 @@ import { useAuth } from "@/lib/auth";
 import SupplierSidebar from "@/components/portal/SupplierSidebar";
 import NotificationBell from "@/components/NotificationBell";
 import ThemeToggle from "@/components/layout/ThemeToggle";
+import { LanguageToggle, useT } from "@/lib/i18n";
 
 /**
  * Chrome for supplier portal accounts: a branded topbar + the supplier sidebar.
@@ -26,7 +27,8 @@ export default function SupplierShell({
 }) {
   const { user, logout } = useAuth();
   const pathname = usePathname();
-  const name = user?.supplier_name || user?.full_name || user?.email || "Supplier";
+  const { t } = useT();
+  const name = user?.supplier_name || user?.full_name || user?.email || t("Supplier");
   const initial = name.charAt(0).toUpperCase();
 
   return (
@@ -37,7 +39,7 @@ export default function SupplierShell({
             type="button"
             onClick={onMenuClick}
             className="grid h-9 w-9 place-items-center rounded-md text-brand-muted hover:bg-subtle hover:text-brand-dark md:hidden"
-            aria-label="Open navigation"
+            aria-label={t("Open navigation")}
           >
             <Menu size={18} />
           </button>
@@ -47,27 +49,32 @@ export default function SupplierShell({
               <Logo size={30} />
             </span>
             <div className="flex min-w-0 flex-col">
-              <span className="truncate text-sm font-semibold leading-tight text-brand-dark sm:text-[15px]">Supplier Portal</span>
+              <span className="truncate text-sm font-semibold leading-tight text-brand-dark sm:text-[15px]">
+                {t("Supplier Portal")}
+              </span>
               <span className="hidden text-xs text-brand-muted leading-tight sm:block">
-                Purchase orders, communication and shipments
+                {t("Purchase orders, communication and shipments")}
               </span>
             </div>
           </div>
           <div className="flex-1" />
           <div className="flex items-center gap-1 sm:gap-2.5">
+            {/* EN | मराठी — on phones it lives in the menu drawer (SupplierSidebar). */}
+            <LanguageToggle className="hidden sm:inline-flex" />
             <ThemeToggle />
             <NotificationBell />
             <div className="hidden h-6 w-px bg-brand-border sm:block" />
             <div className="hidden text-right sm:block">
               <div className="text-sm font-medium">{name}</div>
-              <div className="text-[10px] uppercase text-brand-muted tracking-wider">Supplier</div>
+              <div className="text-[10px] uppercase text-brand-muted tracking-wider">{t("Supplier")}</div>
             </div>
             <div className="flex h-8 w-8 items-center justify-center rounded-full bg-red-50 text-xs font-semibold text-signal-red ring-1 ring-inset ring-red-100">
               {initial}
             </div>
             <button
               onClick={logout}
-              title="Sign out"
+              title={t("Sign out")}
+              aria-label={t("Sign out")}
               className="grid h-9 w-9 place-items-center rounded-md text-brand-muted hover:bg-subtle hover:text-signal-red"
             >
               <LogOut size={18} />

@@ -5,24 +5,28 @@ import { useRouter } from "next/navigation";
 import { Bell, CheckCheck } from "lucide-react";
 
 import { api } from "@/lib/api";
+import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import type { AppNotification } from "@/lib/types";
 
-function timeAgo(iso: string): string {
+type TFn = ReturnType<typeof useT>["t"];
+
+function timeAgo(iso: string, t: TFn): string {
   const d = new Date(iso);
   const secs = Math.max(0, Math.floor((Date.now() - d.getTime()) / 1000));
-  if (secs < 60) return "just now";
+  if (secs < 60) return t("just now");
   const mins = Math.floor(secs / 60);
-  if (mins < 60) return `${mins}m ago`;
+  if (mins < 60) return t("{n}m ago", { n: mins });
   const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
+  if (hrs < 24) return t("{n}h ago", { n: hrs });
   const days = Math.floor(hrs / 24);
-  return `${days}d ago`;
+  return t("{n}d ago", { n: days });
 }
 
 /** Bell + dropdown notification center. Works for both staff and supplier shells. */
 export default function NotificationBell() {
   const router = useRouter();
+  const { t } = useT();
   const [open, setOpen] = useState(false);
   const [unread, setUnread] = useState(0);
   const [items, setItems] = useState<AppNotification[]>([]);
@@ -102,8 +106,12 @@ export default function NotificationBell() {
         type="button"
         onClick={openPanel}
         className="relative p-2 rounded-md text-brand-muted hover:bg-red-50 hover:text-signal-red"
-        title={unread > 0 ? `${unread} unread notification${unread === 1 ? "" : "s"}` : "Notifications"}
-        aria-label="Notifications"
+        title={
+          unread > 0
+            ? t(unread === 1 ? "{n} unread notification" : "{n} unread notifications", { n: unread })
+            : t("Notifications")
+        }
+        aria-label={t("Notifications")}
       >
         <Bell size={18} />
         {unread > 0 && (
@@ -116,17 +124,17 @@ export default function NotificationBell() {
       {open && (
         <div className="popover-panel absolute right-0 z-50 mt-2 w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-lg border border-brand-border bg-card shadow-xl">
           <div className="flex items-center justify-between border-b border-brand-border px-4 py-2.5">
-            <span className="text-sm font-semibold text-brand-dark">Notifications</span>
+            <span className="text-sm font-semibold text-brand-dark">{t("Notifications")}</span>
             {items.some((x) => !x.is_read) && (
               <button onClick={markAll} className="inline-flex items-center gap-1 text-xs font-medium text-signal-red hover:underline">
-                <CheckCheck size={13} /> Mark all read
+                <CheckCheck size={13} /> {t("Mark all read")}
               </button>
             )}
           </div>
           <div className="max-h-[60vh] overflow-y-auto">
-            {loading && <div className="px-4 py-8 text-center text-sm text-brand-muted">Loading…</div>}
+            {loading && <div className="px-4 py-8 text-center text-sm text-brand-muted">{t("Loading…")}</div>}
             {!loading && items.length === 0 && (
-              <div className="px-4 py-10 text-center text-sm text-brand-muted">You're all caught up.</div>
+              <div className="px-4 py-10 text-center text-sm text-brand-muted">{t("You're all caught up.")}</div>
             )}
             {items.map((n) => (
               <button
@@ -144,7 +152,7 @@ export default function NotificationBell() {
                       {n.title}
                     </div>
                     {n.body && <div className="truncate text-xs text-brand-muted">{n.body}</div>}
-                    <div className="mt-0.5 text-[10px] uppercase tracking-wide text-brand-muted">{timeAgo(n.created_at)}</div>
+                    <div className="mt-0.5 text-[10px] uppercase tracking-wide text-brand-muted">{timeAgo(n.created_at, t)}</div>
                   </div>
                 </div>
               </button>

@@ -41,7 +41,8 @@ import {
   type TaskAttachmentAdapter,
 } from "@/components/tasks/board";
 import { useAuth } from "@/lib/auth";
-import { LanguageToggle, useT } from "@/lib/i18n";
+import { fmtDate as fmtDateIn, fmtDateTime as fmtDateTimeIn } from "@/lib/format";
+import { LanguageToggle, type Lang, useErrorText, useT } from "@/lib/i18n";
 import type {
   CommunicationTask,
   CommunicationTaskCreate,
@@ -96,8 +97,10 @@ function signalDot(signal?: string | null) {
   }
 }
 
-function fmtDate(value?: string | null) {
+// English keeps the browser's own date style; Marathi uses Marathi month names.
+function fmtDate(value: string | null | undefined, lang: Lang) {
   if (!value) return "—";
+  if (lang === "mr") return fmtDateIn(value, "mr");
   try {
     return new Date(value).toLocaleDateString();
   } catch {
@@ -105,8 +108,9 @@ function fmtDate(value?: string | null) {
   }
 }
 
-function fmtDateTime(value?: string | null) {
+function fmtDateTime(value: string | null | undefined, lang: Lang) {
   if (!value) return "";
+  if (lang === "mr") return fmtDateTimeIn(value, "mr");
   try {
     return new Date(value).toLocaleString();
   } catch {
@@ -192,7 +196,8 @@ export default function PortalTaskWorkspace({
   /** Show the "Completed" KPI (false for non-admin audiences: completed tasks are admin-only). */
   showCompleted?: boolean;
 }) {
-  const { t } = useT();
+  const { t, lang } = useT();
+  const errorText = useErrorText();
   const searchParams = useSearchParams();
   const taskParam = searchParams.get("task");
   const { user } = useAuth();
@@ -344,7 +349,7 @@ export default function PortalTaskWorkspace({
 
       {message && (
         <div className="card p-2.5 text-xs text-rose-700 bg-rose-50 flex items-center justify-between">
-          <span>{message}</span>
+          <span>{errorText(message)}</span>
           <button onClick={() => setMessage(null)}>
             <X size={13} />
           </button>
@@ -487,7 +492,7 @@ export default function PortalTaskWorkspace({
                         {internal && <td className="py-2 pr-3">{task.assigned_to || "—"}</td>}
                         {internal && <td className="py-2 pr-3">{task.assigned_by || "—"}</td>}
                         <td className={`py-2 pr-3 whitespace-nowrap ${isOverdue(task) ? "text-rose-600 font-semibold" : ""}`}>
-                          {fmtDate(task.due_date)}
+                          {fmtDate(task.due_date, lang)}
                         </td>
                       </tr>
                     );
@@ -571,7 +576,7 @@ function PortalTaskCard({
   showAssignee: boolean;
   onOpen: () => void;
 }) {
-  const { t } = useT();
+  const { t, lang } = useT();
   const overdue = isOverdue(task);
   const age = ageingDays(task.created_at);
   return (
@@ -608,7 +613,7 @@ function PortalTaskCard({
       {task.material_name && <div className="text-[11px] text-brand-muted truncate">{task.material_name}</div>}
       <div className="flex items-center justify-between mt-2 text-[11px] text-brand-muted">
         <span className={overdue ? "text-rose-600 font-semibold" : ""}>
-          {overdue ? t("Overdue") : t("Due")} {fmtDate(task.due_date)}
+          {overdue ? t("Overdue") : t("Due")} {fmtDate(task.due_date, lang)}
         </span>
         <span className="flex items-center gap-2">
           {(task.attachment_count ?? 0) > 0 && (
@@ -728,7 +733,7 @@ function PortalTaskDrawer({
   onDeleted: () => void | Promise<void>;
   onMove: (t: CommunicationTask, s: TaskStatus) => void | Promise<void>;
 }) {
-  const { t } = useT();
+  const { t, lang } = useT();
   const { user } = useAuth();
   const [comments, setComments] = useState<TaskComment[]>([]);
   const [newComment, setNewComment] = useState("");
@@ -892,7 +897,7 @@ function PortalTaskDrawer({
                     <div key={c.id} className="rounded-lg border border-brand-border p-2.5">
                       <div className="flex items-center justify-between text-[11px] text-brand-muted">
                         <span className="font-medium text-brand-dark">{c.created_by || "system"}</span>
-                        <span>{fmtDateTime(c.created_at)}</span>
+                        <span>{fmtDateTime(c.created_at, lang)}</span>
                       </div>
                       <p className="text-sm mt-1 whitespace-pre-wrap text-brand-dark">{c.comment}</p>
                     </div>
@@ -970,7 +975,7 @@ function PortalTaskDrawer({
                 {task.supplier_name && <span>{t("Supplier")}: {task.supplier_name}</span>}
                 {task.supplier_po_no && <span>{t("PO")}: {task.supplier_po_no}</span>}
                 {task.material_name && <span>{t("Material")}: {task.material_name}</span>}
-                <span>{t("Due")}: {fmtDate(task.due_date)}</span>
+                <span>{t("Due")}: {fmtDate(task.due_date, lang)}</span>
                 {!permissions.readOnly && task.assigned_by && <span>{t("Assigned by")}: {task.assigned_by}</span>}
               </div>
             </div>
@@ -1020,6 +1025,7 @@ function PortalTaskCreateForm({
   onSave: (payload: CommunicationTaskCreate, files: File[]) => void | Promise<void>;
 }) {
   const { t } = useT();
+  const errorText = useErrorText();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [supplierPoNo, setSupplierPoNo] = useState("");
@@ -1179,7 +1185,7 @@ function PortalTaskCreateForm({
 
         {saveError && (
           <div className="mx-5 mb-1 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
-            {saveError}
+            {errorText(saveError)}
           </div>
         )}
         <div className="flex justify-end gap-2 border-t border-brand-border px-5 py-3">

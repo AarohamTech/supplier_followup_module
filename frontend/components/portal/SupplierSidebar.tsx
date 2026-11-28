@@ -4,8 +4,10 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { AlertCircle, LayoutDashboard, FileSpreadsheet, MessagesSquare, ListChecks, Sparkles, Truck, X } from "lucide-react";
 
+import { LanguageToggle, useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
+// Labels are English source strings, translated with t() where they render.
 const items = [
   { href: "/portal", label: "Dashboard", icon: LayoutDashboard },
   { href: "/portal/assistant", label: "HI Assistant", icon: Sparkles },
@@ -23,8 +25,9 @@ function isActive(path: string, href: string) {
 
 function NavList({ onNavigate }: { onNavigate?: () => void }) {
   const path = usePathname();
+  const { t } = useT();
   return (
-    <nav aria-label="Supplier navigation" className="space-y-1">
+    <nav aria-label={t("Supplier navigation")} className="space-y-1">
       {items.map((it) => {
         const active = isActive(path, it.href);
         const Icon = it.icon;
@@ -46,7 +49,7 @@ function NavList({ onNavigate }: { onNavigate?: () => void }) {
               strokeWidth={1.8}
               className={cn("shrink-0", active ? "text-signal-red" : "text-brand-muted group-hover:text-brand-muted")}
             />
-            <span className="truncate">{it.label}</span>
+            <span className="truncate">{t(it.label)}</span>
           </Link>
         );
       })}
@@ -55,12 +58,13 @@ function NavList({ onNavigate }: { onNavigate?: () => void }) {
 }
 
 export default function SupplierSidebar({ open = false, onClose }: { open?: boolean; onClose?: () => void }) {
+  const { t } = useT();
   return (
     <>
       <aside className="hidden w-64 shrink-0 border-r border-brand-border bg-subtle md:block">
         <div className="sticky top-16 h-[calc(100vh-4rem)] overflow-y-auto px-3 py-5">
           <div className="mb-1.5 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-brand-muted">
-            Supplier Portal
+            {t("Supplier Portal")}
           </div>
           <NavList />
         </div>
@@ -68,18 +72,23 @@ export default function SupplierSidebar({ open = false, onClose }: { open?: bool
 
       {open && (
         <div className="fixed inset-0 z-40 md:hidden">
-          <button type="button" className="mobile-nav-backdrop absolute inset-0 bg-black/30" onClick={onClose} aria-label="Close navigation" />
+          <button type="button" className="mobile-nav-backdrop absolute inset-0 bg-black/30" onClick={onClose} aria-label={t("Close navigation")} />
           <aside className="mobile-nav-drawer relative h-full w-[min(20rem,86vw)] border-r border-brand-border bg-subtle shadow-2xl">
             <div className="flex h-16 items-center justify-between border-b border-brand-border px-4">
               <div>
-                <div className="text-sm font-semibold text-brand-dark">Supplier Portal</div>
-                <div className="text-[11px] text-brand-muted">Orders and shipments</div>
+                <div className="text-sm font-semibold text-brand-dark">{t("Supplier Portal")}</div>
+                <div className="text-[11px] text-brand-muted">{t("Orders and shipments")}</div>
               </div>
-              <button type="button" onClick={onClose} className="rounded-md p-2 text-brand-muted hover:bg-subtle" aria-label="Close navigation">
+              <button type="button" onClick={onClose} className="rounded-md p-2 text-brand-muted hover:bg-subtle" aria-label={t("Close navigation")}>
                 <X size={18} />
               </button>
             </div>
             <div className="h-[calc(100vh-4rem)] overflow-y-auto px-3 py-5">
+              {/* Phones: the topbar has no room for EN | मराठी, so it sits here. */}
+              <div className="mb-4 flex items-center justify-between px-3">
+                <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-brand-muted">{t("Language")}</span>
+                <LanguageToggle />
+              </div>
               <NavList onNavigate={onClose} />
             </div>
           </aside>

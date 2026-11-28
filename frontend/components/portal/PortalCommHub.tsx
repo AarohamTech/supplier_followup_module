@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 
 import { api } from "@/lib/api";
+import { fmtDateTime } from "@/lib/format";
 import type { AttachmentMeta, PortalMessage, PortalTask } from "@/lib/types";
 import {
   AttachButton,
@@ -21,6 +22,7 @@ import {
   PendingAttachments,
 } from "@/components/attachments/Attachments";
 import { EmailHtmlView } from "@/components/EmailHtmlView";
+import { useErrorText, useT } from "@/lib/i18n";
 import { humanizeEnum, messageKindChip } from "@/lib/messageLabels";
 import { PlainTextWithTables } from "@/lib/plainTextTables";
 import { supplierPoNo } from "@/lib/portalPoRefs";
@@ -71,11 +73,11 @@ const SIGNAL_CHIP: Record<string, string> = {
   BLACK: "bg-ink text-white",
 };
 
-function fmtTime(value?: string | null) {
+function fmtTime(value: string | null | undefined, lang: "en" | "mr") {
   if (!value) return "";
   const d = new Date(value);
   if (isNaN(d.getTime())) return "";
-  return d.toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+  return fmtDateTime(value, lang, { year: false });
 }
 
 function EmptyState({ children, icon }: { children: React.ReactNode; icon?: React.ReactNode }) {
@@ -94,6 +96,8 @@ export default function PortalCommHub({
   adapter: CommHubAdapter;
   mode: "employee" | "supplier";
 }) {
+  const { t } = useT();
+  const errorText = useErrorText();
   const [pos, setPos] = useState<CommHubPoRow[]>([]);
   const [active, setActive] = useState<string | null>(null);
   const [messages, setMessages] = useState<PortalMessage[]>([]);
@@ -109,7 +113,7 @@ export default function PortalCommHub({
   const [uploadingCount, setUploadingCount] = useState(0);
   const endRef = useRef<HTMLDivElement | null>(null);
 
-  const counterpartyLabel = mode === "employee" ? "Supplier" : "Buyer";
+  const counterpartyLabel = mode === "employee" ? t("Supplier") : t("Buyer");
 
   const refreshPos = useCallback(async () => {
     const list = await adapter.listPos();
@@ -266,7 +270,7 @@ export default function PortalCommHub({
       `mailto:${encodeURIComponent(to.join(","))}?subject=${encodeURIComponent(subject)}` +
       (body ? `&body=${encodeURIComponent(body)}` : "");
     if (pendingFiles.length > 0) {
-      setError("Attach your files again in Outlook — they can't be passed over to it.");
+      setError(t("Attach your files again in Outlook — they can't be passed over to it."));
     }
   };
 
@@ -293,11 +297,11 @@ export default function PortalCommHub({
           <MessagesSquare size={17} />
         </span>
         <div className="min-w-0">
-          <h1 className="truncate text-base font-semibold text-brand-dark">Communication Hub</h1>
+          <h1 className="truncate text-base font-semibold text-brand-dark">{t("Communication Hub")}</h1>
           <p className="hidden text-xs text-brand-muted sm:block">
             {mode === "employee"
-              ? "Message suppliers on the purchase orders assigned to you."
-              : "Message your buyer about any PO. Replies appear here live."}
+              ? t("Message suppliers on the purchase orders assigned to you.")
+              : t("Message your buyer about any PO. Replies appear here live.")}
           </p>
         </div>
         <div className="relative ml-auto w-full min-w-[200px] max-w-sm flex-1">
@@ -305,19 +309,19 @@ export default function PortalCommHub({
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search PO or counterparty…"
+            placeholder={t("Search PO or counterparty…")}
             className="input h-9 pl-9"
           />
         </div>
         <button onClick={() => void refreshPos()} className="btn-outline h-9" disabled={loadingPos}>
           {loadingPos ? <Loader2 size={14} className="animate-spin" /> : <RefreshCcw size={14} />}
-          <span className="hidden sm:inline">Refresh</span>
+          <span className="hidden sm:inline">{t("Refresh")}</span>
         </button>
       </header>
 
       {error && (
         <div className="mx-6 mt-3 rounded-md border border-red-100 bg-red-50 px-3 py-2 text-sm text-signal-red">
-          {error}
+          {errorText(error)}
         </div>
       )}
 
@@ -326,14 +330,14 @@ export default function PortalCommHub({
         {/* LEFT — PO list */}
         <aside className="flex w-[340px] min-w-[280px] shrink-0 flex-col overflow-hidden rounded-xl border border-brand-border bg-card shadow-sm">
           <div className="flex items-center justify-between px-4 py-2.5">
-            <span className="text-xs font-semibold uppercase tracking-wide text-brand-muted">Purchase Orders</span>
+            <span className="text-xs font-semibold uppercase tracking-wide text-brand-muted">{t("Purchase Orders")}</span>
             <span className="text-[11px] text-brand-muted">{filtered.length}</span>
           </div>
           <div className="flex-1 overflow-y-auto border-t border-brand-border">
             {loadingPos && pos.length === 0 ? (
-              <EmptyState icon={<Loader2 className="animate-spin" size={18} />}>Loading…</EmptyState>
+              <EmptyState icon={<Loader2 className="animate-spin" size={18} />}>{t("Loading…")}</EmptyState>
             ) : filtered.length === 0 ? (
-              <EmptyState icon={<Inbox size={20} />}>No purchase orders found.</EmptyState>
+              <EmptyState icon={<Inbox size={20} />}>{t("No purchase orders found.")}</EmptyState>
             ) : (
               filtered.map((p) => (
                 <PoRow
@@ -356,19 +360,20 @@ export default function PortalCommHub({
                 <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${SIGNAL_DOT[(activePo.signal || "").toUpperCase()] ?? "bg-subtle"}`} />
                 <h2 className="truncate font-semibold text-brand-dark">
                   PO {supplierPoNo(activePo)}
-                  <span className="ml-2 font-normal text-brand-muted">{activePo.counterparty}</span>
+                  {/* "Your buyer" (supplier mode) is translated; real names pass through unchanged. */}
+                  <span className="ml-2 font-normal text-brand-muted">{t(activePo.counterparty)}</span>
                 </h2>
                 <span className="ml-2 hidden text-xs text-brand-muted md:inline">
-                  {messages.length} message{messages.length === 1 ? "" : "s"}
+                  {t(messages.length === 1 ? "{n} message" : "{n} messages", { n: messages.length })}
                 </span>
               </div>
 
               <div className="flex-1 space-y-6 overflow-y-auto px-6 py-6 lg:px-10">
                 {loadingMsgs ? (
-                  <EmptyState icon={<Loader2 className="animate-spin" size={22} />}>Loading messages…</EmptyState>
+                  <EmptyState icon={<Loader2 className="animate-spin" size={22} />}>{t("Loading messages…")}</EmptyState>
                 ) : messages.length === 0 ? (
                   <EmptyState icon={<MessagesSquare size={22} />}>
-                    No messages yet. Start the conversation below.
+                    {t("No messages yet. Start the conversation below.")}
                   </EmptyState>
                 ) : (
                   messages.map((m) => (
@@ -391,7 +396,7 @@ export default function PortalCommHub({
                           void send();
                         }
                       }}
-                      placeholder="Type your message…  (Enter to send, Shift+Enter for a new line; drop files to attach)"
+                      placeholder={t("Type your message…  (Enter to send, Shift+Enter for a new line; drop files to attach)")}
                       className={`h-24 w-full resize-none rounded-lg border border-brand-border bg-subtle p-3 ${
                         adapter.outlookCompose ? "pr-44" : "pr-24"
                       } text-sm outline-none focus:border-signal-red/40 focus:bg-card`}
@@ -405,10 +410,10 @@ export default function PortalCommHub({
                           disabled={outlookState !== "ready"}
                           title={
                             outlookState === "ready"
-                              ? "Write this message in Outlook (or your mail app) instead"
+                              ? t("Write this message in Outlook (or your mail app) instead")
                               : outlookState === "loading"
-                              ? "Preparing Outlook…"
-                              : "Outlook is not available for this PO right now — send your message here instead"
+                              ? t("Preparing Outlook…")
+                              : t("Outlook is not available for this PO right now — send your message here instead")
                           }
                         >
                           <Mail size={14} /> Outlook
@@ -418,7 +423,8 @@ export default function PortalCommHub({
                         className="rounded-md bg-signal-red p-2 text-white shadow-sm hover:opacity-90 disabled:opacity-50"
                         disabled={(!composer.trim() && pendingFiles.length === 0) || sending || uploadingCount > 0}
                         onClick={() => void send()}
-                        title="Send message"
+                        title={t("Send message")}
+                        aria-label={t("Send message")}
                       >
                         {sending ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
                       </button>
@@ -436,7 +442,7 @@ export default function PortalCommHub({
             <div className="grid flex-1 place-items-center text-brand-muted">
               <div className="text-center">
                 <MessagesSquare size={34} className="mx-auto mb-2 opacity-40" />
-                <p className="text-sm">Select a purchase order to view the conversation.</p>
+                <p className="text-sm">{t("Select a purchase order to view the conversation.")}</p>
               </div>
             </div>
           )}
@@ -445,23 +451,23 @@ export default function PortalCommHub({
         {/* RIGHT — context panel */}
         <aside className="hidden w-[300px] shrink-0 flex-col overflow-hidden rounded-xl border border-brand-border bg-card shadow-sm lg:flex">
           <div className="border-b border-brand-border px-4 py-3">
-            <div className="text-sm font-semibold text-brand-dark">Context</div>
+            <div className="text-sm font-semibold text-brand-dark">{t("Context")}</div>
             <div className="truncate text-[11px] text-brand-muted">
-              {activePo ? `PO ${supplierPoNo(activePo)}` : "No PO selected"}
+              {activePo ? `PO ${supplierPoNo(activePo)}` : t("No PO selected")}
             </div>
           </div>
           <div className="flex-1 space-y-4 overflow-y-auto p-4">
             {!activePo ? (
-              <EmptyState icon={<Inbox size={18} />}>Select a PO to see its details.</EmptyState>
+              <EmptyState icon={<Inbox size={18} />}>{t("Select a PO to see its details.")}</EmptyState>
             ) : (
               <>
                 {/* Materials */}
                 <div>
                   <div className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-brand-muted">
-                    <Package size={12} /> Materials ({materials.length || activePo.material_count || 0})
+                    <Package size={12} /> {t("Materials ({n})", { n: materials.length || activePo.material_count || 0 })}
                   </div>
                   {materials.length === 0 ? (
-                    <div className="text-xs text-brand-muted">No materials on this PO.</div>
+                    <div className="text-xs text-brand-muted">{t("No materials on this PO.")}</div>
                   ) : (
                     <div className="space-y-1.5">
                       {materials.map((m, i) => (
@@ -471,7 +477,7 @@ export default function PortalCommHub({
                             <span className="truncate font-medium text-brand-dark" title={m.material_name}>{m.material_name}</span>
                           </div>
                           {m.commitment_date && (
-                            <div className="mt-0.5 pl-3.5 text-brand-muted">Committed: {m.commitment_date}</div>
+                            <div className="mt-0.5 pl-3.5 text-brand-muted">{t("Committed: {date}", { date: m.commitment_date })}</div>
                           )}
                         </div>
                       ))}
@@ -483,29 +489,29 @@ export default function PortalCommHub({
                 {adapter.listTasks && (
                   <div>
                     <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-brand-muted">
-                      Tasks ({poTasks.length})
+                      {t("Tasks ({n})", { n: poTasks.length })}
                     </div>
                     {poTasks.length === 0 ? (
-                      <div className="text-xs text-brand-muted">No tasks for this PO.</div>
+                      <div className="text-xs text-brand-muted">{t("No tasks for this PO.")}</div>
                     ) : (
                       <div className="space-y-2">
-                        {poTasks.map((t) => {
-                          const sig = (t.signal || "").toUpperCase();
-                          const done = (t.status || "").toUpperCase() === "DONE";
+                        {poTasks.map((task) => {
+                          const sig = (task.signal || "").toUpperCase();
+                          const done = (task.status || "").toUpperCase() === "DONE";
                           return (
-                            <div key={t.id} className={`rounded-lg border border-brand-border bg-card p-2.5 text-xs ${done ? "opacity-60" : ""}`}>
+                            <div key={task.id} className={`rounded-lg border border-brand-border bg-card p-2.5 text-xs ${done ? "opacity-60" : ""}`}>
                               <div className="flex items-start gap-2">
                                 <span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${SIGNAL_DOT[sig] ?? "bg-subtle"}`} />
                                 <div className="min-w-0">
-                                  <p className={`font-semibold leading-snug ${done ? "text-brand-muted line-through" : "text-brand-dark"}`}>{t.title}</p>
-                                  {t.material_name && <p className="mt-0.5 truncate text-[10px] text-brand-muted">{t.material_name}</p>}
+                                  <p className={`font-semibold leading-snug ${done ? "text-brand-muted line-through" : "text-brand-dark"}`}>{task.title}</p>
+                                  {task.material_name && <p className="mt-0.5 truncate text-[10px] text-brand-muted">{task.material_name}</p>}
                                 </div>
                               </div>
                               <div className="mt-1.5 flex items-center justify-between">
                                 <span className={`rounded px-1.5 py-0.5 text-[9px] font-bold ${SIGNAL_CHIP[sig] ?? "bg-subtle text-brand-muted"}`}>
-                                  {t.priority}
+                                  {t(task.priority)}
                                 </span>
-                                <span className="text-[10px] text-brand-muted">{humanizeEnum(t.status)}</span>
+                                <span className="text-[10px] text-brand-muted">{t(humanizeEnum(task.status))}</span>
                               </div>
                             </div>
                           );
@@ -534,6 +540,7 @@ function PoRow({
   counterpartyLabel: string;
   onClick: () => void;
 }) {
+  const { t } = useT();
   const sig = (p.signal || "GREEN").toUpperCase();
   const unread = (p.unread_inbound ?? 0) > 0;
   return (
@@ -548,7 +555,7 @@ function PoRow({
       }`}
     >
       <div className="flex items-center gap-2">
-        {unread && <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-500" title="Unread replies" />}
+        {unread && <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-500" title={t("Unread replies")} />}
         <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${SIGNAL_DOT[sig] ?? "bg-subtle"}`} />
         <span className={`flex-1 truncate text-sm text-brand-dark ${unread ? "font-bold" : "font-medium"}`}>
           PO {supplierPoNo(p)}
@@ -559,11 +566,11 @@ function PoRow({
           </span>
         )}
         {p.escalated && (
-          <span className="rounded bg-red-50 px-1.5 py-0.5 text-[10px] font-bold text-signal-red">Escalated to buyer</span>
+          <span className="rounded bg-red-50 px-1.5 py-0.5 text-[10px] font-bold text-signal-red">{t("Escalated to buyer")}</span>
         )}
       </div>
       <p className={`mt-1 truncate pl-4 text-xs ${unread ? "font-medium text-brand-dark/80" : "text-brand-muted"}`}>
-        {counterpartyLabel}: {p.counterparty || "—"}
+        {counterpartyLabel}: {p.counterparty ? t(p.counterparty) : "—"}
       </p>
     </button>
   );
@@ -577,6 +584,7 @@ function MessageBubble({
   attachmentEndpoint: (id: number) => string;
 }) {
   // OUTGOING (mine) → right; INCOMING → left.
+  const { t, lang } = useT();
   const isMine = m.mine;
   const kind = messageKindChip(m.mail_type);
   return (
@@ -602,11 +610,11 @@ function MessageBubble({
         )}
         <AttachmentChips items={m.attachments} endpointFor={attachmentEndpoint} />
         <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] text-brand-muted">
-          <span>{fmtTime(m.at)}</span>
+          <span>{fmtTime(m.at, lang)}</span>
           <span>·</span>
           <span>{m.author}</span>
           {m.mail_type && (
-            <span className={`rounded px-1.5 py-0.5 font-semibold ${kind.cls}`}>{kind.label}</span>
+            <span className={`rounded px-1.5 py-0.5 font-semibold ${kind.cls}`}>{t(kind.label)}</span>
           )}
         </div>
       </div>

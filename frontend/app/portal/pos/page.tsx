@@ -8,11 +8,17 @@ import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import type { PortalPo } from "@/lib/types";
 import { fmtDate } from "@/lib/format";
+import { useErrorText, useT } from "@/lib/i18n";
 import { SUPPLIER_ESCALATED_LABEL, supplierSignalChip } from "@/lib/messageLabels";
 import PoPdfButton from "@/components/po/PoPdfButton";
 
+// English source strings — translated with t() where the header row renders.
+const COLUMNS = ["PO Reference", "CRM No", "Materials", "Follow-up", "Earliest Due", "ASNs", "Messages", "Status", ""];
+
 export default function PortalPosPage() {
   const router = useRouter();
+  const { t, lang } = useT();
+  const errorText = useErrorText();
   const [items, setItems] = useState<PortalPo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -47,34 +53,34 @@ export default function PortalPosPage() {
     <div className="page-stack">
       <div className="page-header">
         <div>
-          <h1 className="page-title">My Purchase Orders</h1>
-          <p className="page-subtitle">All your POs. Escalated orders are pinned to the top — click a row for details.</p>
+          <h1 className="page-title">{t("My Purchase Orders")}</h1>
+          <p className="page-subtitle">{t("All your POs. Escalated orders are pinned to the top — click a row for details.")}</p>
         </div>
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="Search PO / CRM…"
+          placeholder={t("Search PO / CRM…")}
           className="input max-w-xs"
         />
       </div>
 
-      {error && <div className="rounded-md bg-red-50 px-3 py-2 text-xs text-signal-red">{error}</div>}
+      {error && <div className="rounded-md bg-red-50 px-3 py-2 text-xs text-signal-red">{errorText(error)}</div>}
 
       <div className="table-shell">
         <table className="min-w-full text-sm">
           <thead className="bg-subtle">
             <tr>
-              {["PO Reference", "CRM No", "Materials", "Follow-up", "Earliest Due", "ASNs", "Messages", "Status", ""].map((h) => (
-                <th key={h} className="px-4 py-3 text-left table-header whitespace-nowrap">{h}</th>
+              {COLUMNS.map((h) => (
+                <th key={h} className="px-4 py-3 text-left table-header whitespace-nowrap">{h ? t(h) : ""}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {loading && (
-              <tr><td colSpan={9} className="px-4 py-10 text-center text-brand-muted">Loading…</td></tr>
+              <tr><td colSpan={9} className="px-4 py-10 text-center text-brand-muted">{t("Loading…")}</td></tr>
             )}
             {!loading && filtered.length === 0 && (
-              <tr><td colSpan={9} className="px-4 py-10 text-center text-brand-muted">No purchase orders found.</td></tr>
+              <tr><td colSpan={9} className="px-4 py-10 text-center text-brand-muted">{t("No purchase orders found.")}</td></tr>
             )}
             {filtered.map((p) => (
               <tr
@@ -95,17 +101,17 @@ export default function PortalPosPage() {
                       fileLabel={p.po_ref || p.supplier_po_no}
                       endpoint="/api/portal/po-pdf"
                     />
-                    {p.escalated && <span className="badge badge-critical">{SUPPLIER_ESCALATED_LABEL}</span>}
+                    {p.escalated && <span className="badge badge-critical">{t(SUPPLIER_ESCALATED_LABEL)}</span>}
                   </div>
                 </td>
                 <td className="px-4 py-3 text-xs text-brand-muted">{p.crm_no || "—"}</td>
                 <td className="px-4 py-3">{p.material_count}</td>
                 <td className="px-4 py-3">
                   {supplierSignalChip(p.overall_signal) ? (
-                    <span className={"badge " + supplierSignalChip(p.overall_signal)!.cls}>{supplierSignalChip(p.overall_signal)!.label}</span>
+                    <span className={"badge " + supplierSignalChip(p.overall_signal)!.cls}>{t(supplierSignalChip(p.overall_signal)!.label)}</span>
                   ) : "—"}
                 </td>
-                <td className="px-4 py-3 text-xs">{fmtDate(p.earliest_shipment_date)}</td>
+                <td className="px-4 py-3 text-xs">{fmtDate(p.earliest_shipment_date, lang)}</td>
                 <td className="px-4 py-3">{p.asn_count}</td>
                 <td className="px-4 py-3">
                   <span className="inline-flex items-center gap-1 text-brand-muted">
@@ -114,9 +120,9 @@ export default function PortalPosPage() {
                 </td>
                 <td className="px-4 py-3">
                   {p.completed ? (
-                    <span className="badge badge-track">Completed</span>
+                    <span className="badge badge-track">{t("Completed")}</span>
                   ) : (
-                    <span className="badge badge-due">In progress</span>
+                    <span className="badge badge-due">{t("In progress")}</span>
                   )}
                 </td>
                 <td className="px-4 py-3 text-right text-brand-muted">

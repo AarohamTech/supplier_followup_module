@@ -1,8 +1,50 @@
-export function fmtDate(s?: string | null): string {
+import type { PoAckStatus } from "./types";
+
+/** UI language as used by lib/i18n (kept as a literal here to avoid importing the client module). */
+type DateLang = "en" | "mr";
+
+/** Marathi month names with ordinary 0-9 digits, so dates line up with PO
+ *  numbers and quantities, which stay in those digits too. */
+function dateLocale(lang?: DateLang): string {
+  return lang === "mr" ? "mr-IN-u-nu-latn" : "en-IN";
+}
+
+/** "20 Apr 2026" — or "20 एप्रि, 2026" when `lang` is "mr". */
+export function fmtDate(s?: string | null, lang?: DateLang): string {
   if (!s) return "—";
   const d = new Date(s);
   if (isNaN(d.getTime())) return s;
-  return d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+  return d.toLocaleDateString(dateLocale(lang), { day: "2-digit", month: "short", year: "numeric" });
+}
+
+/** Date and time ("20 Apr 2026, 04:00 pm"); `year: false` drops the year,
+ *  `timeZone` pins the clock (e.g. "Asia/Kolkata" for labels marked IST). */
+export function fmtDateTime(
+  s?: string | null,
+  lang?: DateLang,
+  opts: { year?: boolean; timeZone?: string } = {},
+): string {
+  if (!s) return "";
+  const d = new Date(s);
+  if (isNaN(d.getTime())) return s;
+  return d.toLocaleString(dateLocale(lang), {
+    day: "2-digit",
+    month: "short",
+    ...(opts.year === false ? {} : { year: "numeric" }),
+    hour: "2-digit",
+    minute: "2-digit",
+    ...(opts.timeZone ? { timeZone: opts.timeZone } : {}),
+  });
+}
+
+/** When a PO was acknowledged. English keeps the server's label
+ *  ("20 Apr 2026, 04:00 PM IST"); Marathi formats the same instant in IST. */
+export function fmtAckTime(s: PoAckStatus, lang?: DateLang): string {
+  if (lang === "mr" && s.acknowledged_at) {
+    return `${fmtDateTime(s.acknowledged_at, "mr", { timeZone: "Asia/Kolkata" })} IST`;
+  }
+  if (s.acknowledged_at_label) return s.acknowledged_at_label;
+  return s.acknowledged_at ? new Date(s.acknowledged_at).toLocaleString() : "";
 }
 
 export function fmtNum(n?: number | null, opts: Intl.NumberFormatOptions = {}): string {

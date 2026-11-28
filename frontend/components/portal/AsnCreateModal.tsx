@@ -5,7 +5,10 @@ import { Save, Send, X } from "lucide-react";
 
 import { api } from "@/lib/api";
 import { SUPPORTED_COURIERS, TRANSPORT_MODES } from "@/lib/asn";
+import { useErrorText, useT } from "@/lib/i18n";
 import type { Asn, AsnItemInput, PortalPo, PortalPoMaterial } from "@/lib/types";
+
+const LINE_COLUMNS = ["Ship", "Material", "PO Qty", "Qty Shipped", "UOM", "Invoice No"];
 
 interface LineDraft extends AsnItemInput {
   _selected: boolean;
@@ -18,6 +21,8 @@ export default function AsnCreateModal({
   onClose: () => void;
   onCreated: (asn: Asn) => void;
 }) {
+  const { t } = useT();
+  const errorText = useErrorText();
   const [pos, setPos] = useState<PortalPo[]>([]);
   const [poNo, setPoNo] = useState("");
   const [lines, setLines] = useState<LineDraft[]>([]);
@@ -88,11 +93,11 @@ export default function AsnCreateModal({
   const save = async (submit: boolean) => {
     setError(null);
     if (!poNo) {
-      setError("Select a PO reference.");
+      setError(t("Select a PO reference."));
       return;
     }
     if (submit && selectedLines.length === 0) {
-      setError("Add at least one shipped line to submit.");
+      setError(t("Add at least one shipped line to submit."));
       return;
     }
     setBusy(submit ? "submit" : "draft");
@@ -125,37 +130,39 @@ export default function AsnCreateModal({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="px-5 py-3 border-b border-brand-border flex items-center justify-between sticky top-0 bg-card">
-          <div className="font-semibold">Create New ASN</div>
-          <button className="p-1 rounded hover:bg-subtle" onClick={onClose}><X size={18} /></button>
+          <div className="font-semibold">{t("Create New ASN")}</div>
+          <button className="p-1 rounded hover:bg-subtle" onClick={onClose} aria-label={t("Close")}><X size={18} /></button>
         </div>
 
         <div className="p-5 space-y-4">
-          {error && <div className="text-sm text-signal-red bg-red-50 border border-red-100 rounded-md px-3 py-2">{error}</div>}
+          {error && <div className="text-sm text-signal-red bg-red-50 border border-red-100 rounded-md px-3 py-2">{errorText(error)}</div>}
 
           <Field label="PO Reference *">
             <select className="input" value={poNo} onChange={(e) => setPoNo(e.target.value)}>
-              <option value="">Select a purchase order</option>
+              <option value="">{t("Select a purchase order")}</option>
               {pos.map((p) => (
                 <option key={p.supplier_po_no} value={p.supplier_po_no}>
-                  {p.po_ref || p.supplier_po_no}{p.crm_no ? ` · CRM ${p.crm_no}` : ""} ({p.material_count} material{p.material_count === 1 ? "" : "s"})
+                  {p.po_ref || p.supplier_po_no}{p.crm_no ? ` · CRM ${p.crm_no}` : ""} (
+                  {t(p.material_count === 1 ? "{n} material" : "{n} materials", { n: p.material_count })})
                 </option>
               ))}
             </select>
           </Field>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <Field label="Carrier"><input className="input" value={carrier} onChange={(e) => setCarrier(e.target.value)} placeholder="e.g. Maersk Line" /></Field>
+            <Field label="Carrier"><input className="input" value={carrier} onChange={(e) => setCarrier(e.target.value)} placeholder={t("e.g. Maersk Line")} /></Field>
             <Field label="Courier (for live tracking)">
               <select className="input" value={courier} onChange={(e) => setCourier(e.target.value)}>
-                <option value="">— None —</option>
+                <option value="">{t("— None —")}</option>
                 {SUPPORTED_COURIERS.map((c) => <option key={c.code} value={c.code}>{c.label}</option>)}
               </select>
             </Field>
-            <Field label="Tracking No"><input className="input" value={tracking} onChange={(e) => setTracking(e.target.value)} placeholder="e.g. MSK-L81122" /></Field>
+            <Field label="Tracking No"><input className="input" value={tracking} onChange={(e) => setTracking(e.target.value)} placeholder={t("e.g. MSK-L81122")} /></Field>
             <Field label="Mode">
               <select className="input" value={mode} onChange={(e) => setMode(e.target.value)}>
                 <option value="">—</option>
-                {TRANSPORT_MODES.map((m) => <option key={m} value={m}>{m}</option>)}
+                {/* Values are sent as-is (SEA / AIR / ROAD / RAIL); only the label is translated. */}
+                {TRANSPORT_MODES.map((m) => <option key={m} value={m}>{t(m)}</option>)}
               </select>
             </Field>
             <Field label="Dispatch Date"><input type="date" className="input" value={dispatchDate} onChange={(e) => setDispatchDate(e.target.value)} /></Field>
@@ -166,23 +173,20 @@ export default function AsnCreateModal({
           </div>
 
           <div>
-            <div className="mb-1 text-[10px] uppercase tracking-wider text-brand-muted font-semibold">Shipped Materials</div>
-            {!poNo && <div className="empty-state">Select a PO to load its materials.</div>}
-            {poNo && loadingMaterials && <div className="empty-state">Loading materials…</div>}
+            <div className="mb-1 text-[10px] uppercase tracking-wider text-brand-muted font-semibold">{t("Shipped Materials")}</div>
+            {!poNo && <div className="empty-state">{t("Select a PO to load its materials.")}</div>}
+            {poNo && loadingMaterials && <div className="empty-state">{t("Loading materials…")}</div>}
             {poNo && !loadingMaterials && lines.length === 0 && (
-              <div className="empty-state">No materials found for this PO.</div>
+              <div className="empty-state">{t("No materials found for this PO.")}</div>
             )}
             {lines.length > 0 && (
               <div className="table-shell">
                 <table className="min-w-full text-sm">
                   <thead className="bg-subtle">
                     <tr>
-                      <th className="px-3 py-2 text-left table-header">Ship</th>
-                      <th className="px-3 py-2 text-left table-header">Material</th>
-                      <th className="px-3 py-2 text-left table-header">PO Qty</th>
-                      <th className="px-3 py-2 text-left table-header">Qty Shipped</th>
-                      <th className="px-3 py-2 text-left table-header">UOM</th>
-                      <th className="px-3 py-2 text-left table-header">Invoice No</th>
+                      {LINE_COLUMNS.map((h) => (
+                        <th key={h} className="px-3 py-2 text-left table-header">{t(h)}</th>
+                      ))}
                     </tr>
                   </thead>
                   <tbody>
@@ -223,12 +227,12 @@ export default function AsnCreateModal({
         </div>
 
         <div className="px-5 py-3 border-t border-brand-border flex items-center justify-end gap-2 sticky bottom-0 bg-card">
-          <button className="btn-ghost" onClick={onClose}>Cancel</button>
+          <button className="btn-ghost" onClick={onClose}>{t("Cancel")}</button>
           <button className="btn-outline" disabled={busy !== null} onClick={() => save(false)}>
-            <Save size={14} /> {busy === "draft" ? "Saving…" : "Save Draft"}
+            <Save size={14} /> {busy === "draft" ? t("Saving…") : t("Save Draft")}
           </button>
           <button className="btn-primary" disabled={busy !== null} onClick={() => save(true)}>
-            <Send size={14} /> {busy === "submit" ? "Submitting…" : "Submit ASN"}
+            <Send size={14} /> {busy === "submit" ? t("Submitting…") : t("Submit ASN")}
           </button>
         </div>
       </div>
@@ -236,10 +240,12 @@ export default function AsnCreateModal({
   );
 }
 
+/** A labelled form field; `label` is an English source string (translated here). */
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  const { t } = useT();
   return (
     <div>
-      <div className="text-[10px] uppercase tracking-wider text-brand-muted font-semibold mb-1">{label}</div>
+      <div className="text-[10px] uppercase tracking-wider text-brand-muted font-semibold mb-1">{t(label)}</div>
       {children}
     </div>
   );

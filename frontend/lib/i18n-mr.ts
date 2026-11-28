@@ -10,6 +10,8 @@ import { MR_FOLLOWUPS } from "./i18n-mr/followups";
 import { MR_HUB } from "./i18n-mr/hub";
 import { MR_MAILS } from "./i18n-mr/mails";
 import { MR_MANAGE } from "./i18n-mr/manage";
+import { MR_PORTAL } from "./i18n-mr/portal";
+import { MR_SHARED } from "./i18n-mr/shared";
 import { MR_TASKS } from "./i18n-mr/tasks";
 
 // Shared-screen dictionaries come first so the hand-tuned core strings below win.
@@ -20,6 +22,8 @@ export const MR: Record<string, string> = {
   ...MR_MAILS,
   ...MR_MANAGE,
   ...MR_TASKS,
+  ...MR_SHARED,
+  ...MR_PORTAL,
   // ── Common ──
   "Loading…": "लोड होत आहे…",
   Cancel: "रद्द करा",

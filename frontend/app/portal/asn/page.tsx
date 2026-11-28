@@ -11,7 +11,9 @@ import AsnTable from "@/components/portal/AsnTable";
 import AsnCreateModal from "@/components/portal/AsnCreateModal";
 import AsnDrawer from "@/components/portal/AsnDrawer";
 import { usePortalPoLabel } from "@/lib/portalPoRefs";
+import { useErrorText, useT } from "@/lib/i18n";
 
+// Labels are English source strings, translated with t() where they render.
 const TABS = [
   { key: "active", label: "Active Shipments" },
   { key: "history", label: "History" },
@@ -21,6 +23,8 @@ const TABS = [
 export default function AsnPortalPage() {
   // ASNs carry the PO counter; suppliers see their vendor PO number.
   const poLabel = usePortalPoLabel();
+  const { t } = useT();
+  const errorText = useErrorText();
   const [tab, setTab] = useState<(typeof TABS)[number]["key"]>("active");
   const [summary, setSummary] = useState<AsnSummary | null>(null);
   const [items, setItems] = useState<Asn[]>([]);
@@ -80,12 +84,12 @@ export default function AsnPortalPage() {
             <Truck size={18} />
           </div>
           <div>
-            <h1 className="page-title">Shipment Tracking</h1>
-            <p className="page-subtitle">Create Advance Shipping Notices and track them to delivery.</p>
+            <h1 className="page-title">{t("Shipment Tracking")}</h1>
+            <p className="page-subtitle">{t("Create Advance Shipping Notices and track them to delivery.")}</p>
           </div>
         </div>
         <button className="btn-primary" onClick={() => setCreating(true)}>
-          <Plus size={14} /> Create New ASN
+          <Plus size={14} /> {t("Create New ASN")}
         </button>
       </div>
 
@@ -93,24 +97,24 @@ export default function AsnPortalPage() {
 
       <div className="card">
         <div className="flex items-center gap-1 border-b border-brand-border px-3">
-          {TABS.map((t) => (
+          {TABS.map((tabItem) => (
             <button
-              key={t.key}
-              onClick={() => setTab(t.key)}
+              key={tabItem.key}
+              onClick={() => setTab(tabItem.key)}
               className={cn(
                 "px-3 py-3 text-sm font-medium border-b-2 -mb-px",
-                tab === t.key
+                tab === tabItem.key
                   ? "border-signal-red text-signal-red"
                   : "border-transparent text-brand-muted hover:text-brand-dark",
               )}
             >
-              {t.label}
-              {t.key === "drafts" && summary?.drafts ? ` (${summary.drafts})` : ""}
+              {t(tabItem.label)}
+              {tabItem.key === "drafts" && summary?.drafts ? ` (${summary.drafts})` : ""}
             </button>
           ))}
         </div>
         <div className="p-3">
-          {error && <div className="mb-3 rounded-md bg-red-50 px-3 py-2 text-xs text-signal-red">{error}</div>}
+          {error && <div className="mb-3 rounded-md bg-red-50 px-3 py-2 text-xs text-signal-red">{errorText(error)}</div>}
           <AsnTable
             items={items}
             loading={loading}

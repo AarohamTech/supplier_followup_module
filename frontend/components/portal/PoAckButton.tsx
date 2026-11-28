@@ -7,14 +7,13 @@ import { useEffect, useState } from "react";
 import { CheckCircle2, Loader2, ThumbsUp } from "lucide-react";
 
 import { api } from "@/lib/api";
+import { fmtAckTime } from "@/lib/format";
+import { useErrorText, useT } from "@/lib/i18n";
 import type { PoAckStatus } from "@/lib/types";
 
-function label(s: PoAckStatus): string {
-  if (s.acknowledged_at_label) return s.acknowledged_at_label;
-  return s.acknowledged_at ? new Date(s.acknowledged_at).toLocaleString() : "";
-}
-
 export default function PoAckButton({ supplierPoNo }: { supplierPoNo: string }) {
+  const { t, lang } = useT();
+  const errorText = useErrorText();
   const [status, setStatus] = useState<PoAckStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -47,9 +46,9 @@ export default function PoAckButton({ supplierPoNo }: { supplierPoNo: string }) 
     return (
       <span
         className="inline-flex items-center gap-1.5 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700"
-        title={status.via === "link" ? "Acknowledged from the email link" : "Acknowledged in the portal"}
+        title={status.via === "link" ? t("Acknowledged from the email link") : t("Acknowledged in the portal")}
       >
-        <CheckCircle2 size={13} /> Acknowledged on {label(status)}
+        <CheckCircle2 size={13} /> {t("Acknowledged on {date}", { date: fmtAckTime(status, lang) })}
       </span>
     );
   }
@@ -60,11 +59,11 @@ export default function PoAckButton({ supplierPoNo }: { supplierPoNo: string }) 
         onClick={() => void acknowledge()}
         disabled={busy || status === null}
         className="btn-outline border-emerald-300 text-emerald-700 hover:bg-emerald-50"
-        title="Confirm that you have received this purchase order"
+        title={t("Confirm that you have received this purchase order")}
       >
-        {busy ? <Loader2 size={15} className="animate-spin" /> : <ThumbsUp size={15} />} Acknowledge PO
+        {busy ? <Loader2 size={15} className="animate-spin" /> : <ThumbsUp size={15} />} {t("Acknowledge PO")}
       </button>
-      {error && <span className="text-[11px] text-signal-red">{error}</span>}
+      {error && <span className="text-[11px] text-signal-red">{errorText(error)}</span>}
     </span>
   );
 }

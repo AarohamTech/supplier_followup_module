@@ -1155,6 +1155,17 @@ class _AssistantMessage(BaseModel):
 
 class _AssistantRequest(BaseModel):
     messages: list[_AssistantMessage] = Field(default_factory=list)
+    # Portal UI language ("en" / "mr"). Only "mr" changes anything; the value is
+    # compared, never copied into the prompt.
+    language: str | None = Field(default=None, max_length=8)
+
+
+# Added to the assistant's instructions when the supplier uses the portal in Marathi.
+_MARATHI_REPLY_RULE = (
+    " Reply in Marathi (मराठी, Devanagari script), whatever language the question "
+    "is in. Keep PO numbers, CRM numbers, ASN numbers, material codes, quantities, "
+    "units and dates exactly as the tools return them."
+)
 
 
 @router.get("/assistant/health")
@@ -1181,6 +1192,8 @@ def assistant_chat(
         "professional. If asked about anything outside this supplier's orders, say you "
         "can only help with their POs and shipments." + ai_service.AGENT_TOOLS_SUFFIX
     )
+    if (payload.language or "").strip().lower() == "mr":
+        system += _MARATHI_REPLY_RULE
     try:
         if not ai_service.any_enabled():
             raise AIDisabledError("Harmony Intelligent is currently unavailable.")
